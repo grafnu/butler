@@ -14,6 +14,7 @@ The system MUST use a message-based communication layer (e.g., MQTT) that satisf
     - `destination`: Identity of the recipient.
     - `type`: Category of the message (e.g., `status`, `update_payload`).
     - `timestamp`: ISO-8601 formatted string.
+    - `nonce`: An 8-digit hexadecimal value (e.g., `a1b2c3d4`).
     - `payload`: Object containing type-specific data.
 - **Topic Structure:**
     - Device Status: `butler/{device_id}/status`
@@ -36,7 +37,7 @@ Responsible for immutable firmware version management.
 Responsible for tracking the "source of truth" for the fleet.
 - **State Tracking:** Must maintain `target_version` and `current_version` for every device subsystem.
 - **History:** Must track the `last_known_good` (LKG) version for each subsystem to support recovery.
-- **Reconciliation:** Any change to a `target_version` should act as a trigger for the Orchestrator.
+- **Reconciliation:** Any change to a `target_version` should act as a trigger for the Butler Orchestrator.
 
 ### 3.3 Butler Orchestrator (Control Logic)
 The central engine that manages the update lifecycle state machine:
@@ -79,9 +80,14 @@ indicate test failure, they should have enough information to guide the implemen
 
 The Verification Watcher watches the channel and reports results if the observed sequences pass or fail expecations as accoring to the spec.
 It is purely an observational test utility, used to either validate an installed system or to guide an active agent towards a complete
-functioning implementation.
+functioning implementation. When it detects a valid sequence, or an invalid message, it will output a validation message.
 
 The verification watcher and the rest of the system can only communicate over the observable shared bus.
+
+### Test mode
+
+Add an `-f` flag to both `mocket` and `butler` that introduces a failure mode of some kind. E.g., it does not progress to the next intended
+state. When this is the case, `verifier` should detect that there was an invalid state transition and indicate that the sequence failed.
 
 ### Smoke Tester
 
@@ -108,13 +114,16 @@ They are all required unless but in square brackets (e.g. [option]).
   - `bin/register device_id`
 - **Mocket:** An implementation of a mock device that received config messages and gives mock expected results.
   - `bin/mocket device_id`
+  - Tag should be `mockit` in messages source and logging
 - **Butler**: The core butler program that handlers the necessary orchestration and state machine.
   - `bin/butler`
+  - Tag should be `butler` in messages source and logging
 - **Trigger**: A utility that triggers necessary situations to test the system, e.g. changing the available blob version.
   - `bin/trigger device_id blob_version blob_path`
     - 'blob_version' is the semantic version of the blob (e.g. '1.3').
     - 'blob_path' is the path to the blob binary.
 - **Verifier:** A monitoring utility to monitor the communication channel and report results onto the `verify` topic.
   - `bin/verifier`
+  - Tag should be `verifier` in messages source and logging
 - **Smoker:** A complete quick testing utility that tests all the basic components to make sure they work at basic level, but is not comprehensive.
   - `bin/smokeit`
