@@ -38,6 +38,8 @@ Responsible for tracking the "source of truth" for the fleet.
 - **State Tracking:** Must maintain `target_version` and `current_version` for every device subsystem.
 - **History:** Must track the `last_known_good` (LKG) version for each subsystem to support recovery.
 - **Reconciliation:** Any change to a `target_version` should act as a trigger for the Butler Orchestrator.
+- **Environment Isolation:** The repository MUST support an environment variable `BUTLER_MODEL_FILE` to override the default model storage path. This is critical for parallel testing and isolating demo environments from developer state.
+- **Atomicity:** All updates to the model file MUST be atomic (e.g., write to a temporary file and rename) to prevent corruption during system crashes.
 
 ### 3.3 Butler Orchestrator (Control Logic)
 The central engine that manages the update lifecycle state machine:
@@ -46,6 +48,7 @@ The central engine that manages the update lifecycle state machine:
 - **Error State:** Triggered by device-reported failure or timeout.
 - **Rollback Logic:** On critical failure, the Orchestrator MUST automatically revert the `target_version` in the Model Repository to the LKG version.
 - **Trigger Detect:** Butler should automatically detect changes in the site model for the target or expected version.
+- **Timeout Management:** The Orchestrator MUST implement a configurable timeout (default 60s) for devices in the `pending` state. If a device fails to report `success` or `failure` within this window, it must be treated as a failure and potentially trigger a rollback.
 
 ### 3.4 Device Conduit (Client-side)
 The implementation on the device must adhere to this state flow:
@@ -69,6 +72,11 @@ The implementation on the device must adhere to this state flow:
 3. Orchestrator identifies the failure and lookups the `last_known_good` version.
 4. Orchestrator updates the `target_version` back to the LKG.
 5. A new Update Sequence begins for the LKG version.
+
+### 4.3 Idempotency and Robustness
+- **Duplicate Message Handling:** All components MUST be idempotent. Receiving the same `update_payload` or `status` message multiple times must not lead to inconsistent state transitions.
+- **Message Nonce:** The `nonce` (8-digit hex) MUST be used to uniquely identify messages. Components SHOULD track recently seen nonces to ignore duplicates if the underlying transport (e.g., MQTT QoS 1) delivers them multiple times.
+- **Graceful Restart:** Components MUST be able to recover their internal state by observing the latest `status` messages on the bus or querying the Model Repository upon startup.
 
 ## 5. Verification and Test Strategy
 
@@ -98,7 +106,10 @@ successfully run and send/recieve at least one message.
 
 The smoke tester also verifies that all required arguments are enforced (i.e., will cause a usage error if omitted).
 
-## 5. Operational Tooling Requirements
+All temporary working files from the smoke test should be sequestered in a `testing` subdirectory so they don't pollute the
+overall directory.
+
+## 6. Operational Tooling Requirements
 To support development, debugging, and ongoing operations, the following capabilities must be present. They
 should all be simple python executables in a top-level `bin/` directory as indicated. They should all use
 an implicit understanding of the underlying communication substrate. Only the indicated command line arguments

@@ -5,17 +5,20 @@ import os
 from butler.common import ButlerMQTTClient
 
 class DeviceConduit:
-    def __init__(self, device_id, current_version="1.0.0", host="localhost", port=1883):
+    def __init__(self, device_id, current_version="1.0.0", host="localhost", port=1883, failure_mode=False):
         self.device_id = device_id
         self.current_version = current_version
         self.state = "quiescent"
-        self.mqtt = ButlerMQTTClient(device_id, host, port)
+        self.failure_mode = failure_mode
+        self.mqtt = ButlerMQTTClient("mockit", host, port)
         self.mqtt.set_on_message(self.handle_message)
 
     def start(self):
         self.mqtt.connect()
         self.mqtt.subscribe(f"butler/{self.device_id}/update_payload")
         print(f"Device {self.device_id} started at version {self.current_version}")
+        if self.failure_mode:
+            print(f"[mockit] FAILURE MODE ENABLED: Will ignore update payloads.")
 
     def stop(self):
         self.mqtt.disconnect()
@@ -26,14 +29,17 @@ class DeviceConduit:
             "current_version": self.current_version,
             "state": self.state
         }
-        self.mqtt.publish(f"butler/{self.device_id}/status", "orchestrator", "status", payload)
+        self.mqtt.publish(f"butler/{self.device_id}/status", "butler", "status", payload)
 
     def handle_message(self, topic, data):
         if data["type"] == "update_payload":
+             if self.failure_mode:
+                 print(f"[mockit] Ignoring update payload due to failure mode.")
+                 return
              self.process_update(data["payload"])
 
     def process_update(self, payload):
-        print(f"[{self.device_id}] Received update payload for version {payload['version']}")
+        print(f"[mockit] Received update payload for version {payload['version']}")
         self.state = "pending"
         self.report_status()
         
@@ -50,7 +56,7 @@ class DeviceConduit:
                     content = f.read()
             else:
                  # In a real scenario, use requests.get(url)
-                 print(f"[{self.device_id}] Simulating download from {url}")
+                 print(f"[mockit] Simulating download from {url}")
                  content = b"simulated_content"
             
             actual_sha256 = hashlib.sha256(content).hexdigest()
@@ -59,7 +65,7 @@ class DeviceConduit:
                 raise Exception("SHA256 mismatch")
             
             # Simulate apply
-            print(f"[{self.device_id}] Applying update {payload['version']}")
+            print(f"[mockit] Applying update {payload['version']}")
             time.sleep(1)
             
             # Simulate a failure for version "9.9.9"
@@ -68,7 +74,7 @@ class DeviceConduit:
 
             self.current_version = payload["version"]
             self.state = "success"
-            print(f"[{self.device_id}] Update successful! Now at {self.current_version}")
+            print(f"[mockit] Update successful! Now at {self.current_version}")
             self.report_status()
             
             # Reset to quiescent after reporting success
@@ -77,7 +83,7 @@ class DeviceConduit:
             self.report_status()
 
         except Exception as e:
-            print(f"[{self.device_id}] Update failed: {e}")
+            print(f"[mockit] Update failed: {e}")
             self.state = "failure"
             self.report_status()
             
@@ -87,12 +93,13 @@ class DeviceConduit:
             self.report_status()
 
 def main():
-    import sys
-    if len(sys.argv) != 2:
-        print("Usage: bin/mocket device_id")
-        sys.exit(1)
-    device_id = sys.argv[1]
-    device = DeviceConduit(device_id)
+    import argparse
+    parser = argparse.ArgumentParser(description="Mock Device Conduit")
+    parser.add_argument("device_id", help="ID of the device")
+    parser.add_argument("-f", "--failure", action="store_true", help="Enable failure mode")
+    args = parser.parse_args()
+
+    device = DeviceConduit(args.device_id, failure_mode=args.failure)
     device.start()
     try:
         while True:

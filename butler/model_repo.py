@@ -2,7 +2,9 @@ import json
 import os
 
 class ModelRepository:
-    def __init__(self, model_file="model.json"):
+    def __init__(self, model_file=None):
+        if model_file is None:
+            model_file = os.environ.get("BUTLER_MODEL_FILE", "model.json")
         self.model_file = model_file
         self.data = self._load()
 

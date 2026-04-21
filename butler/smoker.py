@@ -64,9 +64,15 @@ class SmokeTester:
             print("[SMOKER] SMOKE TEST FAILED: Argument enforcement check failed")
             sys.exit(1)
 
-        # Cleanup
-        if os.path.exists("model.json"):
-            os.remove("model.json")
+        # Create testing directory if it doesn't exist
+        test_dir = "testing"
+        if not os.path.exists(test_dir):
+            os.makedirs(test_dir)
+
+        # Use a temporary model file for the smoke test
+        smoke_model = os.path.join(test_dir, "smoke_model.json")
+        if os.path.exists(smoke_model):
+            os.remove(smoke_model)
         
         # 1. Setup
         print("[SMOKER] Running bin/setup...")
@@ -79,15 +85,17 @@ class SmokeTester:
         client.subscribe("butler/#")
         client.loop_start()
 
-        # Initialize device in model BEFORE starting butler
-        from butler.model_repo import ModelRepository
-        model = ModelRepository()
-        model.set_device_info(self.device_id, "main", "vibrant", "butler-v1")
-        model.set_target_version(self.device_id, "main", "1.0.0")
-        
         env = os.environ.copy()
         env["PYTHONPATH"] = os.getcwd()
+        env["BUTLER_MODEL_FILE"] = smoke_model
 
+        # Initialize device in model BEFORE starting butler
+        from butler.model_repo import ModelRepository
+        model = ModelRepository(smoke_model)
+        model.set_device_info(self.device_id, "main", "vibrant", "butler-v1")
+        model.update_current_version(self.device_id, "main", "1.0.0")
+        model.set_target_version(self.device_id, "main", "1.0.0")
+        
         try:
             # 3. Start Butler (Orchestrator)
             print("[SMOKER] Starting bin/butler...")
@@ -108,12 +116,12 @@ class SmokeTester:
 
             # 6. Trigger update
             # Create a temporary blob file for the test
-            blob_path = "smoke_test_blob.bin"
+            blob_path = os.path.join(test_dir, "smoke_test_blob.bin")
             with open(blob_path, "wb") as f:
                 f.write(b"SMOKE_TEST_CONTENT_V1.1.0")
 
             print(f"[SMOKER] Triggering update for {self.device_id} to 1.1.0...")
-            subprocess.run(["bin/trigger", self.device_id, "1.1.0", blob_path], check=True)
+            subprocess.run(["bin/trigger", self.device_id, "1.1.0", blob_path], env=env, check=True)
 
             # Cleanup temp blob
             if os.path.exists(blob_path):
@@ -142,6 +150,8 @@ class SmokeTester:
             for p in self.processes:
                 p.terminate()
                 p.wait()
+            if os.path.exists(smoke_model):
+                os.remove(smoke_model)
 
         if self.success:
             print("[SMOKER] SMOKE TEST PASSED")

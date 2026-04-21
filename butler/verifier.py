@@ -22,7 +22,7 @@ class ButlerVerifier:
             "result": result, # PASS or FAIL
             "message": message
         }
-        print(f"[VERIFIER] {device_id}: {result} - {message}")
+        print(f"[verifier] {device_id}: {result} - {message}")
         self.mqtt.publish(f"butler/{device_id}/verify", device_id, "verify_result", payload)
 
     def handle_message(self, topic, data):
@@ -53,7 +53,7 @@ class ButlerVerifier:
         tracking["target_version"] = target_version
         tracking["current_state"] = "update_initiated"
         tracking["sequence"] = ["update_initiated"]
-        print(f"[VERIFIER] Tracking update for {device_id} to version {target_version}")
+        print(f"[verifier] Tracking update for {device_id} to version {target_version}")
 
     def handle_status(self, device_id, payload):
         state = payload["state"]

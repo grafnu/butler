@@ -1,6 +1,6 @@
 import json
 import time
-import uuid
+import secrets
 from datetime import datetime
 import paho.mqtt.client as mqtt
 
@@ -10,7 +10,7 @@ class ButlerMessage:
         self.destination = destination
         self.msg_type = msg_type
         self.timestamp = datetime.utcnow().isoformat() + "Z"
-        self.nonce = str(uuid.uuid4())
+        self.nonce = secrets.token_hex(4)
         self.payload = payload
 
     def to_json(self):

@@ -42,6 +42,7 @@ Run the setup script to prepare the communication bus. Note that this script wil
 ```bash
 bin/setup
 ```
+**Expected behavior:** The script should output "Mosquitto is running on port 1883" and "Bus setup complete."
 
 ## Manual Operation
 
@@ -51,18 +52,21 @@ To run the components individually and observe their behavior:
 ```bash
 bin/butler
 ```
+**Expected behavior:** The orchestrator starts and waits for state changes. It will periodically check the model for required updates.
 
 ### 2. Start the Verifier (Optional)
 The verifier monitors the bus and reports on the success or failure of update sequences.
 ```bash
 bin/verifier
 ```
+**Expected behavior:** The verifier starts listening to the MQTT bus. It will output verification results to the `butler/verify` topic.
 
 ### 3. Start an Observer (Optional)
 Watch the JSON message traffic in real-time:
 ```bash
 bin/observe
 ```
+**Expected behavior:** The observer will print formatted JSON messages for all traffic on the `butler/#` topics.
 
 ### 4. Register and Start a Mock Device
 In a new terminal:
@@ -73,6 +77,9 @@ bin/register dev-001
 # Start the mock device
 bin/mocket dev-001
 ```
+**Expected behavior:** 
+- `bin/register` will output "Registered device dev-001 in model."
+- `bin/mocket` will start and begin publishing periodic status messages. You should see these messages appearing in the **Observer** window.
 
 ### 5. Trigger an Update
 Create a dummy firmware file and trigger an update for the device:
@@ -80,6 +87,11 @@ Create a dummy firmware file and trigger an update for the device:
 echo "V1.1 CONTENT" > fw_v1.1.0.bin
 bin/trigger dev-001 1.1.0 fw_v1.1.0.bin
 ```
+**Expected behavior:** 
+- `bin/trigger` will report that the blob was stored and the target version was updated.
+- In the **Observer**, you should see an `update_payload` message sent from `butler` to `dev-001`.
+- In the **Mocket** output, you should see the device receiving the update, downloading the blob, and reporting `success`.
+- Finally, the **Butler** logs will show it updating the `current_version` in the model.
 
 ## Testing
 
@@ -88,6 +100,7 @@ Run a quick end-to-end smoke test that verifies basic component connectivity:
 ```bash
 bin/smokeit
 ```
+**Expected behavior:** The script will launch temporary instances of the system components, run a sample update, and output "Smoke test passed" (or a detailed error if something is misconfigured).
 
 ## Documentation
 For detailed architectural specifications and component requirements, see:
