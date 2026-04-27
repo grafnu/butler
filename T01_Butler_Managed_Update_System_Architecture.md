@@ -23,6 +23,9 @@ The system MUST use a message-based communication layer (e.g., MQTT) that satisf
 
 All componets include a nonce in their messages to help detect situations where they are unique on the bus.
 
+`timestamp` should be of the form `2026-04-27T21:19:35Z`. If any timestamp does not conform then `validator` should
+reject the message as invalid.
+
 `device_id` is an alphanumeric string, e.g. `dev-001`.
 
 ## 3. Functional Components
