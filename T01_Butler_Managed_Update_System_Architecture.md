@@ -23,6 +23,9 @@ The system MUST use a message-based communication layer (e.g., MQTT) that satisf
 
 All componets include a nonce in their messages to help detect situations where they are unique on the bus.
 
+`timestamp` should be of the form `2026-04-27T21:19:35Z`. If any timestamp does not conform then `validator` should
+reject the message as invalid.
+
 `device_id` is an alphanumeric string, e.g. `dev-001`.
 
 ## 3. Functional Components
@@ -113,7 +116,11 @@ overall directory.
 To support development, debugging, and ongoing operations, the following capabilities must be present. They
 should all be simple python executables in a top-level `bin/` directory as indicated. They should all use
 an implicit understanding of the underlying communication substrate. Only the indicated command line arguments
-are allowed.
+are allowed. There should be no other files in the `bin/` directory that are not explicitly listed here.
+
+All commands should be restartable without any problems if they are in a quiescent state. If the are restarted
+in the middle of a transation it's OK if the system reports a transient error as long as it recovers to a stable
+state. Retrying the transation should then behave as expected (assuming no other restarts).
 
 They are all required unless but in square brackets (e.g. [option]).
 
