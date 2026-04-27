@@ -48,7 +48,7 @@ class ButlerMQTTBase:
             "source": self.source,
             "destination": destination,
             "type": msg_type,
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
             "nonce": self.generate_nonce(),
             "payload": payload
         }

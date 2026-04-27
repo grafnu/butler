@@ -15,6 +15,18 @@ class ButlerVerifier(ButlerMQTTBase):
         self.subscribe("butler/+/update_payload")
 
     def on_message(self, topic, data):
+        # Validate timestamp format
+        timestamp = data.get("timestamp", "")
+        if not re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", timestamp):
+            source = data.get("source", "unknown")
+            print(f"[{source}] REJECT: Invalid timestamp format: {timestamp}")
+            # We don't have a specific device_id here if it's a general message, 
+            # but we can try to extract it from topic or data.
+            match = re.match(r"butler/([^/]+)/", topic)
+            device_id = match.group(1) if match else "unknown"
+            self._report(device_id, "fail", f"Invalid timestamp format from {source}: {timestamp}")
+            return
+
         # butler/{device_id}/{type}
         match = re.match(r"butler/([^/]+)/([^/]+)", topic)
         if not match:
