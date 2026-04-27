@@ -115,6 +115,10 @@ should all be simple python executables in a top-level `bin/` directory as indic
 an implicit understanding of the underlying communication substrate. Only the indicated command line arguments
 are allowed.
 
+All commands should be restartable without any problems if they are in a quiescent state. If the are restarted
+in the middle of a transation it's OK if the system reports a transient error as long as it recovers to a stable
+state. Retrying the transation should then behave as expected (assuming no other restarts).
+
 They are all required unless but in square brackets (e.g. [option]).
 
 - **Setup:** A mechanism to initialize the persistent communication substrate.
