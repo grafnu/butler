@@ -24,13 +24,14 @@ def main():
     subsystem = "main"
     
     model_repo = ModelRepository()
-    device_state = model_repo.get_device_state(device_id, subsystem)
+    device_state = model_repo.get_device_state(device_id)
     if not device_state:
         print(f"Error: Device {device_id} not found in model.")
         sys.exit(1)
     
     make = device_state["make"]
     model = device_state["model"]
+    subsystem = device_state["subsystem"]
     
     if not os.path.exists(blob_path):
         print(f"Error: Blob path {blob_path} does not exist.")
@@ -43,7 +44,7 @@ def main():
     path, sha256 = blob_repo.store_blob(make, model, subsystem, blob_version, content)
     print(f"Stored blob at {path} with SHA256: {sha256}")
     
-    model_repo.set_target_version(device_id, subsystem, blob_version)
+    model_repo.set_target_version(device_id, blob_version)
     print(f"Triggered update for {device_id} to {blob_version}")
 
 if __name__ == "__main__":

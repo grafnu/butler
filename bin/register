@@ -19,8 +19,8 @@ def main():
     
     device_id = sys.argv[1]
     model_repo = ModelRepository()
-    # Default make/model based on smoker.py
-    model_repo.set_device_info(device_id, "main", "vibrant", "butler-v1")
+    # Default make/model based on spec and existing blobs: vibrant/butler-v1/main
+    model_repo.set_device_info(device_id, "vibrant", "butler-v1", "main")
     print(f"Registered device {device_id} in model.")
 
 if __name__ == "__main__":

@@ -1,112 +1,121 @@
 import time
+import json
 import hashlib
-import requests
+import argparse
 import os
-from butler.common import ButlerMQTTClient
+import urllib.parse
+from butler.common import ButlerMQTTBase
+from butler.model_repo import ModelRepository
 
-class DeviceConduit:
-    def __init__(self, device_id, current_version="1.0.0", host="localhost", port=1883, failure_mode=False):
+class MocketDevice(ButlerMQTTBase):
+    def __init__(self, device_id, failure_mode=False):
+        super().__init__(source="mockit")
         self.device_id = device_id
-        self.current_version = current_version
-        self.state = "quiescent"
         self.failure_mode = failure_mode
-        self.mqtt = ButlerMQTTClient("mockit", host, port)
-        self.mqtt.set_on_message(self.handle_message)
+        self.state = "quiescent"
+        
+        # Try to load current version from model
+        model_repo = ModelRepository()
+        device_state = model_repo.get_device_state(device_id)
+        if device_state:
+            self.current_version = device_state.get("current_version", "0.0.0")
+        else:
+            self.current_version = "0.0.0"
 
-    def start(self):
-        self.mqtt.connect()
-        self.mqtt.subscribe(f"butler/{self.device_id}/update_payload")
-        print(f"Device {self.device_id} started at version {self.current_version}")
+    def on_connect(self):
+        print(f"Device {self.device_id} connected to bus.")
+        self.subscribe(f"butler/{self.device_id}/update_payload")
+        self.report_status()
+
+    def on_message(self, topic, data):
+        if topic == f"butler/{self.device_id}/update_payload":
+            self.handle_update(data)
+
+    def handle_update(self, data):
+        payload = data.get("payload", {})
+        target_version = payload.get("version")
+        url = payload.get("url")
+        expected_sha = payload.get("sha256")
+
+        print(f"Device {self.device_id} received update payload for version {target_version}")
+        
+        self.state = "pending"
+        self.report_status()
+
         if self.failure_mode:
-            print(f"[mockit] FAILURE MODE ENABLED: Will ignore update payloads.")
+            print(f"Device {self.device_id} in failure mode. Simulating failure...")
+            time.sleep(2)
+            self.state = "failure"
+            self.report_status()
+            # In failure mode, we might just stay in failure or return to quiescent
+            # but reporting failure once is enough for the orchestrator to trigger rollback.
+            time.sleep(1)
+            self.state = "quiescent"
+            return
 
-    def stop(self):
-        self.mqtt.disconnect()
+        # Simulate download and verification
+        time.sleep(2)
+        try:
+            parsed_url = urllib.parse.urlparse(url)
+            if parsed_url.scheme == 'file':
+                file_path = parsed_url.path
+                if os.path.exists(file_path):
+                    with open(file_path, 'rb') as f:
+                        content = f.read()
+                        actual_sha = hashlib.sha256(content).hexdigest()
+                    
+                    if actual_sha == expected_sha:
+                        print(f"Device {self.device_id} verification success.")
+                        self.current_version = target_version
+                        self.state = "success"
+                    else:
+                        print(f"Device {self.device_id} verification failed: SHA mismatch.")
+                        self.state = "failure"
+                else:
+                    print(f"Device {self.device_id} error: Blob file not found at {file_path}")
+                    self.state = "failure"
+            else:
+                print(f"Device {self.device_id} error: Unsupported URL scheme {parsed_url.scheme}")
+                self.state = "failure"
+        except Exception as e:
+            print(f"Device {self.device_id} error during update: {e}")
+            self.state = "failure"
+
+        self.report_status()
+        
+        # After success or failure, transition back to quiescent for next reports
+        if self.state == "success":
+            time.sleep(1) # Let the success message be seen
+            self.state = "quiescent"
+        elif self.state == "failure":
+            time.sleep(1)
+            self.state = "quiescent"
 
     def report_status(self):
         payload = {
-            "subsystem": "main",
-            "current_version": self.current_version,
+            "version": self.current_version,
             "state": self.state
         }
-        self.mqtt.publish(f"butler/{self.device_id}/status", "butler", "status", payload)
-
-    def handle_message(self, topic, data):
-        if data["type"] == "update_payload":
-             if self.failure_mode:
-                 print(f"[mockit] Ignoring update payload due to failure mode.")
-                 return
-             self.process_update(data["payload"])
-
-    def process_update(self, payload):
-        print(f"[mockit] Received update payload for version {payload['version']}")
-        self.state = "pending"
-        self.report_status()
-        
-        # Simulate download and verification
-        time.sleep(1)
-        url = payload["url"]
-        expected_sha256 = payload["sha256"]
-        
-        try:
-            # For simulation purposes, we just read the file if it's file://
-            if url.startswith("file://"):
-                path = url[len("file://"):]
-                with open(path, "rb") as f:
-                    content = f.read()
-            else:
-                 # In a real scenario, use requests.get(url)
-                 print(f"[mockit] Simulating download from {url}")
-                 content = b"simulated_content"
-            
-            actual_sha256 = hashlib.sha256(content).hexdigest()
-            
-            if actual_sha256 != expected_sha256:
-                raise Exception("SHA256 mismatch")
-            
-            # Simulate apply
-            print(f"[mockit] Applying update {payload['version']}")
-            time.sleep(1)
-            
-            # Simulate a failure for version "9.9.9"
-            if payload["version"] == "9.9.9":
-                 raise Exception("Simulated installation failure")
-
-            self.current_version = payload["version"]
-            self.state = "success"
-            print(f"[mockit] Update successful! Now at {self.current_version}")
-            self.report_status()
-            
-            # Reset to quiescent after reporting success
-            time.sleep(0.1)
-            self.state = "quiescent"
-            self.report_status()
-
-        except Exception as e:
-            print(f"[mockit] Update failed: {e}")
-            self.state = "failure"
-            self.report_status()
-            
-            # Reset to quiescent after reporting failure so we can receive next update
-            time.sleep(0.1)
-            self.state = "quiescent"
-            self.report_status()
+        # Topic structure: butler/{device_id}/status
+        self.publish(self.device_id, "status", payload)
 
 def main():
-    import argparse
-    parser = argparse.ArgumentParser(description="Mock Device Conduit")
-    parser.add_argument("device_id", help="ID of the device")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("device_id", help="Device ID")
     parser.add_argument("-f", "--failure", action="store_true", help="Enable failure mode")
     args = parser.parse_args()
 
-    device = DeviceConduit(args.device_id, failure_mode=args.failure)
-    device.start()
+    device = MocketDevice(args.device_id, failure_mode=args.failure)
+    device.connect()
+    device.loop_start()
+
+    print(f"Device {args.device_id} running...")
     try:
         while True:
             device.report_status()
-            time.sleep(5)
+            time.sleep(10)
     except KeyboardInterrupt:
-        device.stop()
+        pass
 
 if __name__ == "__main__":
     main()

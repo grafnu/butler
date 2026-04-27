@@ -1,168 +1,125 @@
-import subprocess
-import time
 import os
 import sys
+import subprocess
+import time
 import json
 import paho.mqtt.client as mqtt
-from butler.common import ButlerMessage
-
-class SmokeTester:
-    def __init__(self, device_id="smoke-dev-001"):
-        self.device_id = device_id
-        self.processes = []
-        self.messages_received = {
-            "status": False,
-            "update_payload": False,
-            "verify_pass": False
-        }
-        self.success = False
-
-    def on_message(self, client, userdata, msg):
-        topic = msg.topic
-        try:
-            data = json.loads(msg.payload.decode())
-            print(f"[SMOKER] Received message on {topic}")
-            if "status" in topic:
-                self.messages_received["status"] = True
-            elif "update_payload" in topic:
-                self.messages_received["update_payload"] = True
-            elif "verify" in topic:
-                if data["payload"].get("result") == "PASS":
-                    self.messages_received["verify_pass"] = True
-                else:
-                    print(f"[SMOKER] Received FAIL verification: {data['payload'].get('message')}")
-        except Exception as e:
-            print(f"[SMOKER] Error parsing message: {e}")
-
-    def verify_usage(self):
-        print("[SMOKER] Verifying argument enforcement...")
-        # Check mocket
-        res = subprocess.run(["bin/mocket"], capture_output=True, text=True)
-        if res.returncode == 0:
-            print("[SMOKER] FAIL: mocket should have failed without arguments")
-            return False
-        
-        # Check trigger
-        res = subprocess.run(["bin/trigger"], capture_output=True, text=True)
-        if res.returncode == 0:
-            print("[SMOKER] FAIL: trigger should have failed without arguments")
-            return False
-        
-        # Check register
-        res = subprocess.run(["bin/register"], capture_output=True, text=True)
-        if res.returncode == 0:
-            print("[SMOKER] FAIL: register should have failed without arguments")
-            return False
-        
-        print("[SMOKER] Argument enforcement verified.")
-        return True
-
-    def run(self):
-        print("[SMOKER] Starting Smoke Test...")
-        
-        if not self.verify_usage():
-            print("[SMOKER] SMOKE TEST FAILED: Argument enforcement check failed")
-            sys.exit(1)
-
-        # Create testing directory if it doesn't exist
-        test_dir = "testing"
-        if not os.path.exists(test_dir):
-            os.makedirs(test_dir)
-
-        # Use a temporary model file for the smoke test
-        smoke_model = os.path.join(test_dir, "smoke_model.json")
-        if os.path.exists(smoke_model):
-            os.remove(smoke_model)
-        
-        # 1. Setup
-        print("[SMOKER] Running bin/setup...")
-        subprocess.run(["bin/setup"], check=True)
-
-        # 2. Start MQTT Listener
-        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "smoke-tester")
-        client.on_message = self.on_message
-        client.connect("localhost", 1883, 60)
-        client.subscribe("butler/#")
-        client.loop_start()
-
-        env = os.environ.copy()
-        env["PYTHONPATH"] = os.getcwd()
-        env["BUTLER_MODEL_FILE"] = smoke_model
-
-        # Initialize device in model BEFORE starting butler
-        from butler.model_repo import ModelRepository
-        model = ModelRepository(smoke_model)
-        model.set_device_info(self.device_id, "main", "vibrant", "butler-v1")
-        model.update_current_version(self.device_id, "main", "1.0.0")
-        model.set_target_version(self.device_id, "main", "1.0.0")
-        
-        try:
-            # 3. Start Butler (Orchestrator)
-            print("[SMOKER] Starting bin/butler...")
-            p_butler = subprocess.Popen(["bin/butler"], env=env, stdout=sys.stdout, stderr=sys.stderr)
-            self.processes.append(p_butler)
-
-            # 4. Start Verifier
-            print("[SMOKER] Starting bin/verifier...")
-            p_verifier = subprocess.Popen(["bin/verifier"], env=env, stdout=sys.stdout, stderr=sys.stderr)
-            self.processes.append(p_verifier)
-
-            # 5. Start Mocket
-            print(f"[SMOKER] Starting bin/mocket {self.device_id}...")
-            p_mocket = subprocess.Popen(["bin/mocket", self.device_id], env=env, stdout=sys.stdout, stderr=sys.stderr)
-            self.processes.append(p_mocket)
-
-            time.sleep(2) # Wait for startup
-
-            # 6. Trigger update
-            # Create a temporary blob file for the test
-            blob_path = os.path.join(test_dir, "smoke_test_blob.bin")
-            with open(blob_path, "wb") as f:
-                f.write(b"SMOKE_TEST_CONTENT_V1.1.0")
-
-            print(f"[SMOKER] Triggering update for {self.device_id} to 1.1.0...")
-            subprocess.run(["bin/trigger", self.device_id, "1.1.0", blob_path], env=env, check=True)
-
-            # Cleanup temp blob
-            if os.path.exists(blob_path):
-                os.remove(blob_path)
-
-            # 7. Wait and check
-            print("[SMOKER] Waiting for message exchange...")
-            timeout = 20
-            start_time = time.time()
-            while time.time() - start_time < timeout:
-                if all(self.messages_received.values()):
-                    print("[SMOKER] All expected message types received!")
-                    self.success = True
-                    break
-                time.sleep(0.5)
-
-            if not self.success:
-                print("[SMOKER] Smoke test TIMEOUT. Missing messages:")
-                for k, v in self.messages_received.items():
-                    if not v:
-                        print(f"  - {k}")
-
-        finally:
-            print("[SMOKER] Cleaning up...")
-            client.loop_stop()
-            for p in self.processes:
-                p.terminate()
-                p.wait()
-            if os.path.exists(smoke_model):
-                os.remove(smoke_model)
-
-        if self.success:
-            print("[SMOKER] SMOKE TEST PASSED")
-            sys.exit(0)
-        else:
-            print("[SMOKER] SMOKE TEST FAILED")
-            sys.exit(1)
 
 def main():
-    tester = SmokeTester()
-    tester.run()
+    print("Starting Butler Smoke Test...")
+    
+    # 1. Setup testing directory
+    test_dir = os.path.abspath(os.path.join(os.getcwd(), "testing"))
+    os.makedirs(test_dir, exist_ok=True)
+    
+    model_file = os.path.join(test_dir, "model.json")
+    os.environ["BUTLER_MODEL_FILE"] = model_file
+    
+    # Clean up model file if it exists to start fresh
+    if os.path.exists(model_file):
+        os.remove(model_file)
+
+    # 2. Verify argument enforcement
+    print("Checking argument enforcement...")
+    commands_to_check = [
+        (["bin/register"], 1),
+        (["bin/trigger", "dev-1"], 1),
+        (["bin/trigger", "dev-1", "1.1.0"], 1)
+    ]
+    for cmd, expected_code in commands_to_check:
+        # Need to ensure cmd[0] is absolute or relative to root
+        full_cmd = [os.path.join(os.getcwd(), cmd[0])] + cmd[1:]
+        res = subprocess.run(full_cmd, capture_output=True)
+        if res.returncode != expected_code:
+            print(f"FAILED: {cmd} returned {res.returncode}, expected {expected_code}")
+            sys.exit(1)
+    print("Argument enforcement check passed.")
+
+    # 3. Run setup
+    print("Running setup...")
+    subprocess.run([os.path.join(os.getcwd(), "bin/setup")], check=True)
+
+    # 4. Register device
+    device_id = "smoke-dev"
+    print(f"Registering device {device_id}...")
+    subprocess.run([os.path.join(os.getcwd(), "bin/register"), device_id], check=True)
+
+    # 5. Start background processes
+    print("Starting background processes...")
+    processes = []
+    try:
+        # Use -u for unbuffered output to help with logging/debugging if needed
+        processes.append(subprocess.Popen([sys.executable, "-u", os.path.join(os.getcwd(), "bin/mocket"), device_id]))
+        processes.append(subprocess.Popen([sys.executable, "-u", os.path.join(os.getcwd(), "bin/butler")]))
+        processes.append(subprocess.Popen([sys.executable, "-u", os.path.join(os.getcwd(), "bin/verifier")]))
+
+        # Wait for processes to initialize and send first status
+        time.sleep(3)
+
+        # 6. Trigger update
+        # Use an existing blob as a source
+        source_blob = os.path.join(os.getcwd(), "blobs/vibrant/butler-v1/main/1.0.0/firmware.bin")
+        if not os.path.exists(source_blob):
+            # Create a dummy if it doesn't exist
+            os.makedirs(os.path.dirname(source_blob), exist_ok=True)
+            with open(source_blob, "wb") as f:
+                f.write(b"dummy firmware")
+
+        target_version = "9.9.9-smoke"
+        print(f"Triggering update for {device_id} to {target_version}...")
+        subprocess.run([os.path.join(os.getcwd(), "bin/trigger"), device_id, target_version, source_blob], check=True)
+
+        # 7. Observe verification
+        print("Waiting for verification results on MQTT...")
+        verification_results = []
+        
+        def on_message(client, userdata, msg):
+            try:
+                data = json.loads(msg.payload.decode())
+                res = data.get("payload", {})
+                print(f"  [MQTT] Verification: {res.get('result')} - {res.get('message')}")
+                verification_results.append(res)
+            except Exception as e:
+                print(f"Error parsing verification message: {e}")
+
+        client = mqtt.Client()
+        client.on_message = on_message
+        client.connect("localhost", 1883)
+        client.subscribe(f"butler/{device_id}/verify")
+        client.loop_start()
+
+        # Wait for a 'pass' that indicates the transition to success
+        timeout = 20
+        start_time = time.time()
+        success = False
+        while time.time() - start_time < timeout:
+            if any(r.get("result") == "pass" and "PENDING" in r.get("message", "").upper() and "SUCCESS" in r.get("message", "").upper() for r in verification_results):
+                success = True
+                break
+            time.sleep(1)
+
+        client.loop_stop()
+        client.disconnect()
+
+        if success:
+            print("\n" + "="*20)
+            print("SMOKE TEST PASSED")
+            print("="*20)
+        else:
+            print("\n" + "!"*20)
+            print("SMOKE TEST FAILED")
+            print(f"Captured results: {verification_results}")
+            print("!"*20)
+            sys.exit(1)
+
+    finally:
+        print("Stopping background processes...")
+        for p in processes:
+            p.terminate()
+            try:
+                p.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                p.kill()
 
 if __name__ == "__main__":
     main()

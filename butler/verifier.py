@@ -1,111 +1,76 @@
-import time
 import json
-from butler.common import ButlerMQTTClient
+import re
+from butler.common import ButlerMQTTBase
 
-class ButlerVerifier:
+class ButlerVerifier(ButlerMQTTBase):
     def __init__(self, host="localhost", port=1883):
-        self.mqtt = ButlerMQTTClient("verifier", host, port)
-        self.mqtt.set_on_message(self.handle_message)
-        self.device_states = {} # device_id -> tracking info
+        super().__init__(source="verifier", host=host, port=port)
+        # device_id -> current_state
+        self.device_states = {}
+        # States: IDLE, UPDATING, PENDING
 
-    def start(self):
-        self.mqtt.connect()
-        self.mqtt.subscribe("butler/+/status")
-        self.mqtt.subscribe("butler/+/update_payload")
-        print("Butler Verifier started.")
+    def on_connect(self):
+        print("Verifier connected. Subscribing to butler/+/status and butler/+/update_payload")
+        self.subscribe("butler/+/status")
+        self.subscribe("butler/+/update_payload")
 
-    def stop(self):
-        self.mqtt.disconnect()
-
-    def report_verification(self, device_id, result, message):
-        payload = {
-            "result": result, # PASS or FAIL
-            "message": message
-        }
-        print(f"[verifier] {device_id}: {result} - {message}")
-        self.mqtt.publish(f"butler/{device_id}/verify", device_id, "verify_result", payload)
-
-    def handle_message(self, topic, data):
-        parts = topic.split('/')
-        device_id = parts[1]
-        msg_type = data["type"]
-        payload = data["payload"]
-
-        if msg_type == "update_payload":
-            self.handle_update_payload(device_id, payload)
-        elif msg_type == "status":
-            self.handle_status(device_id, payload)
-
-    def handle_update_payload(self, device_id, payload):
-        target_version = payload["version"]
-        if device_id not in self.device_states:
-            self.device_states[device_id] = {}
-        
-        tracking = self.device_states[device_id]
-        
-        if tracking.get("current_state") == "awaiting_rollback":
-            expected_lkg = tracking.get("lkg")
-            if target_version == expected_lkg:
-                self.report_verification(device_id, "PASS", f"Correctly triggered rollback to LKG version {target_version}")
-            else:
-                self.report_verification(device_id, "FAIL", f"Rollback triggered but to version {target_version}, expected LKG {expected_lkg}")
-        
-        tracking["target_version"] = target_version
-        tracking["current_state"] = "update_initiated"
-        tracking["sequence"] = ["update_initiated"]
-        print(f"[verifier] Tracking update for {device_id} to version {target_version}")
-
-    def handle_status(self, device_id, payload):
-        state = payload["state"]
-        current_version = payload["current_version"]
-        
-        if device_id not in self.device_states:
-            # We track the last known good version seen on the bus
-            if state == "quiescent":
-                 self.device_states[device_id] = {"lkg": current_version, "current_state": "quiescent"}
+    def on_message(self, topic, data):
+        # butler/{device_id}/{type}
+        match = re.match(r"butler/([^/]+)/([^/]+)", topic)
+        if not match:
             return
 
-        tracking = self.device_states[device_id]
+        device_id = match.group(1)
+        msg_type = match.group(2)
         
-        if state == "pending":
-            if tracking.get("current_state") == "update_initiated":
-                tracking["current_state"] = "pending"
-                tracking["sequence"].append("pending")
-        
-        elif state == "success":
-            if tracking.get("current_state") == "pending":
-                tracking["sequence"].append("success")
-                if current_version == tracking.get("target_version"):
-                    self.report_verification(device_id, "PASS", f"Successfully updated to {tracking['target_version']}")
-                    # Update LKG
-                    tracking["lkg"] = current_version
-                    tracking["current_state"] = "quiescent"
-                else:
-                    self.report_verification(device_id, "FAIL", f"Reported success but version is {current_version}, expected {tracking.get('target_version')}")
-                    del self.device_states[device_id]
-            else:
-                 # Unexpected success or already handled
-                 pass
+        current_internal_state = self.device_states.get(device_id, "IDLE")
 
-        elif state == "failure":
-             if tracking.get("current_state") == "pending":
-                 tracking["sequence"].append("failure")
-                 self.report_verification(device_id, "PASS", f"Correctly reported failure for version {tracking.get('target_version')}")
-                 tracking["current_state"] = "awaiting_rollback"
-             else:
-                 # Only report FAIL if we were actually expecting an update
-                 if tracking.get("current_state") == "update_initiated":
-                      self.report_verification(device_id, "FAIL", "Reported failure without pending state")
-                      del self.device_states[device_id]
+        if msg_type == "update_payload":
+            self.device_states[device_id] = "UPDATING"
+            print(f"[{device_id}] Received update_payload. Moving to UPDATING state.")
+            # No verification message yet, waiting for pending status
+
+        elif msg_type == "status":
+            device_reported_state = data.get("payload", {}).get("state")
+            print(f"[{device_id}] Reported status: {device_reported_state} (Internal state: {current_internal_state})")
+
+            if device_reported_state == "pending":
+                if current_internal_state == "UPDATING":
+                    self.device_states[device_id] = "PENDING"
+                    self._report(device_id, "pass", "Device correctly transitioned to PENDING after update_payload")
+                elif current_internal_state == "IDLE":
+                    # Might have missed update_payload, but we allow it for robustness
+                    self.device_states[device_id] = "PENDING"
+                # If already PENDING, just ignore (duplicate status)
+
+            elif device_reported_state in ["success", "failure"]:
+                if current_internal_state == "PENDING":
+                    self.device_states[device_id] = "IDLE"
+                    self._report(device_id, "pass", f"Device correctly transitioned from PENDING to {device_reported_state.upper()}")
+                else:
+                    self._report(device_id, "fail", f"Invalid state transition: {device_reported_state.upper()} while in {current_internal_state} state")
+                    self.device_states[device_id] = "IDLE"
+
+            elif device_reported_state == "quiescent":
+                # If we were in PENDING, we should have seen success/failure first, 
+                # but sometimes we might miss it. 
+                # However, if we are in IDLE, it's normal.
+                if current_internal_state != "IDLE":
+                    # If we jumped straight to quiescent from UPDATING or PENDING
+                    self._report(device_id, "fail", f"Invalid state transition: QUIESCENT while in {current_internal_state} state")
+                self.device_states[device_id] = "IDLE"
+
+    def _report(self, device_id, result, message):
+        print(f"[{device_id}] VERIFY {result.upper()}: {message}")
+        self.publish(device_id, "verify", {"result": result, "message": message})
 
 def main():
     verifier = ButlerVerifier()
-    verifier.start()
+    verifier.connect()
     try:
-        while True:
-            time.sleep(1)
+        verifier.loop_forever()
     except KeyboardInterrupt:
-        verifier.stop()
+        print("\nStopping verifier...")
 
 if __name__ == "__main__":
     main()

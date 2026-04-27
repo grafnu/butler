@@ -1,39 +1,43 @@
-import socket
 import subprocess
 import time
+import socket
+import os
 
-def check_mosquitto():
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(1)
-        result = sock.connect_ex(('localhost', 1883))
-        if result == 0:
-            print("Mosquitto is running on port 1883.")
-            return True
-        else:
-            print("Mosquitto is NOT running on port 1883.")
-            return False
-    except Exception as e:
-        print(f"Error checking Mosquitto: {e}")
-        return False
-
-def try_start_mosquitto():
-    print("Attempting to start mosquitto...")
-    try:
-        # Running mosquitto in background
-        subprocess.Popen(["mosquitto"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(1)
-        return check_mosquitto()
-    except Exception as e:
-        print(f"Failed to start mosquitto: {e}")
-        return False
+def is_broker_running(host='localhost', port=1883):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(1)
+        return s.connect_ex((host, port)) == 0
 
 def main():
-    if not check_mosquitto():
-        if not try_start_mosquitto():
-             print("Please ensure Mosquitto is installed and running.")
-             exit(1)
-    print("Bus setup complete.")
+    port = 1883
+    if is_broker_running(port=port):
+        print("Bus setup complete.")
+        return
+
+    print(f"MQTT broker not found on port {port}. Attempting to start mosquitto...")
+    try:
+        # Start mosquitto in the background
+        # We use -d to daemonize, but some environments might not support it well, 
+        # so we'll just use Popen and let it run.
+        subprocess.Popen(['mosquitto', '-p', str(port)], 
+                         stdout=subprocess.DEVNULL, 
+                         stderr=subprocess.DEVNULL)
+        
+        # Wait a bit for it to start
+        for _ in range(5):
+            time.sleep(1)
+            if is_broker_running(port=port):
+                print("Bus setup complete.")
+                return
+    except FileNotFoundError:
+        print("Error: 'mosquitto' command not found. Please install it.")
+        return
+    except Exception as e:
+        print(f"Error starting mosquitto: {e}")
+        return
+
+    if not is_broker_running(port=port):
+        print(f"Error: Could not verify MQTT broker is running on port {port}.")
 
 if __name__ == "__main__":
     main()

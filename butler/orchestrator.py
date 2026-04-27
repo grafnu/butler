@@ -1,129 +1,130 @@
 import time
-from butler.common import ButlerMQTTClient
+import argparse
+import sys
+import os
+import threading
+from butler.common import ButlerMQTTBase
 from butler.model_repo import ModelRepository
 from butler.blob_repo import BlobRepository
 
-class ButlerOrchestrator:
-    def __init__(self, host="localhost", port=1883, failure_mode=False):
-        self.mqtt = ButlerMQTTClient("butler", host, port)
+class ButlerOrchestrator(ButlerMQTTBase):
+    def __init__(self, failure_mode=False):
+        super().__init__(source="butler")
         self.model_repo = ModelRepository()
         self.blob_repo = BlobRepository()
         self.failure_mode = failure_mode
-        self.mqtt.set_on_message(self.handle_message)
-        self.device_states = {} # device_id -> current reported state (quiescent, pending, etc.)
-        self.update_start_times = {} # device_id -> timestamp of last update push
+        self.pending_updates = {}  # device_id -> {'start_time': float, 'target_version': str}
+        self.timeout_seconds = 60
 
-    def start(self):
-        self.mqtt.connect()
-        # Subscribe to all device status topics
-        self.mqtt.subscribe("butler/+/status")
-        print("Butler started.")
+    def on_connect(self):
+        print("Orchestrator connected to bus.")
+        self.subscribe("butler/+/status")
+
+    def on_message(self, topic, data):
         if self.failure_mode:
-            print("[butler] FAILURE MODE ENABLED: Will skip model updates on device success.")
+            # In failure mode, we might just ignore everything or behave oddly.
+            # Spec says "introduces a failure mode of some kind... does not progress to next state"
+            return
 
-    def reconcile(self):
-        # Proactively check model for mismatches
-        mismatches = self.model_repo.get_all_mismatches()
-        now = time.time()
-        for mismatch in mismatches:
-            device_id = mismatch["device_id"]
-            subsystem = mismatch["subsystem"]
-            target_state = mismatch["state"]
-            
-            # Check for timeout
-            current_state = self.device_states.get(device_id, "quiescent")
-            if current_state == "pending" and device_id in self.update_start_times:
-                 if now - self.update_start_times[device_id] > 60: # 60 second timeout
-                      print(f"[butler] Timeout detected for {device_id} on version {target_state['target_version']}")
-                      # Trigger rollback on timeout as well
-                      self.model_repo.rollback(device_id, subsystem)
-                      del self.update_start_times[device_id]
-                      continue
-
-            # Simple reconciliation: if target version != current AND state is quiescent, push update.
-            if target_state["target_version"] != target_state["current_version"] and current_state == "quiescent":
-                 print(f"[butler] Reconciliation: Mismatch detected for {device_id}/{subsystem}")
-                 self.push_update(device_id, subsystem, target_state)
-
-    def stop(self):
-        self.mqtt.disconnect()
-
-    def handle_message(self, topic, data):
         parts = topic.split('/')
-        if len(parts) < 2: return
-        device_id = parts[1]
-        msg_type = data["type"]
-        payload = data["payload"]
-        
-        if msg_type == "status":
-            self.process_status(device_id, payload)
+        if len(parts) == 3 and parts[2] == "status":
+            device_id = parts[1]
+            self.handle_status(device_id, data)
 
-    def process_status(self, device_id, payload):
-        subsystem = payload.get("subsystem", "main")
-        current_version = payload.get("current_version")
+    def handle_status(self, device_id, data):
+        payload = data.get("payload", {})
         state = payload.get("state")
-        self.device_states[device_id] = state
-        # print(f"[butler] Processing status for {device_id}: version={current_version}, state={state}")
-        
-        # Update current state in model repo
+        version = payload.get("version")
+
         if state == "success":
-             if self.failure_mode:
-                 print(f"[butler] Failure mode: skipping model update for {device_id} success.")
-             else:
-                 print(f"[butler] Update successful for {device_id}")
-                 self.model_repo.update_current_version(device_id, subsystem, current_version)
+            print(f"Device {device_id} reported success for version {version}")
+            self.model_repo.update_current_version(device_id, version)
+            if device_id in self.pending_updates:
+                del self.pending_updates[device_id]
         
-        if state == "failure":
-             print(f"[butler] Device {device_id} reported failure. Triggering rollback.")
-             self.model_repo.rollback(device_id, subsystem)
+        elif state == "failure":
+            print(f"Device {device_id} reported failure for version {version}")
+            self.trigger_rollback(device_id)
+            if device_id in self.pending_updates:
+                del self.pending_updates[device_id]
+        
+        elif state == "pending":
+            # Device acknowledged update
+            if device_id in self.pending_updates:
+                # Update start time to avoid premature timeout if it's still working?
+                # Actually, 60s is for the whole process usually.
+                pass
 
-        # Check for mismatch
-        target_state = self.model_repo.get_device_state(device_id, subsystem)
-        if not target_state:
-             return
-
-        if target_state["target_version"] != current_version and state == "quiescent":
-             self.push_update(device_id, subsystem, target_state)
-        elif target_state["target_version"] == current_version:
-             pass
+    def trigger_rollback(self, device_id):
+        device_state = self.model_repo.get_device_state(device_id)
+        if not device_state:
+            return
+        
+        lkg = device_state.get("last_known_good")
+        if lkg:
+            print(f"Rolling back device {device_id} to LKG: {lkg}")
+            self.model_repo.set_target_version(device_id, lkg)
         else:
-             pass
+            print(f"No LKG for device {device_id}, cannot rollback.")
 
-    def push_update(self, device_id, subsystem, target_state):
-        make = target_state["make"]
-        model = target_state["model"]
-        version = target_state["target_version"]
-        
-        blob_info = self.blob_repo.get_blob_info(make, model, subsystem, version)
-        if not blob_info:
-             print(f"Blob not found for {make}/{model}/{subsystem}/{version}")
-             return
-        
-        update_payload = {
-            "subsystem": subsystem,
-            "version": version,
-            "url": blob_info["url"],
-            "sha256": blob_info["sha256"]
+    def check_for_updates(self):
+        self.model_repo = ModelRepository() # Reload model
+        for device_id in self.model_repo.get_all_devices():
+            state = self.model_repo.get_device_state(device_id)
+            target = state.get("target_version")
+            current = state.get("current_version")
+
+            if target and target != current:
+                if device_id not in self.pending_updates:
+                    self.initiate_update(device_id, state)
+                else:
+                    # Check for timeout
+                    start_time = self.pending_updates[device_id]['start_time']
+                    if time.time() - start_time > self.timeout_seconds:
+                        print(f"Update for {device_id} timed out.")
+                        self.trigger_rollback(device_id)
+                        del self.pending_updates[device_id]
+
+    def initiate_update(self, device_id, device_state):
+        target_version = device_state.get("target_version")
+        make = device_state.get("make")
+        model = device_state.get("model")
+        subsystem = device_state.get("subsystem")
+
+        blob_path, sha256 = self.blob_repo.get_blob_info(make, model, subsystem, target_version)
+        if not blob_path:
+            print(f"Error: Blob not found for {make}/{model}/{subsystem} version {target_version}")
+            return
+
+        print(f"Initiating update for {device_id} to version {target_version}")
+        payload = {
+            "version": target_version,
+            "url": f"file://{os.path.abspath(blob_path)}",
+            "sha256": sha256
         }
-        
-        print(f"Pushing update to {device_id}: {version}")
-        self.update_start_times[device_id] = time.time()
-        self.mqtt.publish(f"butler/{device_id}/update_payload", device_id, "update_payload", update_payload)
+        self.publish(device_id, "update_payload", payload)
+        self.pending_updates[device_id] = {
+            'start_time': time.time(),
+            'target_version': target_version
+        }
 
 def main():
-    import argparse
-    parser = argparse.ArgumentParser(description="Butler Orchestrator")
+    parser = argparse.ArgumentParser()
     parser.add_argument("-f", "--failure", action="store_true", help="Enable failure mode")
     args = parser.parse_args()
 
     orchestrator = ButlerOrchestrator(failure_mode=args.failure)
-    orchestrator.start()
+    orchestrator.connect()
+    orchestrator.loop_start()
+
+    print("Butler Orchestrator running...")
     try:
         while True:
-            orchestrator.reconcile()
-            time.sleep(5) # Reconcile every 5 seconds
+            orchestrator.check_for_updates()
+            time.sleep(5)
     except KeyboardInterrupt:
-        orchestrator.stop()
+        pass
 
 if __name__ == "__main__":
+    import os
     main()
