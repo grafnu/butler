@@ -49,6 +49,7 @@ Responsible for tracking the "source of truth" for the fleet.
 - **Reconciliation:** Any change to a `target_version` should act as a trigger for the Butler Orchestrator.
 - **Environment Isolation:** The repository MUST support an environment variable `BUTLER_MODEL_FILE` to override the default model storage path. This is critical for parallel testing and isolating demo environments from developer state.
 - **Atomicity:** All updates to the model file MUST be atomic (e.g., write to a temporary file and rename) to prevent corruption during system crashes.
+- **Interface:** Should be accessed through the `mocket` component.
 
 ### 3.3 Butler Orchestrator (Control Logic)
 The central engine that manages the update lifecycle state machine:
@@ -58,13 +59,15 @@ The central engine that manages the update lifecycle state machine:
 - **Rollback Logic:** On critical failure, the Orchestrator MUST automatically revert the `target_version` in the Model Repository to the LKG version.
 - **Trigger Detect:** Butler should automatically detect changes in the site model for the target or expected version.
 - **Timeout Management:** The Orchestrator MUST implement a configurable timeout (default 60s) for devices in the `pending` state. If a device fails to report `success` or `failure` within this window, it must be treated as a failure and potentially trigger a rollback.
+- **Handshake:** Should implement the UUFI startup handshake.
 
 ### 3.4 Device Conduit (Client-side)
 The implementation on the device must adhere to this state flow:
-1. **Report Status:** Periodically publish current version and state (`quiescent`).
-2. **Handle Update:** Upon receiving `update_payload`, transition to `pending`.
-3. **Verify & Apply:** Download the blob, verify the SHA256 hash, and apply the update.
-4. **Finalize:** Report `success` (if verified) or `failure` (if hash mismatch or install error).
+- **Report Status:** Periodically publish current version and state (`quiescent`).
+- **Handle Update:** Upon receiving `update_payload`, transition to `pending`.
+- **Verify & Apply:** Download the blob, verify the SHA256 hash, and apply the update.
+- **Finalize:** Report `success` (if verified) or `failure` (if hash mismatch or install error).
+- **Interface:** Should be accessed through the `mocket` component.
 
 ## 4. System Behaviors
 
@@ -136,7 +139,7 @@ They are all required unless but in square brackets (e.g. [option]).
   - `bin/observe`
 - **Register:** A tool to add a device to the model.
   - `bin/register device_id`
-- **Mocket:** An implementation of a mock device that received config messages and gives mock expected results.
+- **Mocket:** An mock implementation of the UDMIS service (and consequently target device)
   - `bin/mocket device_id`
   - Tag should be `mockit` in messages source and logging
 - **Butler**: The core butler program that handlers the necessary orchestration and state machine.
