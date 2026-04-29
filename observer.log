@@ -1,0 +1,10 @@
+[observer] Connecting to localhost:1883...
+[observer] Connected to MQTT broker
+
+--- udmi/reflect/test ---
+{
+  "status": "ok"
+}
+
+--- butler/test (Raw) ---
+raw message

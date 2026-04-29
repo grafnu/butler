@@ -1,0 +1,3 @@
+[verifier] Connected to MQTT broker at localhost:1883
+[verifier] Verifier connected, acting as System proxy
+[verifier] Handling handshake from butler

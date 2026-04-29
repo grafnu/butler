@@ -1,0 +1,11 @@
+{
+  "dev1": {
+    "target_version": "1.1",
+    "current_version": "1.1",
+    "last_known_good": "1.1",
+    "state": "quiescent",
+    "make": "default",
+    "model": "default",
+    "subsystem": "default"
+  }
+}

@@ -1,0 +1,4 @@
+[butler] Connected to MQTT broker at localhost:1883
+[butler] Orchestrator connected
+[butler] Started handshake with transaction UUFI:butler:ea87fcfa
+[butler] Handshake complete!

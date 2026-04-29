@@ -1,88 +1,78 @@
 import json
-import re
 from butler.common import ButlerMQTTBase
 
 class ButlerVerifier(ButlerMQTTBase):
-    def __init__(self, host="localhost", port=1883):
-        super().__init__(source="verifier", host=host, port=port)
-        # device_id -> current_state
-        self.device_states = {}
-        # States: IDLE, UPDATING, PENDING
+    def __init__(self):
+        super().__init__(source="verifier")
+        self.device_states = {} # device_id -> last_status
 
     def on_connect(self):
-        print("Verifier connected. Subscribing to devices/+/state and devices/+/config")
-        self.subscribe("devices/+/state")
-        self.subscribe("devices/+/config")
+        print("[verifier] Verifier connected, acting as System proxy")
+        # System subscribes to all reflects to relay them
+        self.client.subscribe("udmi/reflect/#")
 
-    def on_message(self, topic, data):
-        # Validate timestamp format
-        timestamp = data.get("timestamp", "")
-        if not re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", timestamp):
-            source = data.get("source", "unknown")
-            print(f"[{source}] REJECT: Invalid timestamp format: {timestamp}")
-            # We don't have a specific device_id here if it's a general message, 
-            # but we can try to extract it from topic or data.
-            match = re.match(r"devices/([^/]+)/", topic)
-            device_id = match.group(1) if match else "unknown"
-            self._report(device_id, "fail", f"Invalid timestamp format from {source}: {timestamp}")
-            return
-
-        # devices/{device_id}/{type}
-        match = re.match(r"devices/([^/]+)/([^/]+)", topic)
-        if not match:
-            return
-
-        device_id = match.group(1)
-        msg_type = match.group(2)
+    def on_message(self, topic, device_id, sub_type, sub_folder, data):
+        payload = data.get("payload", {})
+        source = data.get("source")
         
-        current_internal_state = self.device_states.get(device_id, "IDLE")
+        # 1. Handle UUFI Handshake (System side)
+        if sub_type == "state" and sub_folder == "udmi":
+            self.handle_handshake_state(device_id, source, payload)
+            return
 
-        if msg_type == "config":
-            self.device_states[device_id] = "UPDATING"
-            print(f"[{device_id}] Received config. Moving to UPDATING state.")
-            # No verification message yet, waiting for pending status
+        # 2. Relay reflect to reply (Simplified system behavior)
+        # In UUFI, state reflects are often relayed to all interested clients
+        # Config reflects are relayed to the target device
+        if sub_type in ["state", "config"]:
+            # Relay as reply
+            self.publish_uufi(device_id, sub_type, payload, sub_folder, direction="reply")
+            
+            # Validation logic
+            if sub_type == "state" and sub_folder == "update":
+                status = payload.get("status")
+                last_status = self.device_states.get(device_id)
+                if last_status == "pending" and status == "quiescent":
+                    # This might be an invalid transition if success/failure was skipped
+                    self.report_verification(device_id, f"WARNING: {device_id} transitioned from pending to quiescent without reporting success/failure")
+                self.device_states[device_id] = status
+                self.report_verification(device_id, f"Device {device_id} state: {status}")
 
-        elif msg_type == "state":
-            device_reported_state = data.get("payload", {}).get("state")
-            print(f"[{device_id}] Reported state: {device_reported_state} (Internal state: {current_internal_state})")
+        # 3. Validation for config
+        if sub_type == "config" and sub_folder == "update":
+            self.report_verification(device_id, f"Update config sent to {device_id}")
 
-            if device_reported_state == "pending":
-                if current_internal_state == "UPDATING":
-                    self.device_states[device_id] = "PENDING"
-                    self._report(device_id, "pass", "Device correctly transitioned to PENDING after update_payload")
-                elif current_internal_state == "IDLE":
-                    # Might have missed update_payload, but we allow it for robustness
-                    self.device_states[device_id] = "PENDING"
-                # If already PENDING, just ignore (duplicate status)
+    def handle_handshake_state(self, device_id, source, payload):
+        udmi = payload.get("udmi", {})
+        setup = udmi.get("setup", {})
+        transaction_id = setup.get("transaction_id")
+        
+        print(f"[verifier] Handling handshake from {source}")
+        
+        response_payload = {
+            "udmi": {
+                "setup": {
+                    "functions_min": 9,
+                    "functions_max": 9,
+                    "udmi_version": "1.5.2"
+                },
+                "reply": {
+                    "functions_ver": 9,
+                    "transaction_id": transaction_id,
+                    "msg_source": source
+                }
+            }
+        }
+        self.publish_uufi(device_id, "config", response_payload, "udmi", direction="reply", target_source=source)
 
-            elif device_reported_state in ["success", "failure"]:
-                if current_internal_state == "PENDING":
-                    self.device_states[device_id] = "IDLE"
-                    self._report(device_id, "pass", f"Device correctly transitioned from PENDING to {device_reported_state.upper()}")
-                else:
-                    self._report(device_id, "fail", f"Invalid state transition: {device_reported_state.upper()} while in {current_internal_state} state")
-                    self.device_states[device_id] = "IDLE"
-
-            elif device_reported_state == "quiescent":
-                # If we were in PENDING, we should have seen success/failure first, 
-                # but sometimes we might miss it. 
-                # However, if we are in IDLE, it's normal.
-                if current_internal_state != "IDLE":
-                    # If we jumped straight to quiescent from UPDATING or PENDING
-                    self._report(device_id, "fail", f"Invalid state transition: QUIESCENT while in {current_internal_state} state")
-                self.device_states[device_id] = "IDLE"
-
-    def _report(self, device_id, result, message):
-        print(f"[{device_id}] VERIFY {result.upper()}: {message}")
-        self.publish(device_id, "events", {"result": result, "message": message}, subfolder="verify")
+    def report_verification(self, device_id, message):
+        print(f"VERIFIER: {message}")
+        # Publish to canonical verify topic
+        self.publish_uufi(device_id, "events", {"message": message}, "verify", direction="reply")
 
 def main():
     verifier = ButlerVerifier()
     verifier.connect()
-    try:
-        verifier.loop_forever()
-    except KeyboardInterrupt:
-        print("\nStopping verifier...")
+    verifier.loop_forever()
 
 if __name__ == "__main__":
     main()

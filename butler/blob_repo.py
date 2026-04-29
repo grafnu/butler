@@ -1,40 +1,42 @@
 import os
 import hashlib
-import shutil
 
 class BlobRepository:
-    def __init__(self, base_path=None):
-        if base_path is None:
-            base_path = os.environ.get("BUTLER_BLOB_DIR", "blobs")
-        self.base_path = base_path
+    def __init__(self, base_dir="blobs"):
+        self.base_dir = base_dir
+        if not os.path.exists(self.base_dir):
+            os.makedirs(self.base_dir)
 
-    def _get_path(self, make, model, subsystem, version):
-        return os.path.join(self.base_path, make, model, subsystem, version)
+    def get_blob_path(self, make, model, subsystem, version):
+        return os.path.join(self.base_dir, make, model, subsystem, version, "bundle.bin")
 
-    def store_blob(self, make, model, subsystem, version, content):
-        dir_path = self._get_path(make, model, subsystem, version)
-        os.makedirs(dir_path, exist_ok=True)
+    def store_blob(self, make, model, subsystem, version, data):
+        path = self.get_blob_path(make, model, subsystem, version)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'wb') as f:
+            f.write(data)
         
-        blob_path = os.path.join(dir_path, "blob.bin")
-        with open(blob_path, "wb") as f:
-            f.write(content)
+        sha256 = hashlib.sha256(data).hexdigest()
+        with open(path + ".sha256", 'w') as f:
+            f.write(sha256)
         
-        sha256_hash = hashlib.sha256(content).hexdigest()
-        sha_path = os.path.join(dir_path, "blob.sha256")
-        with open(sha_path, "w") as f:
-            f.write(sha256_hash)
-            
-        return blob_path, sha256_hash
+        return path, sha256
 
-    def get_blob_info(self, make, model, subsystem, version):
-        dir_path = self._get_path(make, model, subsystem, version)
-        blob_path = os.path.join(dir_path, "blob.bin")
-        sha_path = os.path.join(dir_path, "blob.sha256")
+    def get_blob_metadata(self, make, model, subsystem, version):
+        path = self.get_blob_path(make, model, subsystem, version)
+        if not os.path.exists(path):
+            return None
         
-        if not os.path.exists(blob_path):
-            return None, None
-            
-        with open(sha_path, "r") as f:
-            sha256_hash = f.read().strip()
-            
-        return blob_path, sha256_hash
+        sha256_path = path + ".sha256"
+        if os.path.exists(sha256_path):
+            with open(sha256_path, 'r') as f:
+                sha256 = f.read().strip()
+        else:
+            with open(path, 'rb') as f:
+                sha256 = hashlib.sha256(f.read()).hexdigest()
+        
+        return {
+            "path": os.path.abspath(path),
+            "sha256": sha256,
+            "url": f"file://{os.path.abspath(path)}"
+        }
