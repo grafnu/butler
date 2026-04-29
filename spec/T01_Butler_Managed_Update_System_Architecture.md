@@ -136,7 +136,7 @@ They are all required unless but in square brackets (e.g. [option]).
   - `bin/observe`
 - **Register:** A tool to add a device to the model.
   - `bin/register device_id`
-- **Mocket:** An implementation of a mock device that received config messages and gives mock expected results.
+- **Mocket:** An mock implementation of the UDMIS service (and consequently target device)
   - `bin/mocket device_id`
   - Tag should be `mockit` in messages source and logging
 - **Butler**: The core butler program that handlers the necessary orchestration and state machine.
