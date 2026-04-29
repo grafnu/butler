@@ -4,33 +4,33 @@ import os
 import sys
 
 def main():
-    print("Starting Smoke Test (T03 Final)...")
+    print("Starting Smoke Test (T01 Refined)...")
     
     # 1. Setup
     print("Running setup...")
     subprocess.run([sys.executable, "-m", "butler.bus_setup"], check=True)
     
-    # 2. Start Verifier (System Proxy)
-    print("Starting Verifier...")
-    verifier = subprocess.Popen([sys.executable, "-m", "butler.verifier"])
-    time.sleep(2)
-    
-    # 3. Start Orchestrator
-    print("Starting Orchestrator...")
-    orchestrator = subprocess.Popen([sys.executable, "-m", "butler.orchestrator"])
-    time.sleep(2)
-    
-    # 4. Start Mocket
+    # 2. Start Mocket (System Proxy + Device Conduit)
     print("Starting Mocket...")
     mocket = subprocess.Popen([sys.executable, "-m", "butler.device", "dev1"])
     time.sleep(2)
     
-    # 5. Register device in model directly (CLI tool behavior)
+    # 3. Start Verifier
+    print("Starting Verifier...")
+    verifier = subprocess.Popen([sys.executable, "-m", "butler.verifier"])
+    time.sleep(1)
+    
+    # 4. Start Orchestrator
+    print("Starting Orchestrator...")
+    orchestrator = subprocess.Popen([sys.executable, "-m", "butler.orchestrator"])
+    time.sleep(3)
+    
+    # 5. Register device
     print("Registering device dev1...")
     from butler.model_repo import ModelRepository
     ModelRepository().register_device("dev1")
     
-    # 6. Trigger update directly (CLI tool behavior)
+    # 6. Trigger update
     print("Triggering update...")
     from butler.blob_repo import BlobRepository
     BlobRepository().store_blob("default", "default", "default", "1.1", b"dummy content")

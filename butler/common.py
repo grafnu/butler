@@ -31,18 +31,25 @@ class ButlerMQTTBase:
     def _on_message(self, client, userdata, msg):
         try:
             data = json.loads(msg.payload.decode())
+            source = data.get("source")
+            
             if self.track_nonces:
                 nonce = data.get("nonce")
-                if nonce:
+                # Only drop duplicates if they are NOT from ourselves
+                # If they ARE from ourselves, it's just the broker echo,
+                # but we might still want to process it (e.g. relaying reflects)
+                if nonce and source != self.source:
                     if nonce in self.seen_nonces:
-                        # Duplicate message, ignore
                         return
                     self.seen_nonces.add(nonce)
                     if len(self.seen_nonces) > self.max_seen_nonces:
-                        # Simple cleanup
                         self.seen_nonces.pop()
 
             parts = msg.topic.split('/')
+            
+            device_id = None
+            sub_type = None
+            sub_folder = None
             
             if parts[0] == "udmi":
                 direction = parts[1]
@@ -62,10 +69,9 @@ class ButlerMQTTBase:
                 sub_type = parts[2] if len(parts) > 2 else None
                 sub_folder = parts[3] if len(parts) > 3 else None
 
-            # Check for handshake config (System reply to Client)
+            # Handshake check
             if sub_type == "config" and sub_folder == "udmi":
-                payload = data.get("payload", {})
-                udmi = payload.get("udmi", {})
+                udmi = data.get("udmi", {})
                 reply = udmi.get("reply", {})
                 if reply.get("transaction_id") == self.handshake_transaction_id:
                     self.handshake_complete = True
@@ -73,7 +79,8 @@ class ButlerMQTTBase:
 
             self.on_message(msg.topic, device_id, sub_type, sub_folder, data)
         except Exception as e:
-            print(f"Error decoding message on {msg.topic}: {e}")
+            if self.track_nonces:
+                print(f"[{self.source}] Error decoding message on {msg.topic}: {e}")
 
     def on_connect(self):
         pass
@@ -96,19 +103,17 @@ class ButlerMQTTBase:
     def generate_nonce(self):
         return secrets.token_hex(4)
 
-    def publish_uufi(self, device_id, sub_type, payload, sub_folder=None, direction="reflect", target_source=None):
-        envelope = {
-            "version": "1.5.2",
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+    def publish_uufi(self, device_id, sub_type, payload_data, sub_folder=None, direction="reflect", target_source=None, transaction_id=None):
+        data = {
+            "uufi_version": "1.5.2",
+            "publish_time": datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
             "source": self.source,
-            "nonce": self.generate_nonce(),
-            "projectId": self.project_id,
-            "deviceRegistryId": self.registry_id,
-            "deviceId": device_id,
-            "subType": sub_type,
-            "subFolder": sub_folder,
-            "payload": payload
+            "nonce": self.generate_nonce()
         }
+        if transaction_id:
+            data["transaction_id"] = transaction_id
+        
+        data.update(payload_data)
         
         topic = f"udmi/{direction}"
         if direction == "reply" and target_source:
@@ -118,7 +123,7 @@ class ButlerMQTTBase:
         if sub_folder:
             topic += f"/{sub_folder}"
         
-        self.client.publish(topic, json.dumps(envelope))
+        self.client.publish(topic, json.dumps(data))
 
     def subscribe_uufi(self, direction="reflect", target_source=None):
         topic = f"udmi/{direction}"
@@ -141,7 +146,7 @@ class ButlerMQTTBase:
             }
         }
         self.subscribe_uufi(direction="reply", target_source=self.source)
-        self.publish_uufi(device_id, "state", payload, "udmi")
+        self.publish_uufi(device_id, "state", payload, "udmi", transaction_id=self.handshake_transaction_id)
         print(f"[{self.source}] Started handshake with transaction {self.handshake_transaction_id}")
 
     def wait_for_handshake(self, timeout=10):
