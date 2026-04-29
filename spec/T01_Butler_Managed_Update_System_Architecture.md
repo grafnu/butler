@@ -122,6 +122,7 @@ All temporary working files from the smoke test should be sequestered in a `test
 overall directory.
 
 ## 6. Operational Tooling Requirements
+
 To support development, debugging, and ongoing operations, the following capabilities must be present. They
 should all be simple python executables in a top-level `bin/` directory as indicated. They should all use
 an implicit understanding of the underlying communication substrate. Only the indicated command line arguments
@@ -131,26 +132,31 @@ All commands should be restartable without any problems if they are in a quiesce
 in the middle of a transation it's OK if the system reports a transient error as long as it recovers to a stable
 state. Retrying the transation should then behave as expected (assuming no other restarts).
 
+All commands should ouput any connectivity parameters when they startup. The parameters should be sufficient
+to diagnose if any two components are utilizing the same communication substrate.
+
 They are all required unless but in square brackets (e.g. [option]).
 
+- **Smoker:** A complete quick testing utility that tests all the basic components to make sure they work at basic level, but is not comprehensive.
+  - `bin/smokeit`
 - **Setup:** A mechanism to initialize the persistent communication substrate.
   - `bin/setup`
 - **Observer:** A tool to monitor and pretty-print the JSON message stream in real-time.
   - `bin/observe`
-- **Register:** A tool to add a device to the model.
-  - `bin/register device_id`
-- **Mocket:** An mock implementation of the UDMIS service (and consequently target device)
-  - `bin/mocket device_id`
-  - Tag should be `mockit` in messages source and logging
-- **Butler**: The core butler program that handlers the necessary orchestration and state machine.
-  - `bin/butler`
-  - Tag should be `butler` in messages source and logging
-- **Trigger**: A utility that triggers necessary situations to test the system, e.g. changing the available blob version.
-  - `bin/trigger device_id blob_version blob_path`
-    - 'blob_version' is the semantic version of the blob (e.g. '1.3').
-    - 'blob_path' is the path to the blob binary.
 - **Verifier:** A monitoring utility to monitor the communication channel and report results onto the `verify` topic.
   - `bin/verifier`
   - Tag should be `verifier` in messages source and logging
-- **Smoker:** A complete quick testing utility that tests all the basic components to make sure they work at basic level, but is not comprehensive.
-  - `bin/smokeit`
+- **Butler**: The core butler program that handlers the necessary orchestration and state machine.
+  - `bin/butler`
+  - Tag should be `butler` in messages source and logging
+- **Mocket:** An mock implementation of the UDMIS service (and consequently target device)
+  - `bin/mocket device_id`
+  - Tag should be `mockit` in messages source and logging
+  - The following commands run in the same context as `mocket` and can assume direct access to underlying resources (e.g. filesystem)
+    - **Register:** A tool to add a device to the model.
+      - `bin/register device_id`
+    - **Trigger**: A utility that triggers necessary situations to test the system, e.g. changing the available blob version.
+      - `bin/trigger device_id blob_version blob_path`
+        - 'device_id' the device id for the blob upate.
+        - 'blob_version' is the semantic version of the blob (e.g. '1.3').
+        - 'blob_path' is the path to the blob binary.
