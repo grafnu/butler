@@ -21,7 +21,7 @@ class MockDevice:
 
     def on_connect(self, client, userdata, flags, rc):
         if rc == 0:
-            client.subscribe(f"butler/{self.device_id}/update_payload")
+            client.subscribe(f"butler/devices/{self.device_id}/config/system")
             # Initial status report
             self.report_status()
         else:
@@ -29,7 +29,7 @@ class MockDevice:
 
     def on_message(self, client, userdata, msg):
         message = parse_message(msg.payload)
-        if not message or message.get("type") != "update_payload":
+        if not message:
             return
 
         nonce = message.get("nonce")
@@ -39,11 +39,14 @@ class MockDevice:
         if len(self.seen_nonces) > 1000:
             self.seen_nonces.clear()
 
-        payload = message.get("payload", {})
-        url = payload.get("url")
-        sha256 = payload.get("sha256")
-        version = payload.get("version")
+        system = message.get("system", {})
+        url = system.get("url")
+        sha256 = system.get("sha256")
+        version = system.get("version")
         
+        if not version:
+            return
+
         print(f"[mockit] Device {self.device_id} received update to {version}")
         
         # Transition to pending
@@ -52,7 +55,6 @@ class MockDevice:
         
         if self.fail_mode:
             print(f"[mockit] FAILURE MODE: Not progressing from pending.")
-            # We stay in pending and never report success/failure
             return
 
         # Simulate download and verify
@@ -77,9 +79,6 @@ class MockDevice:
                 self.report_status()
                 # After reporting success, move back to quiescent
                 self.state = "quiescent"
-                # Success is a transient state in terms of reporting? 
-                # The spec says: "Report success (if verified) or failure".
-                # Then it says: "Report Status: Periodically publish current version and state (quiescent)".
             else:
                 print(f"[mockit] Hash mismatch! Expected {sha256}, got {actual_hash}")
                 self.state = "failure"
@@ -90,13 +89,13 @@ class MockDevice:
             self.report_status()
 
     def report_status(self):
-        payload = {
+        system_payload = {
             "current_version": self.current_version,
             "state": self.state,
             "subsystem": self.subsystem
         }
-        msg = create_message(source="mockit", destination="butler", msg_type="status", payload=payload)
-        self.client.publish(f"butler/{self.device_id}/status", json.dumps(msg))
+        msg = create_message(subfolder="system", payload=system_payload)
+        self.client.publish(f"butler/devices/{self.device_id}/state/system", json.dumps(msg))
 
     def run(self):
         self.client.connect("localhost", 1883, 60)

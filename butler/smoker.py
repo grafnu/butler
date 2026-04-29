@@ -56,8 +56,7 @@ def main():
         
         # 5. Trigger update
         print("Triggering update...")
-        subprocess.run([sys.executable, "bin/trigger", "smoke-dev", "1.1.0", "requirements.txt"], env=env, check=True)
-        
+        subprocess.run([sys.executable, "bin/trigger", "smoke-dev", "1.1.0", "butler/requirements.txt"], env=env, check=True)
         # 6. Wait and check
         timeout = 20
         start_time = time.time()

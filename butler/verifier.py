@@ -23,9 +23,6 @@ class Verifier:
     def on_message(self, client, userdata, msg):
         message = parse_message(msg.payload)
         if not message:
-            # We don't necessarily want to spam errors for every random message on the bus
-            # but the spec says "If any timestamp does not conform then validator should reject the message as invalid."
-            # Wait, "validator" or "verifier"? Spec says "validator should reject". Verifier IS the validator.
             return
 
         timestamp = message.get("timestamp")
@@ -33,22 +30,25 @@ class Verifier:
             self.report_error(f"Invalid timestamp format in message: {timestamp}")
             return
 
-        source = message.get("source")
-        msg_type = message.get("type")
-        device_id = None
-        
+        # Topic: butler/devices/{device_id}/{subType}/{subFolder}
         parts = msg.topic.split('/')
-        if len(parts) >= 2:
-            device_id = parts[1]
+        if len(parts) < 4:
+            return
+        
+        device_id = parts[2]
+        sub_type = parts[3]
+        sub_folder = parts[4] if len(parts) > 4 else None
 
-        if msg_type == "update_payload" and source == "butler":
+        if sub_type == "config" and sub_folder == "system":
             self.sequences[device_id] = ["update_sent"]
             print(f"[verifier] Detected update start for {device_id}")
         
-        elif msg_type == "status" and source == "mockit":
-            state = message.get("payload", {}).get("state")
+        elif sub_type == "state" and sub_folder == "system":
+            system = message.get("system", {})
+            state = system.get("state")
             if device_id in self.sequences:
-                self.sequences[device_id].append(state)
+                if state not in self.sequences[device_id]:
+                    self.sequences[device_id].append(state)
                 
                 if state == "success":
                     if "pending" in self.sequences[device_id]:
@@ -57,28 +57,25 @@ class Verifier:
                         self.report_error(f"Device {device_id} reported success without pending state")
                     del self.sequences[device_id]
                 elif state == "failure":
-                    # Check if it was a rollback or an expected failure
                     self.report_info(device_id, "Device reported failure state")
-                    # We might not delete the sequence yet if we expect a rollback?
-                    # But the spec says "When it detects a valid sequence... it will output a validation message."
                     del self.sequences[device_id]
 
     def report_success(self, device_id, text):
         payload = {"result": "PASS", "device_id": device_id, "message": text}
-        msg = create_message(source="verifier", destination="all", msg_type="verify", payload=payload)
-        self.client.publish(f"butler/{device_id}/verify", json.dumps(msg))
+        msg = create_message(subfolder="validation", payload=payload)
+        self.client.publish("butler/verify", json.dumps(msg))
         print(f"[verifier] SUCCESS: {device_id} - {text}")
 
     def report_error(self, text):
         payload = {"result": "FAIL", "message": text}
-        msg = create_message(source="verifier", destination="all", msg_type="verify", payload=payload)
+        msg = create_message(subfolder="validation", payload=payload)
         self.client.publish("butler/verify", json.dumps(msg))
         print(f"[verifier] ERROR: {text}")
 
     def report_info(self, device_id, text):
         payload = {"result": "INFO", "device_id": device_id, "message": text}
-        msg = create_message(source="verifier", destination="all", msg_type="verify", payload=payload)
-        self.client.publish(f"butler/{device_id}/verify", json.dumps(msg))
+        msg = create_message(subfolder="validation", payload=payload)
+        self.client.publish("butler/verify", json.dumps(msg))
         print(f"[verifier] INFO: {device_id} - {text}")
 
     def run(self):

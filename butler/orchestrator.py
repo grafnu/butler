@@ -20,13 +20,13 @@ class Orchestrator:
 
     def on_connect(self, client, userdata, flags, rc):
         if rc == 0:
-            client.subscribe("butler/+/status")
+            client.subscribe("butler/devices/+/state/system")
         else:
             print(f"Orchestrator failed to connect: {rc}")
 
     def on_message(self, client, userdata, msg):
         message = parse_message(msg.payload)
-        if not message or message.get("type") != "status":
+        if not message:
             return
 
         nonce = message.get("nonce")
@@ -36,11 +36,16 @@ class Orchestrator:
         if len(self.seen_nonces) > 1000:
             self.seen_nonces.clear()
 
-        device_id = msg.topic.split('/')[1]
-        payload = message.get("payload", {})
-        subsystem = payload.get("subsystem", "main")
-        state = payload.get("state")
-        current_version = payload.get("current_version")
+        # Topic: butler/devices/{device_id}/state/system
+        parts = msg.topic.split('/')
+        if len(parts) < 3:
+            return
+        device_id = parts[2]
+        
+        system = message.get("system", {})
+        subsystem = system.get("subsystem", "main")
+        state = system.get("state")
+        current_version = system.get("current_version")
 
         print(f"[butler] Status from {device_id}: {state} ({current_version})")
 
@@ -55,8 +60,6 @@ class Orchestrator:
                 del self.pending_updates[device_id]
         elif state == "pending":
             if device_id in self.pending_updates:
-                # Refresh timeout? Spec says treat as failure if no success/failure within window.
-                # So we just let the timer run.
                 pass
 
     def check_reconciliation(self):
@@ -79,14 +82,13 @@ class Orchestrator:
                     )
                     
                     if metadata:
-                        payload = {
+                        system_payload = {
                             "version": target,
                             "url": metadata["url"],
                             "sha256": metadata["sha256"]
                         }
-                        msg = create_message(source="butler", destination=device_id, 
-                                           msg_type="update_payload", payload=payload)
-                        self.client.publish(f"butler/{device_id}/update_payload", json.dumps(msg))
+                        msg = create_message(subfolder="system", payload=system_payload)
+                        self.client.publish(f"butler/devices/{device_id}/config/system", json.dumps(msg))
                         self.pending_updates[device_id] = {
                             "timestamp": time.time(),
                             "target_version": target,
