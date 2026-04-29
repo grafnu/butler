@@ -1,5 +1,59 @@
-# Butler Managed Update System Specification
+# Changes for Butler Managed Update System Architecture
+Updated: 2026-04-29 10:01:24
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### REPLACE in tab 'Butler Managed Update System Architecture' at the beginning of the tab
+**OLD CONTENT:**
+# Butler Managed Update Vibrant
+## Butler Update Management Overview
+Butler is a system that exists in a world of fleet management where a centralized controller is used to manage a fleet of devices. It uses an already established communication mechanism with the target devices to control sequenced operations in a regular and efficient manner. Internally, it manages state machines and other control logic to coordinate. The explicit goal is to have a declarative state-based property management system for devices.
+### Ecosystem Architecture
+The butler ecosystem consists of a number of components that work together to provide the complete offering. All components communicate in such a way that they satisfy the constraints of the Communication Substrate component. Device update management is sharded out into "software subsystems" where a particular subsystem for a device can be mapped to a specific blob version of that software.
+#### Control Mechanism
+This is the core mechanism for managing a state machine for each device and each software bundle, and each tuple of { device, bundle } has an independently managed state machine. Server state transitions are determined by input from the device state or the model repository.
+* quiescent
+  * model update triggers to active state
+* active
+  * delivery: Butler resolves the GCS path, fetches the SHA256 hash, and pushes a secure, time-limited Signed URL payload to the device via the Barbican routing layer.
+  * success: The device completes the update, publishes its new software identity, and Butler updates the Site Model to reflect compliance.
+* error
+  * device_error: The device aborts the installation due to failed hash verification or a fatal system error, publishing a 500-level ERROR state.
+  * rollback: Butler detects the fatal device error and autonomously triggers a cloud-side rollback by reverting the Target Configuration in the Site Model to the last known-good version.
+#### Device Conduit
+The Device Conduit represents the crucial communications layer responsible for all interaction between the server-side Control Mechanism and the device fleet. 
+##### State Machine
+The client states listed below reflect the device's status as it moves through the update lifecycle, from stable operation to actively processing a change.
+* Client states
+  * quiescent
+  * pending
+  * success
+  * failure
+##### UDMI Binding
+See uufi.md as the specification for interfacing with UDMI.
+#### Monitoring Dashboard
+The Monitoring Dashboard serves as the integrated diagnostic interface for viewing the system's current state and internal control logic. While the Butler Orchestration Engine performs the continuous monitoring and alerting on errors, this dashboard is the user-facing capability for operators to query and inspect the process. Its primary function is to provide transparency into the update lifecycle, which is essential for diagnosing issues, confirming compliance, and managing scaled rollouts.
+Key monitoring capabilities and state visibility include:
+* Displaying the state machine status for each unique tuple of { device, bundle }, including quiescent, active, and error states.
+* Providing visibility into complex device transitions, such as active *delivery* status, *success* confirmation, and cloud-side *rollback* actions triggered by *device_error* states.
+* Visualizing the progress and compliance of updates across the fleet, supporting the management of tunable rollouts (e.g., graded upgrade paths).
+* Showing relevant internal states and error alerts to aid in debugging and ensuring the robustness of the update process.
+#### Blob Repository
+The Blob Repository is a new internal component implemented as a secure Google Cloud Storage (GCS) object store for managing and hosting firmware versions, referred to as 'blobs'. It enforces a strict, deterministic pathing structure for file storage (e.g., *gs://{bucket}/{make}/{model}/{type}/{version}/bundle.bin*). Files are ingested with mandatory custom metadata that includes the exact 64-character SHA256 hash, which is critical for the device's cryptographic integrity verification before execution.
+#### Model Repository
+The model repository holds the expected state of any target device. This provides a lookup mechanism to determine the particular version of a blob that any device should be using for a specific software subsystem. Automatic change detection on the model acts as a trigger for device updates. When the expected bundle setting for a device is out of sync with the current bundle version an update is triggered.
+##### UDMIS Binding
+UDMIS service can provide the necessary information by providing an API for model query/response and change notification.
+#### Communication Substrate
+The communication substrate connects all of the other components together. The core Control Mechanism does all its communication to other components through a communication channel that satisfies the core requirements of the substrate:
+* All communication messages must be externally visible so they can be logged and inspected.
+* All messages are inspectable in a predictable JSON format that is defined by an explicit schema.
+* Message attributes clearly identify the source, destination, and type of the message.
+* An authenticated utility program is available to tap into any message stream to log and inspect the message stream.
+**NEW CONTENT:**
+# Butler Managed Update System Specification
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### INSERT in tab 'Butler Managed Update System Architecture' right after 'An authenticated utility program is available to tap into any message stream to log and inspect the message stream.'
+**NEW CONTENT:**
 This document defines the functional requirements and architectural specifications for the Butler Managed Update System. It provides sufficient detail to implement a functionally compatible version of the system using any technology stack.
 
 ## 1. System Overview
@@ -131,23 +185,24 @@ state. Retrying the transation should then behave as expected (assuming no other
 They are all required unless but in square brackets (e.g. [option]).
 
 - **Setup:** A mechanism to initialize the persistent communication substrate.
-  - `bin/setup`
+- `bin/setup`
 - **Observer:** A tool to monitor and pretty-print the JSON message stream in real-time.
-  - `bin/observe`
+- `bin/observe`
 - **Register:** A tool to add a device to the model.
-  - `bin/register device_id`
+- `bin/register device_id`
 - **Mocket:** An implementation of a mock device that received config messages and gives mock expected results.
-  - `bin/mocket device_id`
-  - Tag should be `mockit` in messages source and logging
+- `bin/mocket device_id`
+- Tag should be `mockit` in messages source and logging
 - **Butler**: The core butler program that handlers the necessary orchestration and state machine.
-  - `bin/butler`
-  - Tag should be `butler` in messages source and logging
+- `bin/butler`
+- Tag should be `butler` in messages source and logging
 - **Trigger**: A utility that triggers necessary situations to test the system, e.g. changing the available blob version.
-  - `bin/trigger device_id blob_version blob_path`
-    - 'blob_version' is the semantic version of the blob (e.g. '1.3').
-    - 'blob_path' is the path to the blob binary.
+- `bin/trigger device_id blob_version blob_path`
+- 'blob_version' is the semantic version of the blob (e.g. '1.3').
+- 'blob_path' is the path to the blob binary.
 - **Verifier:** A monitoring utility to monitor the communication channel and report results onto the `verify` topic.
-  - `bin/verifier`
-  - Tag should be `verifier` in messages source and logging
+- `bin/verifier`
+- Tag should be `verifier` in messages source and logging
 - **Smoker:** A complete quick testing utility that tests all the basic components to make sure they work at basic level, but is not comprehensive.
-  - `bin/smokeit`
+- `bin/smokeit`
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
