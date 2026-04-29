@@ -109,6 +109,11 @@ The verification watcher and the rest of the system can only communicate over th
 Add an `-f` flag to both `mocket` and `butler` that introduces a failure mode of some kind. E.g., it does not progress to the next intended
 state. When this is the case, `verifier` should detect that there was an invalid state transition and indicate that the sequence failed.
 
+### Observer
+
+The `observe` utility should observe _all_ available traffic for the indicated communication channel. This should show all the communication
+between the components, regardless of the `device_id` or other configuration parameters.
+
 ### Smoke Tester
 
 The smoke tester does a simple test run with all the tools to make sure they are mostly working (no syntax errors, startup error, etc...),
