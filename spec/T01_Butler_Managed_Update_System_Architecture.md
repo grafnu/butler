@@ -127,12 +127,20 @@ All temporary working files from the smoke test should be sequestered in a `test
 overall directory.
 
 ## 6. Operational Tooling Requirements
-
 To support development, debugging, and ongoing operations, the following capabilities must be present. They
 should all be simple python executables in a top-level `bin/` directory as indicated. They should all use
 an implicit understanding of the underlying communication substrate. Only the indicated command line arguments
 are allowed. There should be no other files in the `bin/` directory that are not explicitly listed here.
 
+### 6.0 Observability Standards
+To ensure the reliability and transparency of the system, all monitoring and diagnostic tools (e.g., `bin/observe`, `bin/verifier`) MUST adhere to these principles:
+
+1.  **Protocol Decoupling:** Monitoring tools SHOULD NOT share stateful protocol logic (such as nonce tracking, idempotency checks, or handshake state) with the core `butler` or `mocket` components. They must operate as "transparent taps" to avoid masking underlying network or protocol issues.
+2.  **Graceful Degradation:** Tools MUST handle malformed, non-JSON, or non-compliant messages gracefully. If a message cannot be parsed according to the UUFI schema, it MUST be displayed in its raw format rather than being suppressed.
+3.  **Real-time Transparency:** Tools designed for real-time monitoring MUST use unbuffered output (e.g., explicit flushing of `stdout`) to ensure that messages are visible to the operator immediately upon arrival, especially when piped or redirected.
+4.  **Schema Agnosticism:** While tools should "pretty-print" known schemas, they MUST NOT use strict topic-parsing logic that drops messages that do not match the expected `udmi/{reflect,reply}/...` structure.
+
+### 6.1 Tooling List
 All commands should be restartable without any problems if they are in a quiescent state. If the are restarted
 in the middle of a transation it's OK if the system reports a transient error as long as it recovers to a stable
 state. Retrying the transation should then behave as expected (assuming no other restarts).
@@ -140,7 +148,7 @@ state. Retrying the transation should then behave as expected (assuming no other
 All commands should ouput any connectivity parameters when they startup. The parameters should be sufficient
 to diagnose if any two components are utilizing the same communication substrate.
 
-They are all required unless but in square brackets (e.g. [option]).
+They are all required unless put in square brackets (e.g. [option]).
 
 - **Smoker:** A complete quick testing utility that tests all the basic components to make sure they work at basic level, but is not comprehensive.
   - `bin/smokeit`
