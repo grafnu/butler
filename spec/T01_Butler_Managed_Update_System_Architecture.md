@@ -150,7 +150,7 @@ They are all required unless but in square brackets (e.g. [option]).
 All commands should ouput any connectivity parameters when they startup. The parameters should be sufficient
 to diagnose if any two components are utilizing the same communication substrate.
 
-They are all required unless but in square brackets (e.g. [option]).
+They are all required unless put in square brackets (e.g. [option]).
 
 - **Smoker:** A complete quick testing utility that tests all the basic components to make sure they work at basic level, but is not comprehensive.
   - `bin/smokeit`
