@@ -43,17 +43,25 @@ class ButlerMQTTBase:
     def generate_nonce(self):
         return secrets.token_hex(4)
 
-    def publish(self, destination, msg_type, payload, topic=None):
+    def publish(self, device_id, msg_type, payload, subfolder=None):
+        # msg_type: state, config, events
         envelope = {
+            "version": "1.5.2",
             "source": self.source,
-            "destination": destination,
-            "type": msg_type,
             "timestamp": datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
             "nonce": self.generate_nonce(),
             "payload": payload
         }
-        if topic is None:
-            topic = f"butler/{destination}/{msg_type}"
+        
+        if msg_type == "state":
+            topic = f"devices/{device_id}/state"
+        elif msg_type == "config":
+            topic = f"devices/{device_id}/config"
+        elif msg_type == "events":
+            folder = subfolder or "update"
+            topic = f"devices/{device_id}/events/{folder}"
+        else:
+            topic = f"devices/{device_id}/{msg_type}"
         
         self.client.publish(topic, json.dumps(envelope))
 

@@ -18,16 +18,14 @@ class ButlerOrchestrator(ButlerMQTTBase):
 
     def on_connect(self):
         print("Orchestrator connected to bus.")
-        self.subscribe("butler/+/status")
+        self.subscribe("devices/+/state")
 
     def on_message(self, topic, data):
         if self.failure_mode:
-            # In failure mode, we might just ignore everything or behave oddly.
-            # Spec says "introduces a failure mode of some kind... does not progress to next state"
             return
 
         parts = topic.split('/')
-        if len(parts) == 3 and parts[2] == "status":
+        if len(parts) == 3 and parts[2] == "state":
             device_id = parts[1]
             self.handle_status(device_id, data)
 
@@ -102,7 +100,7 @@ class ButlerOrchestrator(ButlerMQTTBase):
             "url": f"file://{os.path.abspath(blob_path)}",
             "sha256": sha256
         }
-        self.publish(device_id, "update_payload", payload)
+        self.publish(device_id, "config", payload)
         self.pending_updates[device_id] = {
             'start_time': time.time(),
             'target_version': target_version

@@ -10,9 +10,9 @@ class ButlerVerifier(ButlerMQTTBase):
         # States: IDLE, UPDATING, PENDING
 
     def on_connect(self):
-        print("Verifier connected. Subscribing to butler/+/status and butler/+/update_payload")
-        self.subscribe("butler/+/status")
-        self.subscribe("butler/+/update_payload")
+        print("Verifier connected. Subscribing to devices/+/state and devices/+/config")
+        self.subscribe("devices/+/state")
+        self.subscribe("devices/+/config")
 
     def on_message(self, topic, data):
         # Validate timestamp format
@@ -22,13 +22,13 @@ class ButlerVerifier(ButlerMQTTBase):
             print(f"[{source}] REJECT: Invalid timestamp format: {timestamp}")
             # We don't have a specific device_id here if it's a general message, 
             # but we can try to extract it from topic or data.
-            match = re.match(r"butler/([^/]+)/", topic)
+            match = re.match(r"devices/([^/]+)/", topic)
             device_id = match.group(1) if match else "unknown"
             self._report(device_id, "fail", f"Invalid timestamp format from {source}: {timestamp}")
             return
 
-        # butler/{device_id}/{type}
-        match = re.match(r"butler/([^/]+)/([^/]+)", topic)
+        # devices/{device_id}/{type}
+        match = re.match(r"devices/([^/]+)/([^/]+)", topic)
         if not match:
             return
 
@@ -37,14 +37,14 @@ class ButlerVerifier(ButlerMQTTBase):
         
         current_internal_state = self.device_states.get(device_id, "IDLE")
 
-        if msg_type == "update_payload":
+        if msg_type == "config":
             self.device_states[device_id] = "UPDATING"
-            print(f"[{device_id}] Received update_payload. Moving to UPDATING state.")
+            print(f"[{device_id}] Received config. Moving to UPDATING state.")
             # No verification message yet, waiting for pending status
 
-        elif msg_type == "status":
+        elif msg_type == "state":
             device_reported_state = data.get("payload", {}).get("state")
-            print(f"[{device_id}] Reported status: {device_reported_state} (Internal state: {current_internal_state})")
+            print(f"[{device_id}] Reported state: {device_reported_state} (Internal state: {current_internal_state})")
 
             if device_reported_state == "pending":
                 if current_internal_state == "UPDATING":
@@ -74,7 +74,7 @@ class ButlerVerifier(ButlerMQTTBase):
 
     def _report(self, device_id, result, message):
         print(f"[{device_id}] VERIFY {result.upper()}: {message}")
-        self.publish(device_id, "verify", {"result": result, "message": message})
+        self.publish(device_id, "events", {"result": result, "message": message}, subfolder="verify")
 
 def main():
     verifier = ButlerVerifier()

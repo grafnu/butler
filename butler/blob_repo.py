@@ -3,7 +3,9 @@ import hashlib
 import shutil
 
 class BlobRepository:
-    def __init__(self, base_path="blobs"):
+    def __init__(self, base_path=None):
+        if base_path is None:
+            base_path = os.environ.get("BUTLER_BLOB_DIR", "blobs")
         self.base_path = base_path
 
     def _get_path(self, make, model, subsystem, version):

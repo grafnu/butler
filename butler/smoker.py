@@ -14,6 +14,7 @@ def main():
     
     model_file = os.path.join(test_dir, "model.json")
     os.environ["BUTLER_MODEL_FILE"] = model_file
+    os.environ["BUTLER_BLOB_DIR"] = os.path.join(test_dir, "blobs")
     
     # Clean up model file if it exists to start fresh
     if os.path.exists(model_file):
@@ -85,7 +86,7 @@ def main():
         client = mqtt.Client()
         client.on_message = on_message
         client.connect("localhost", 1883)
-        client.subscribe(f"butler/{device_id}/verify")
+        client.subscribe(f"devices/{device_id}/events/verify")
         client.loop_start()
 
         # Wait for a 'pass' that indicates the transition to success

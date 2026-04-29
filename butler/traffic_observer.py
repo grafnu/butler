@@ -6,8 +6,8 @@ class TrafficObserver(ButlerMQTTBase):
         super().__init__(source="observer", host=host, port=port)
 
     def on_connect(self):
-        print("Traffic Observer connected. Subscribing to butler/#")
-        self.subscribe("butler/#")
+        print("Traffic Observer connected. Subscribing to devices/#")
+        self.subscribe("devices/#")
 
     def on_message(self, topic, data):
         print(f"\nTopic: {topic}")

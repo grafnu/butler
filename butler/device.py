@@ -24,11 +24,11 @@ class MocketDevice(ButlerMQTTBase):
 
     def on_connect(self):
         print(f"Device {self.device_id} connected to bus.")
-        self.subscribe(f"butler/{self.device_id}/update_payload")
+        self.subscribe(f"devices/{self.device_id}/config")
         self.report_status()
 
     def on_message(self, topic, data):
-        if topic == f"butler/{self.device_id}/update_payload":
+        if topic == f"devices/{self.device_id}/config":
             self.handle_update(data)
 
     def handle_update(self, data):
@@ -96,8 +96,7 @@ class MocketDevice(ButlerMQTTBase):
             "version": self.current_version,
             "state": self.state
         }
-        # Topic structure: butler/{device_id}/status
-        self.publish(self.device_id, "status", payload)
+        self.publish(self.device_id, "state", payload)
 
 def main():
     parser = argparse.ArgumentParser()
