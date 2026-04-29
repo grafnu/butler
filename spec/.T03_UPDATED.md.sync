@@ -1,3 +1,5 @@
+Updated 2026-04-29 10:01:24
+
 # Butler Managed Update System Specification
 
 This document defines the functional requirements and architectural specifications for the Butler Managed Update System. It provides sufficient detail to implement a functionally compatible version of the system using any technology stack.
@@ -131,23 +133,54 @@ state. Retrying the transation should then behave as expected (assuming no other
 They are all required unless but in square brackets (e.g. [option]).
 
 - **Setup:** A mechanism to initialize the persistent communication substrate.
-  - `bin/setup`
+- `bin/setup`
 - **Observer:** A tool to monitor and pretty-print the JSON message stream in real-time.
-  - `bin/observe`
+- `bin/observe`
 - **Register:** A tool to add a device to the model.
-  - `bin/register device_id`
+- `bin/register device_id`
 - **Mocket:** An implementation of a mock device that received config messages and gives mock expected results.
-  - `bin/mocket device_id`
-  - Tag should be `mockit` in messages source and logging
+- `bin/mocket device_id`
+- Tag should be `mockit` in messages source and logging
 - **Butler**: The core butler program that handlers the necessary orchestration and state machine.
-  - `bin/butler`
-  - Tag should be `butler` in messages source and logging
+- `bin/butler`
+- Tag should be `butler` in messages source and logging
 - **Trigger**: A utility that triggers necessary situations to test the system, e.g. changing the available blob version.
-  - `bin/trigger device_id blob_version blob_path`
-    - 'blob_version' is the semantic version of the blob (e.g. '1.3').
-    - 'blob_path' is the path to the blob binary.
+- `bin/trigger device_id blob_version blob_path`
+- 'blob_version' is the semantic version of the blob (e.g. '1.3').
+- 'blob_path' is the path to the blob binary.
 - **Verifier:** A monitoring utility to monitor the communication channel and report results onto the `verify` topic.
-  - `bin/verifier`
-  - Tag should be `verifier` in messages source and logging
+- `bin/verifier`
+- Tag should be `verifier` in messages source and logging
 - **Smoker:** A complete quick testing utility that tests all the basic components to make sure they work at basic level, but is not comprehensive.
-  - `bin/smokeit`
+- `bin/smokeit`
+
+
+
+graph TD
+%% External Dependencies
+subgraph External_Context [External Context]
+Manufacturer[Manufacturer] -- "Firmware Blobs" --> Ingestion
+SiteModel[(Site Model Database)] -- "Property Changes (Trigger)" --> Butler
+UDMIS[UDMIS / Schema Libraries] -.-> Butler
+end
+
+%% Internal Butler System
+subgraph Butler_System [Butler Orchestration Engine]
+Ingestion[Ingestion Interface / CLI] --> BlobRepo
+BlobRepo[(Blob Repository / Object Store)] --> Multiplexer
+Butler[Core Logic / Monitor] --> Multiplexer
+Multiplexer[Configuration Multiplexing] --> Payload[Payload Generation]
+end
+
+%% Delivery & Feedback
+subgraph Execution_Loop [Execution & Feedback]
+Payload --> Transport{MQTT / HTTP}
+Transport --> Devices[[Device Fleet]]
+Devices -- "Status / State Updates" --> Butler
+Butler -- "Failures / Errors" --> Alerts[Alerting / User Feedback]
+end
+
+%% Styling
+style Butler_System fill:#f9f,stroke:#333,stroke-width:2px
+style External_Context fill:#dfd,stroke:#333
+style Execution_Loop fill:#ddf,stroke:#333
