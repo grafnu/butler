@@ -96,9 +96,9 @@ An independently executed verification agent will watch the communication channe
 This capabilty should be used by an agent developing the system to ensure that the results are correct. If the verification results
 indicate test failure, they should have enough information to guide the implementing agent as to how to fix the problem.
 
-### Verification Watcher
+### The Verifier
 
-The Verification Watcher watches the channel and reports results if the observed sequences pass or fail expecations as accoring to the spec.
+The Verifier watches the channel and reports results if the observed sequences pass or fail expecations as accoring to the spec.
 It is purely an observational test utility, used to either validate an installed system or to guide an active agent towards a complete
 functioning implementation. When it detects a valid sequence, or an invalid message, it will output a validation message.
 
@@ -112,7 +112,8 @@ state. When this is the case, `verifier` should detect that there was an invalid
 ### Observer
 
 The `observe` utility should observe _all_ available traffic for the indicated communication channel. This should show all the communication
-between the components, regardless of the `device_id` or other configuration parameters.
+between the components, regardless of the `device_id` or other configuration parameters. Output should be on one line, including the complete
+message payload (don't truncate for line length).
 
 ### Smoke Tester
 
