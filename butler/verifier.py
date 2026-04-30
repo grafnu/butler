@@ -8,8 +8,8 @@ class ButlerVerifier(ButlerMQTTBase):
 
     def on_connect(self):
         print("[verifier] Verifier connected, observing traffic...")
-        # Verifier just listens to all replies and reflects
-        self.client.subscribe("udmi/#")
+        # Verifier just listens to all UUFI traffic
+        self.subscribe_uufi()
 
     def on_message(self, topic, device_id, sub_type, sub_folder, data):
         # Observational only

@@ -33,50 +33,43 @@ class ButlerMQTTBase:
             data = json.loads(msg.payload.decode())
             
             parts = msg.topic.split('/')
-            if parts[0] != "udmi":
+            # /uufi/r/{registryId}/d/{deviceId}/{subType}/{subFolder}
+            if len(parts) < 7 or parts[1] != "uufi" or parts[2] != "r" or parts[4] != "d":
                 return
 
-            direction = parts[1]
-            # udmi/{direction}[/{source}]/{projectId}/{registryId}/{deviceId}/{subType}/{subFolder}
-            
-            # Find offset based on whether source is present
-            # If direction is reply, it might have a source: udmi/reply/source/...
-            # If direction is reflect, it doesn't usually have a source in the topic path per uufi.md 
-            # but butler uses it. Let's look at how publish_uufi does it.
-            
-            if direction == "reply" and parts[2] != self.project_id:
-                source = parts[2]
-                offset = 3
-            else:
-                source = data.get("source")
-                offset = 2
+            registry_id = parts[3]
+            device_id = parts[5]
+            sub_type = parts[6]
+            sub_folder = parts[7] if len(parts) > 7 else None
 
-            project_id = parts[offset]
-            registry_id = parts[offset+1]
-            device_id = parts[offset+2]
-            sub_type = parts[offset+3]
-            sub_folder = parts[offset+4] if len(parts) > offset+4 else None
+            # Unwrap payload and merge envelope fields for compatibility
+            udmi_payload = data.get("payload", {})
+            for k, v in data.items():
+                if k != "payload":
+                    udmi_payload[k] = v
+            
+            source = udmi_payload.get("source")
+            if source == self.source:
+                return
 
             if self.track_nonces:
-                nonce = data.get("nonce")
+                nonce = udmi_payload.get("nonce")
                 if nonce and source != self.source:
                     if nonce in self.seen_nonces:
                         return
                     self.seen_nonces.add(nonce)
                     if len(self.seen_nonces) > self.max_seen_nonces:
-                        # self.seen_nonces is a set, so we can't pop(0). 
-                        # Butler used self.seen_nonces.pop() which is fine for a set.
                         self.seen_nonces.remove(next(iter(self.seen_nonces)))
 
             # Handshake check
             if sub_type == "config" and sub_folder == "udmi":
-                udmi = data.get("udmi", {})
+                udmi = udmi_payload.get("udmi", {})
                 reply = udmi.get("reply", {})
                 if reply.get("transaction_id") == self.handshake_transaction_id:
                     self.handshake_complete = True
                     print(f"[{self.source}] Handshake complete!")
 
-            self.on_message(msg.topic, device_id, sub_type, sub_folder, data)
+            self.on_message(msg.topic, device_id, sub_type, sub_folder, udmi_payload)
         except Exception as e:
             if self.track_nonces:
                 print(f"[{self.source}] Error decoding message on {msg.topic}: {e}")
@@ -106,35 +99,34 @@ class ButlerMQTTBase:
 
     def publish_uufi(self, device_id, sub_type, payload_data, sub_folder=None, direction="reflect", target_source=None, transaction_id=None):
         publish_time = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-        data = {
-            "uufi_version": "1.5.2",
-            "publish_time": publish_time,
+        nonce = self.generate_nonce()
+        
+        # Envelope fields
+        envelope = {
+            "projectId": self.project_id,
+            "deviceRegistryId": self.registry_id,
+            "deviceId": device_id,
+            "subFolder": sub_folder,
+            "subType": sub_type,
+            "transactionId": transaction_id or f"UUFI:{self.source}:{nonce}",
+            "publishTime": publish_time,
             "source": self.source,
-            "nonce": self.generate_nonce()
+            "nonce": nonce,
+            "payload": payload_data
         }
-        if transaction_id:
-            data["transaction_id"] = transaction_id
         
-        data.update(payload_data)
-        
-        # Canonical MQTT topic mapping for UUFI
-        # udmi/{direction}[/{source}]/{projectId}/{registryId}/{deviceId}/{subType}/{subFolder}
-        topic = f"udmi/{direction}"
-        if direction == "reply" and target_source:
-            topic += f"/{target_source}"
-        
-        topic += f"/{self.project_id}/{self.registry_id}/{device_id}/{sub_type}"
+        # MQTT Topic Structure according to uufi.md:
+        # /uufi/r/{registryId}/d/{deviceId}/{subType}/{subFolder}
+        topic = f"/uufi/r/{self.registry_id}/d/{device_id}/{sub_type}"
         if sub_folder:
             topic += f"/{sub_folder}"
         
-        self.client.publish(topic, json.dumps(data))
+        self.client.publish(topic, json.dumps(envelope))
 
     def subscribe_uufi(self, direction="reflect", target_source=None):
-        topic = f"udmi/{direction}"
-        if target_source:
-            topic += f"/{target_source}"
-        topic += "/#"
-        self.client.subscribe(topic)
+        # In the new MQTT scheme, reflect/reply are on the same topics
+        # We subscribe to the whole /uufi namespace
+        self.client.subscribe("/uufi/#")
 
     def start_handshake(self, device_id=None):
         device_id = device_id or self.registry_id
@@ -149,7 +141,7 @@ class ButlerMQTTBase:
                 }
             }
         }
-        self.subscribe_uufi(direction="reply", target_source=self.source)
+        self.subscribe_uufi()
         self.publish_uufi(device_id, "state", payload, "udmi", transaction_id=self.handshake_transaction_id)
         print(f"[{self.source}] Started handshake with transaction {self.handshake_transaction_id}")
 
