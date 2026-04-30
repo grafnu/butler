@@ -1,6 +1,5 @@
 import os
 import json
-import shutil
 
 class ModelRepository:
     def __init__(self, file_path=None):
@@ -67,6 +66,5 @@ class ModelRepository:
     def rollback(self, device_id, subsystem):
         if device_id in self.data.get("devices", {}) and subsystem in self.data["devices"][device_id]:
             lkg = self.data["devices"][device_id][subsystem].get("lkg_version", "0.0.0")
-            print(f"Rolling back {device_id}/{subsystem} to {lkg}")
             self.data["devices"][device_id][subsystem]["target_version"] = lkg
             self._save()

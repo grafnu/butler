@@ -4,30 +4,32 @@ import sys
 
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
-        client.subscribe("butler/#")
+        client.subscribe("#")
     else:
-        print(f"Failed to connect, return code {rc}")
         sys.exit(1)
 
 def on_message(client, userdata, msg):
-    print(f"\nTopic: {msg.topic}")
     try:
         data = json.loads(msg.payload)
-        print(json.dumps(data, indent=2))
+        payload_str = json.dumps(data)
     except json.JSONDecodeError:
-        print(f"Raw: {msg.payload.decode(errors='replace')}")
-    print("-" * 30)
+        payload_str = msg.payload.decode(errors='replace')
+    
+    print(f"Topic: {msg.topic} Payload: {payload_str}", flush=True)
 
 def main():
+    host = "localhost"
+    port = 1883
+    print(f"Observer connecting to MQTT broker at {host}:{port}", flush=True)
     client = mqtt.Client()
     client.on_connect = on_connect
     client.on_message = on_message
 
     try:
-        client.connect("localhost", 1883, 60)
+        client.connect(host, port, 60)
         client.loop_forever()
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error: {e}", file=sys.stderr, flush=True)
         sys.exit(1)
 
 if __name__ == "__main__":

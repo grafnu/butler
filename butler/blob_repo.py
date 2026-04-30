@@ -1,6 +1,5 @@
 import os
 import hashlib
-import shutil
 
 class BlobRepository:
     def __init__(self, base_dir=None):

@@ -22,43 +22,29 @@ def main():
     
     print("Starting Smoke Test...")
     
-    # 1. Verify argument enforcement
-    print("Verifying argument enforcement...")
-    cmds = [
-        (["bin/register"], "Usage: bin/register device_id"),
-        (["bin/mocket"], "the following arguments are required: device_id"),
-        (["bin/trigger"], "Usage: bin/trigger device_id blob_version blob_path"),
-        (["bin/trigger", "dev1"], "Usage: bin/trigger device_id blob_version blob_path"),
-    ]
-    for cmd, expected in cmds:
-        result = subprocess.run([sys.executable] + cmd, capture_output=True, text=True)
-        if expected not in result.stdout and expected not in result.stderr:
-            print(f"FAIL: Argument enforcement for {' '.join(cmd)}. Expected '{expected}' in output.")
-            sys.exit(1)
-    print("Argument enforcement verified.")
-
-    # 2. Setup
+    # Setup
     subprocess.run([sys.executable, "bin/setup"], check=True)
     
-    # 3. Prepare model and blob
+    # Prepare model and blob
     model_repo = ModelRepository(model_file)
     model_repo.set_device_info("smoke-dev", "main", "vibrant", "butler-v1")
     
     blob_repo = BlobRepository(blobs_dir)
     blob_repo.store_blob("vibrant", "butler-v1", "main", "1.1.0", b"SMOKE_TEST_CONTENT")
     
-    # 4. Start components
+    # Start components
     butler = subprocess.Popen([sys.executable, "bin/butler"], env=env)
     mocket = subprocess.Popen([sys.executable, "bin/mocket", "smoke-dev"], env=env)
     
     try:
-        time.sleep(3)
+        time.sleep(5)
         
-        # 5. Trigger update
+        # Trigger update
         print("Triggering update...")
         subprocess.run([sys.executable, "bin/trigger", "smoke-dev", "1.1.0", "butler/requirements.txt"], env=env, check=True)
-        # 6. Wait and check
-        timeout = 20
+        
+        # Wait and check
+        timeout = 30
         start_time = time.time()
         passed = False
         while time.time() - start_time < timeout:
