@@ -6,10 +6,11 @@ from butler.common import ButlerMQTTBase
 from butler.blob_repo import BlobRepository
 
 class ButlerOrchestrator(ButlerMQTTBase):
-    def __init__(self, failure_mode=False):
+    def __init__(self, failure_mode=False, timeout=60):
         super().__init__(source="butler")
         self.blob_repo = BlobRepository()
         self.failure_mode = failure_mode
+        self.timeout = timeout
         self.devices_pending = {} # device_id -> start_time
         self.fleet_model = {} # device_id -> state
 
@@ -128,8 +129,8 @@ class ButlerOrchestrator(ButlerMQTTBase):
         while True:
             now = time.time()
             for device_id, start_time in list(self.devices_pending.items()):
-                if now - start_time > 60:
-                    print(f"[butler] Timeout for {device_id}")
+                if now - start_time > self.timeout:
+                    print(f"[butler] Timeout for {device_id} after {self.timeout}s")
                     self.trigger_rollback(device_id, self.fleet_model.get(device_id, {}))
                     del self.devices_pending[device_id]
             time.sleep(1)
@@ -144,9 +145,10 @@ class ButlerOrchestrator(ButlerMQTTBase):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-f", "--failure", action="store_true", help="Enable failure mode")
+    parser.add_argument("-t", "--timeout", type=int, default=60, help="Pending state timeout (seconds)")
     args = parser.parse_args()
 
-    orchestrator = ButlerOrchestrator(failure_mode=args.failure)
+    orchestrator = ButlerOrchestrator(failure_mode=args.failure, timeout=args.timeout)
     orchestrator.connect()
     
     threading.Thread(target=orchestrator.check_timeouts, daemon=True).start()

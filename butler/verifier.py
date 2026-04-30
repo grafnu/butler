@@ -26,6 +26,9 @@ class ButlerVerifier(ButlerMQTTBase):
 
     def report_verification(self, device_id, message):
         print(f"VERIFIER: {message}")
+        payload = {"message": message}
+        # Assuming we can publish to a top-level topic 'verify'
+        self.client.publish("verify", json.dumps(payload))
 
 def main():
     verifier = ButlerVerifier()

@@ -2,7 +2,7 @@ import os
 import hashlib
 
 class BlobRepository:
-    def __init__(self, base_dir="blobs"):
+    def __init__(self, base_dir="testing/blobs"):
         self.base_dir = base_dir
         if not os.path.exists(self.base_dir):
             os.makedirs(self.base_dir)

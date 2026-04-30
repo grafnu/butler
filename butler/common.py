@@ -6,10 +6,10 @@ import os
 import paho.mqtt.client as mqtt
 
 class ButlerMQTTBase:
-    def __init__(self, source, host="localhost", port=1883, track_nonces=True):
+    def __init__(self, source, host=None, port=None, track_nonces=True):
         self.source = source
-        self.host = host
-        self.port = port
+        self.host = host or os.environ.get("MQTT_HOST", "localhost")
+        self.port = int(port or os.environ.get("MQTT_PORT", 1883))
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
@@ -23,7 +23,7 @@ class ButlerMQTTBase:
 
     def _on_connect(self, client, userdata, flags, rc):
         if rc == 0:
-            print(f"[{self.source}] Connected to MQTT broker at {self.host}:{self.port}")
+            print(f"[{self.source}] Successfully connected to MQTT broker at {self.host}:{self.port}")
             self.on_connect()
         else:
             print(f"Connection failed with code {rc}")
@@ -31,43 +31,42 @@ class ButlerMQTTBase:
     def _on_message(self, client, userdata, msg):
         try:
             data = json.loads(msg.payload.decode())
-            source = data.get("source")
             
+            parts = msg.topic.split('/')
+            if parts[0] != "udmi":
+                return
+
+            direction = parts[1]
+            # udmi/{direction}[/{source}]/{projectId}/{registryId}/{deviceId}/{subType}/{subFolder}
+            
+            # Find offset based on whether source is present
+            # If direction is reply, it might have a source: udmi/reply/source/...
+            # If direction is reflect, it doesn't usually have a source in the topic path per uufi.md 
+            # but butler uses it. Let's look at how publish_uufi does it.
+            
+            if direction == "reply" and parts[2] != self.project_id:
+                source = parts[2]
+                offset = 3
+            else:
+                source = data.get("source")
+                offset = 2
+
+            project_id = parts[offset]
+            registry_id = parts[offset+1]
+            device_id = parts[offset+2]
+            sub_type = parts[offset+3]
+            sub_folder = parts[offset+4] if len(parts) > offset+4 else None
+
             if self.track_nonces:
                 nonce = data.get("nonce")
-                # Only drop duplicates if they are NOT from ourselves
-                # If they ARE from ourselves, it's just the broker echo,
-                # but we might still want to process it (e.g. relaying reflects)
                 if nonce and source != self.source:
                     if nonce in self.seen_nonces:
                         return
                     self.seen_nonces.add(nonce)
                     if len(self.seen_nonces) > self.max_seen_nonces:
-                        self.seen_nonces.pop()
-
-            parts = msg.topic.split('/')
-            
-            device_id = None
-            sub_type = None
-            sub_folder = None
-            
-            if parts[0] == "udmi":
-                direction = parts[1]
-                if direction == "reflect":
-                    offset = 2
-                else: # reply
-                    if parts[2] == self.project_id:
-                        offset = 2
-                    else:
-                        offset = 3
-                
-                device_id = parts[offset+2] if len(parts) > offset+2 else None
-                sub_type = parts[offset+3] if len(parts) > offset+3 else None
-                sub_folder = parts[offset+4] if len(parts) > offset+4 else None
-            else:
-                device_id = parts[1] if len(parts) > 1 else None
-                sub_type = parts[2] if len(parts) > 2 else None
-                sub_folder = parts[3] if len(parts) > 3 else None
+                        # self.seen_nonces is a set, so we can't pop(0). 
+                        # Butler used self.seen_nonces.pop() which is fine for a set.
+                        self.seen_nonces.remove(next(iter(self.seen_nonces)))
 
             # Handshake check
             if sub_type == "config" and sub_folder == "udmi":
@@ -89,6 +88,8 @@ class ButlerMQTTBase:
         pass
 
     def connect(self):
+        print(f"[{self.source}] Connecting to MQTT broker at {self.host}:{self.port}...")
+        print(f"[{self.source}] Project ID: {self.project_id}, Registry ID: {self.registry_id}")
         self.client.connect(self.host, self.port, 60)
 
     def loop_start(self):
@@ -104,9 +105,10 @@ class ButlerMQTTBase:
         return secrets.token_hex(4)
 
     def publish_uufi(self, device_id, sub_type, payload_data, sub_folder=None, direction="reflect", target_source=None, transaction_id=None):
+        publish_time = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         data = {
             "uufi_version": "1.5.2",
-            "publish_time": datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+            "publish_time": publish_time,
             "source": self.source,
             "nonce": self.generate_nonce()
         }
@@ -115,6 +117,8 @@ class ButlerMQTTBase:
         
         data.update(payload_data)
         
+        # Canonical MQTT topic mapping for UUFI
+        # udmi/{direction}[/{source}]/{projectId}/{registryId}/{deviceId}/{subType}/{subFolder}
         topic = f"udmi/{direction}"
         if direction == "reply" and target_source:
             topic += f"/{target_source}"
