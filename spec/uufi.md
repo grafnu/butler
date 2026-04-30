@@ -47,6 +47,12 @@ Upon connection, the Client must perform a handshake to synchronize with the Sys
 
 The Client is considered **Active** only after receiving a configuration reply where the `transaction_id` inside the `udmi.reply` block matches the `transaction_id` sent in the original `state` message.
 
+### Handshake Addressing
+Because the initial handshake is generic and occurs before the Client is associated with a specific registry or device, a distinct addressing scheme is used:
+
+- **PubSub:** The `deviceRegistryId` and `deviceId` message attributes MUST be empty strings (`""`).
+- **MQTT:** The topic MUST use the prefix `/uufi/c/{source}/` where `{source}` is the Client's unique identifier. The resulting topic structure is `/uufi/c/{source}/{subType}/{subFolder}`.
+
 ### Timeouts and Retries
 Clients SHOULD implement a handshake timeout (default 30s). If no matching configuration reply is received within this window, the Client SHOULD retry the handshake with an exponential backoff, utilizing a new `transaction_id` for each attempt.
 
@@ -128,14 +134,14 @@ The following examples demonstrate how to format PubSub messages for common UUFI
 The handshake synchronizes the Client and the System upon connection.
 
 #### Step 1: Publish Handshake State
-The Client initiates the session.
+The Client initiates the session using generic addressing.
 
 **PubSub Attributes:**
 ```json
 {
   "projectId": "my-gcp-project",
-  "deviceRegistryId": "my-managed-registry",
-  "deviceId": "my-managed-registry",
+  "deviceRegistryId": "",
+  "deviceId": "",
   "subFolder": "udmi",
   "subType": "state",
   "transactionId": "UUFI:sess123:001",
@@ -166,8 +172,8 @@ The System confirms the session is active.
 ```json
 {
   "projectId": "my-gcp-project",
-  "deviceRegistryId": "my-managed-registry",
-  "deviceId": "my-managed-registry",
+  "deviceRegistryId": "",
+  "deviceId": "",
   "subFolder": "udmi",
   "subType": "config",
   "transactionId": "UUFI:sess123:001"
@@ -193,6 +199,7 @@ The System confirms the session is active.
   }
 }
 ```
+
 
 ### 7.2. Pointset Exchange
 Interaction with a device's points (e.g., sensors and setpoints).
@@ -258,7 +265,9 @@ Receiving the current `room_temperature` reading from device `BLD-1`.
 The following examples demonstrate the same operations using the MQTT transport, following the rule that topic-encoded fields are omitted from the payload.
 
 #### Example: Handshake State (Publish)
-**Topic:** `/uufi/r/my-managed-registry/d/my-managed-registry/state/udmi`
+Using generic addressing for the initial handshake.
+
+**Topic:** `/uufi/c/-my-user-id/state/udmi`
 
 **Payload (JSON):**
 ```json
