@@ -25,6 +25,7 @@ There should be no files or directories at the top-level other than those explic
 The system MUST use a message-based communication layer (e.g., MQTT) that satisfies the following:
 - **Visibility:** All messages must be inspectable and loggable.
 - **Format:** Messages MUST be JSON-encoded.
+- **Access:** Only major components (`mocket`, `observe`, `butler`, `verifier`) should utilize the message bus for inter-process communication.
 
 ### UDMI Binding
 
@@ -43,23 +44,25 @@ Responsible for immutable firmware version management.
 - **Access:** Must provide a mechanism (e.g., Signed URLs or local file pointers) for devices to securely retrieve blobs.
 
 ### 3.2 Model Repository (Desired State)
-Responsible for tracking the "source of truth" for the fleet.
+Responsible for tracking the "source of truth" for the fleet. The internal structure of this repository (e.g., JSON schema) is an implementation detail of the mock system.
 - **State Tracking:** Must maintain `target_version` and `current_version` for every device subsystem.
 - **History:** Must track the `last_known_good` (LKG) version for each subsystem to support recovery.
 - **Reconciliation:** Any change to a `target_version` should act as a trigger for the Butler Orchestrator.
 - **Environment Isolation:** The repository MUST support an environment variable `BUTLER_MODEL_FILE` to override the default model storage path. This is critical for parallel testing and isolating demo environments from developer state.
 - **Atomicity:** All updates to the model file MUST be atomic (e.g., write to a temporary file and rename) to prevent corruption during system crashes.
-- **Interface:** Should be accessed through the `mocket` component.
+- **Access:** Direct access is restricted to `mocket`, `register`, and `trigger`. The `butler` component MUST NOT access the model file directly and instead must interact with it indirectly through `mocket` via the communication substrate.
 
 ### 3.3 Butler Orchestrator (Control Logic)
 The central engine that manages the update lifecycle state machine:
 - **Quiescent State:** Device is compliant (Current == Target).
-- **Active State:** Triggered when Target != Current. The Orchestrator pushes an `update_payload` containing the URL and SHA256.
+- **Active State:** Triggered when Target != Current (as observed via `mocket` status reports). The Orchestrator pushes an `update_payload` containing the URL and SHA256.
 - **Error State:** Triggered by device-reported failure or timeout.
-- **Rollback Logic:** On critical failure, the Orchestrator MUST automatically revert the `target_version` in the Model Repository to the LKG version.
-- **Trigger Detect:** Butler should automatically detect changes in the site model for the target or expected version.
-- **Timeout Management:** The Orchestrator MUST implement a configurable timeout (default 60s) for devices in the `pending` state. If a device fails to report `success` or `failure` within this window, it must be treated as a failure and potentially trigger a rollback.
+- **Rollback Logic:** On critical failure, the Orchestrator MUST automatically revert the `target_version` in the Model Repository (via `mocket`) to the LKG version.
+- **LKG Update:** The `last_known_good` (LKG) version is updated to the `current_version` only upon the successful completion and verification of an update sequence.
+- **Trigger Detect:** Butler should automatically detect changes in the site model (reported by `mocket`) for the target or expected version.
+- **Timeout Management:** The Orchestrator MUST implement a configurable timeout (default 60s) for each device subsystem in the `pending` state. If a device fails to report `success` or `failure` within this window, it must be treated as a failure and potentially trigger a rollback.
 - **Handshake:** Should implement the UUFI startup handshake.
+- **Model Interaction:** All requests to read or update the model MUST be sent to `mocket` over the communication substrate. Butler maintains no direct connection to the model storage.
 
 ### 3.4 Device Conduit (Client-side)
 The implementation on the device must adhere to this state flow:
@@ -72,18 +75,21 @@ The implementation on the device must adhere to this state flow:
 ## 4. System Behaviors
 
 ### 4.1 Update Sequence
-1. Model Repository updates `target_version`.
-2. Orchestrator detects mismatch and fetches metadata from Blob Repository.
-3. Orchestrator publishes `update_payload` to the device.
-4. Device reports `pending`, applies update, then reports `success`.
-5. Orchestrator updates Model Repository to reflect the new `current_version`.
+1. Model Repository updates `target_version` (via `register` or `trigger`).
+2. `mocket` detects the change and publishes updated status to the communication substrate.
+3. Orchestrator detects mismatch from `mocket` messages and fetches metadata from Blob Repository.
+4. Orchestrator publishes `update_payload` to the device.
+5. Device reports `pending`, applies update, then reports `success`.
+6. Orchestrator sends a model update request to `mocket` to reflect the new `current_version`.
+7. `mocket` updates the Model Repository and confirms the change.
 
 ### 4.2 Rollback Sequence
 1. Device receives `update_payload` but fails verification.
 2. Device publishes `status` with state `failure`.
-3. Orchestrator identifies the failure and lookups the `last_known_good` version.
-4. Orchestrator updates the `target_version` back to the LKG.
-5. A new Update Sequence begins for the LKG version.
+3. Orchestrator identifies the failure and requests the `last_known_good` version from `mocket`.
+4. Orchestrator sends a request to `mocket` to revert the `target_version` back to the LKG.
+5. `mocket` updates the Model Repository.
+6. A new Update Sequence begins for the LKG version.
 
 ### 4.3 Idempotency and Robustness
 - **Duplicate Message Handling:** All components MUST be idempotent. Receiving the same `update_payload` or `status` message multiple times must not lead to inconsistent state transitions.
@@ -119,8 +125,9 @@ message payload (don't truncate for line length).
 
 The smoke tester does a simple test run with all the tools to make sure they are mostly working (no syntax errors, startup error, etc...),
 but it does not verify all the functionality. Just enough of each tool to ensure the fundamentals. It's run with a simple command
-that then will fork, as necessary, any sub-processes and then a basic update sequence. It checks that all the tools were able to
-successfully run and send/recieve at least one message.
+that then will fork, as necessary, any sub-processes and then a basic update sequence.
+
+**Success Criteria:** The smoke test is considered successful if all components start without error, and at least one device subsystem successfully completes a version transition (from one version to another) as verified by the message stream.
 
 The smoke tester also verifies that all required arguments are enforced (i.e., will cause a usage error if omitted).
 
@@ -163,10 +170,10 @@ They are all required unless put in square brackets (e.g. [option]).
 - **Butler**: The core butler program that handlers the necessary orchestration and state machine.
   - `bin/butler`
   - Tag should be `butler` in messages source and logging
-- **Mocket:** An mock implementation of the UDMIS service (and consequently target device)
+- **Mocket:** An mock implementation of the UDMIS service (and consequently target device). This is a major component that utilizes the message bus.
   - `bin/mocket device_id`
-  - Tag should be `mockit` in messages source and logging
-  - The following commands run in the same context as `mocket` and can assume direct access to underlying resources (e.g. filesystem)
+  - Tag should be `mocket` in messages source and logging
+  - The following commands run in the same context as `mocket` and should NOT use the message bus for communication (rather something in the local filesystem)
     - **Register:** A tool to add a device to the model.
       - `bin/register device_id`
     - **Trigger**: A utility that triggers necessary situations to test the system, e.g. changing the available blob version.
