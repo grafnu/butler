@@ -25,12 +25,12 @@ class MockDevice:
     def on_connect(self, client, userdata, flags, rc):
         if rc == 0:
             client.subscribe(f"/uufi/r/{self.registry_id}/d/{self.device_id}/config/system")
-            client.subscribe(f"/uufi/r/{self.registry_id}/d/butler/state/udmi")
+            client.subscribe(f"/uufi/c/+/state/udmi")
             client.subscribe(f"/uufi/r/{self.registry_id}/d/{self.registry_id}/query/cloud")
             client.subscribe(f"/uufi/r/{self.registry_id}/d/{self.registry_id}/model/cloud")
             self.report_status()
         else:
-            print(f"Device {self.device_id} failed to connect: {rc}")
+            print(f"Device {self.device_id} failed to connect: {rc}", flush=True)
 
     def on_message(self, client, userdata, msg):
         message, envelope = parse_uufi_message(msg.payload)
@@ -38,16 +38,22 @@ class MockDevice:
             return
 
         parts = msg.topic.split('/')
+        if len(parts) < 5:
+            return
+
+        if parts[2] == 'c':
+            source = parts[3]
+            sub_type = parts[4]
+            sub_folder = parts[5]
+            if sub_type == "state" and sub_folder == "udmi":
+                self.handle_handshake(source, message)
+            return
+
         if len(parts) < 8:
             return
-        
         device_id = parts[5]
         sub_type = parts[6]
         sub_folder = parts[7]
-
-        if device_id == "butler" and sub_type == "state" and sub_folder == "udmi":
-            self.handle_handshake(message)
-            return
 
         if device_id == self.registry_id and sub_folder == "cloud":
             self.handle_cloud_op(sub_type, message)
@@ -64,16 +70,16 @@ class MockDevice:
         url = system.get("url")
         sha256 = system.get("sha256")
         version = system.get("version")
-        
+
         if not version:
             return
 
-        print(f"[mockit] Device {self.device_id} received update to {version}")
+        print(f"[mocket] Device {self.device_id} received update to {version}", flush=True)
         self.state = "pending"
         self.report_status()
-        
+
         if self.fail_mode:
-            print(f"[mockit] FAILURE MODE: Not progressing from pending.")
+            print(f"[mocket] FAILURE MODE: Not progressing from pending.", flush=True)
             return
 
         time.sleep(1)
@@ -82,10 +88,10 @@ class MockDevice:
                 self.state = "failure"
                 self.report_status()
                 return
-            
+
             with open(url, "rb") as f:
                 actual_hash = hashlib.sha256(f.read()).hexdigest()
-            
+
             if actual_hash == sha256:
                 time.sleep(1)
                 self.current_version = version
@@ -99,13 +105,13 @@ class MockDevice:
             self.state = "failure"
             self.report_status()
 
-    def handle_handshake(self, message):
+    def handle_handshake(self, source, message):
         udmi = message.get("udmi", {})
         setup = udmi.get("setup", {})
         transaction_id = setup.get("transaction_id")
-        
-        print(f"[mockit] Received UUFI handshake state (tid: {transaction_id})")
-        
+
+        print(f"[mocket] Received UUFI handshake state from {source} (tid: {transaction_id})", flush=True)
+
         reply_payload = {
             "udmi": {
                 "setup": {
@@ -116,6 +122,7 @@ class MockDevice:
                 "reply": setup
             }
         }
+
         msg = create_uufi_message(
             registry_id=self.registry_id,
             device_id="butler",
@@ -123,16 +130,16 @@ class MockDevice:
             sub_folder="udmi",
             payload=reply_payload["udmi"],
             transaction_id=transaction_id,
-            source="mockit"
+            source="mocket"
         )
-        topic = f"/uufi/r/{self.registry_id}/d/butler/config/udmi"
+        topic = f"/uufi/c/{source}/config/udmi"
         self.client.publish(topic, json.dumps(msg))
         self.push_model()
 
     def handle_cloud_op(self, sub_type, message):
         cloud = message.get("cloud", {})
         operation = cloud.get("operation")
-        
+
         if sub_type == "query" and operation == "READ":
             self.push_model()
         elif sub_type == "model" and operation == "UPDATE":
@@ -140,7 +147,7 @@ class MockDevice:
             subsystem = cloud.get("subsystem")
             target = cloud.get("target_version")
             current = cloud.get("current_version")
-            
+
             if target is not None:
                 self.model_repo.set_target_version(dev_id, subsystem, target)
             if current is not None:
@@ -156,7 +163,7 @@ class MockDevice:
             sub_type="config",
             sub_folder="cloud",
             payload=model_payload,
-            source="mockit"
+            source="mocket"
         )
         topic = f"/uufi/r/{self.registry_id}/d/{self.registry_id}/config/cloud"
         self.client.publish(topic, json.dumps(msg))
@@ -173,13 +180,16 @@ class MockDevice:
             sub_type="state",
             sub_folder="system",
             payload=system_payload,
-            source="mockit"
+            source="mocket"
         )
         topic = f"/uufi/r/{self.registry_id}/d/{self.device_id}/state/system"
         self.client.publish(topic, json.dumps(msg))
 
     def run(self):
-        self.client.connect("localhost", 1883, 60)
+        host = "localhost"
+        port = 1883
+        print(f"Mocket connecting to MQTT broker at {host}:{port}", flush=True)
+        self.client.connect(host, port, 60)
         self.client.loop_start()
         
         last_push = 0

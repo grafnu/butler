@@ -14,7 +14,7 @@ class BlobRepository:
         if not os.path.exists(target_dir):
             os.makedirs(target_dir)
         
-        blob_path = os.path.join(target_dir, "firmware.bin")
+        blob_path = os.path.join(target_dir, "bundle.bin")
         with open(blob_path, "wb") as f:
             f.write(data)
         
@@ -27,7 +27,7 @@ class BlobRepository:
 
     def get_blob_metadata(self, make, model, subsystem, version):
         target_dir = os.path.join(self.base_dir, make, model, subsystem, version)
-        blob_path = os.path.join(target_dir, "firmware.bin")
+        blob_path = os.path.join(target_dir, "bundle.bin")
         hash_path = os.path.join(target_dir, "sha256.txt")
         
         if os.path.exists(blob_path) and os.path.exists(hash_path):

@@ -1,6 +1,7 @@
 import json
 import datetime
 import secrets
+import os
 
 def create_message(subfolder, payload, source=None, nonce=None):
     if nonce is None:
@@ -16,13 +17,14 @@ def create_message(subfolder, payload, source=None, nonce=None):
         msg["source"] = source
     return msg
 
-def create_uufi_message(registry_id, device_id, sub_type, sub_folder, payload, transaction_id=None, source=None):
+def create_uufi_message(registry_id, device_id, sub_type, sub_folder, payload, transaction_id=None, source=None, project_id=None):
     if transaction_id is None:
         transaction_id = f"tid-{secrets.token_hex(4)}"
     
+    project_id = project_id or os.environ.get("BUTLER_PROJECT_ID", "butler-project")
     udmi_msg = create_message(sub_folder, payload, source=source)
     envelope = {
-        "projectId": "butler-project",
+        "projectId": project_id,
         "deviceRegistryId": registry_id,
         "deviceId": device_id,
         "subFolder": sub_folder,

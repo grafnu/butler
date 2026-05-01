@@ -3,6 +3,7 @@ import json
 import time
 import sys
 import re
+import os
 from butler.messaging import create_uufi_message, parse_uufi_message
 
 class Verifier:
@@ -13,17 +14,29 @@ class Verifier:
         self.sequences = {} # device_id: [states seen]
         self.seen_nonces = set()
         self.timestamp_regex = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$')
-        self.registry_id = "butler-registry"
+        self.registry_id = os.environ.get("BUTLER_REGISTRY_ID", "butler-registry")
+        self.project_id = os.environ.get("BUTLER_PROJECT_ID", "butler-project")
+        self.active_clients = set()
 
     def on_connect(self, client, userdata, flags, rc):
         if rc == 0:
             client.subscribe("/uufi/#")
         else:
-            print(f"Verifier failed to connect: {rc}")
+            print(f"Verifier failed to connect: {rc}", flush=True)
 
     def on_message(self, client, userdata, msg):
         message, envelope = parse_uufi_message(msg.payload)
         if not message:
+            return
+
+        # Mandatory field validation
+        if "timestamp" not in message or "version" not in message:
+            self.report_error("Missing mandatory UDMI fields (timestamp or version)")
+            return
+        
+        timestamp = message.get("timestamp")
+        if not self.timestamp_regex.match(timestamp):
+            self.report_error(f"Invalid timestamp format in message: {timestamp}")
             return
 
         nonce = message.get("nonce")
@@ -33,18 +46,33 @@ class Verifier:
         if len(self.seen_nonces) > 1000:
             self.seen_nonces.clear()
 
-        timestamp = message.get("timestamp")
-        if not timestamp or not self.timestamp_regex.match(timestamp):
-            self.report_error(f"Invalid timestamp format in message: {timestamp}")
+        parts = msg.topic.split('/')
+        if len(parts) < 5:
             return
 
-        parts = msg.topic.split('/')
+        # Handshake awareness
+        if parts[2] == 'c':
+            source = parts[3]
+            sub_type = parts[4]
+            sub_folder = parts[5]
+            if sub_type == "config" and sub_folder == "udmi":
+                udmi = message.get("udmi", {})
+                if "reply" in udmi:
+                    self.active_clients.add(source)
+                    self.report_info(source, f"Client {source} successfully activated via handshake")
+            return
+
         if len(parts) < 8:
             return
         
+        registry_id = parts[2]
         device_id = parts[5]
         sub_type = parts[6]
         sub_folder = parts[7]
+
+        # Update registry_id if not set or detected from traffic
+        if not os.environ.get("BUTLER_REGISTRY_ID") and registry_id != self.registry_id:
+            self.registry_id = registry_id
 
         if sub_type == "config" and sub_folder == "system":
             if device_id in self.sequences:
@@ -80,7 +108,7 @@ class Verifier:
         )
         topic = f"/uufi/r/{self.registry_id}/d/butler/events/verify"
         self.client.publish(topic, json.dumps(msg))
-        print(f"[verifier] SUCCESS: {device_id} - {text}")
+        print(f"[verifier] SUCCESS: {device_id} - {text}", flush=True)
 
     def report_error(self, text):
         payload = {"result": "FAIL", "message": text}
@@ -94,7 +122,7 @@ class Verifier:
         )
         topic = f"/uufi/r/{self.registry_id}/d/butler/events/verify"
         self.client.publish(topic, json.dumps(msg))
-        print(f"[verifier] ERROR: {text}")
+        print(f"[verifier] ERROR: {text}", flush=True)
 
     def report_info(self, device_id, text):
         payload = {"result": "INFO", "device_id": device_id, "message": text}
@@ -108,10 +136,13 @@ class Verifier:
         )
         topic = f"/uufi/r/{self.registry_id}/d/butler/events/verify"
         self.client.publish(topic, json.dumps(msg))
-        print(f"[verifier] INFO: {device_id} - {text}")
+        print(f"[verifier] INFO: {device_id} - {text}", flush=True)
 
     def run(self):
-        self.client.connect("localhost", 1883, 60)
+        host = "localhost"
+        port = 1883
+        print(f"Verifier connecting to MQTT broker at {host}:{port}", flush=True)
+        self.client.connect(host, port, 60)
         self.client.loop_forever()
 
 def main():

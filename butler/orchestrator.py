@@ -24,10 +24,10 @@ class Orchestrator:
     def on_connect(self, client, userdata, flags, rc):
         if rc == 0:
             client.subscribe(f"/uufi/r/{self.registry_id}/d/+/state/system")
-            client.subscribe(f"/uufi/r/{self.registry_id}/d/butler/config/udmi")
+            client.subscribe(f"/uufi/c/butler/config/udmi")
             client.subscribe(f"/uufi/r/{self.registry_id}/d/{self.registry_id}/config/cloud")
         else:
-            print(f"Orchestrator failed to connect: {rc}")
+            print(f"Orchestrator failed to connect: {rc}", flush=True)
 
     def on_message(self, client, userdata, msg):
         message, envelope = parse_uufi_message(msg.payload)
@@ -35,21 +35,27 @@ class Orchestrator:
             return
 
         parts = msg.topic.split('/')
-        if len(parts) < 8:
+        if len(parts) < 5:
             return
         
+        if parts[2] == 'c' and parts[3] == 'butler':
+            sub_type = parts[4]
+            sub_folder = parts[5]
+            if sub_type == "config" and sub_folder == "udmi":
+                self.handle_handshake_reply(message)
+            return
+
+        if len(parts) < 8:
+            return
+
         device_id = parts[5]
         sub_type = parts[6]
         sub_folder = parts[7]
 
-        if device_id == "butler" and sub_type == "config" and sub_folder == "udmi":
-            self.handle_handshake_reply(message)
-            return
-
         if device_id == self.registry_id and sub_folder == "cloud" and sub_type == "config":
             # message is {"cloud": {"devices": {...}}}
             self.model = message.get("cloud", {})
-            print(f"[butler] Received model update from cloud")
+            print(f"[butler] Received model update from cloud", flush=True)
             return
 
         nonce = message.get("nonce")
@@ -65,14 +71,14 @@ class Orchestrator:
             state = system.get("state")
             current_version = system.get("current_version")
 
-            print(f"[butler] Status from {device_id}: {state} ({current_version})")
+            print(f"[butler] Status from {device_id}: {state} ({current_version})", flush=True)
 
             if state == "success" or state == "quiescent":
                 self.update_cloud_model(device_id, subsystem, current_version=current_version)
                 if state == "success" and device_id in self.pending_updates:
                     del self.pending_updates[device_id]
             elif state == "failure":
-                print(f"[butler] Device {device_id} reported FAILURE. Rolling back...")
+                print(f"[butler] Device {device_id} reported FAILURE. Rolling back...", flush=True)
                 self.rollback_cloud_model(device_id, subsystem)
                 if device_id in self.pending_updates:
                     del self.pending_updates[device_id]
@@ -82,7 +88,7 @@ class Orchestrator:
         reply = udmi.get("reply", {})
         tid = reply.get("transaction_id")
         if tid == self.handshake_tid:
-            print(f"[butler] UUFI Handshake complete (tid: {tid}). Orchestrator is ACTIVE.")
+            print(f"[butler] UUFI Handshake complete (tid: {tid}). Orchestrator is ACTIVE.", flush=True)
             self.is_active = True
             self.query_cloud_model()
 
@@ -138,7 +144,7 @@ class Orchestrator:
                 current = info.get("current_version")
                 
                 if target != current and device_id not in self.pending_updates:
-                    print(f"[butler] Reconciliation triggered for {device_id}: {current} -> {target}")
+                    print(f"[butler] Reconciliation triggered for {device_id}: {current} -> {target}", flush=True)
                     
                     if self.fail_mode:
                         continue
@@ -175,7 +181,7 @@ class Orchestrator:
         to_remove = []
         for device_id, info in self.pending_updates.items():
             if now - info["timestamp"] > timeout:
-                print(f"[butler] Timeout for {device_id}. Rolling back...")
+                print(f"[butler] Timeout for {device_id}. Rolling back...", flush=True)
                 self.rollback_cloud_model(device_id, info["subsystem"])
                 to_remove.append(device_id)
         
@@ -201,12 +207,31 @@ class Orchestrator:
             transaction_id=self.handshake_tid,
             source="butler"
         )
-        topic = f"/uufi/r/{self.registry_id}/d/butler/state/udmi"
+        topic = f"/uufi/c/butler/state/udmi"
         self.client.publish(topic, json.dumps(msg))
 
     def run(self):
-        self.client.connect("localhost", 1883, 60)
+        host = "localhost"
+        port = 1883
+        print(f"Orchestrator connecting to MQTT broker at {host}:{port}", flush=True)
+        self.client.connect(host, port, 60)
         self.client.loop_start()
+        
+        last_handshake = 0
+        try:
+            while True:
+                if not self.is_active:
+                    now = time.time()
+                    if now - last_handshake > 5:
+                        self.send_handshake()
+                        last_handshake = now
+                
+                if self.is_active:
+                    self.check_reconciliation()
+                    self.check_timeouts()
+                time.sleep(2)
+        except KeyboardInterrupt:
+            self.client.loop_stop()
         
         last_handshake = 0
         try:
