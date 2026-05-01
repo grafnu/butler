@@ -74,11 +74,11 @@ class Verifier:
             registry_id=self.registry_id,
             device_id="butler",
             sub_type="events",
-            sub_folder="validation",
+            sub_folder="verify",
             payload=payload,
             source="verifier"
         )
-        topic = f"/uufi/r/{self.registry_id}/d/butler/events/validation"
+        topic = f"/uufi/r/{self.registry_id}/d/butler/events/verify"
         self.client.publish(topic, json.dumps(msg))
         print(f"[verifier] SUCCESS: {device_id} - {text}")
 
@@ -88,11 +88,11 @@ class Verifier:
             registry_id=self.registry_id,
             device_id="butler",
             sub_type="events",
-            sub_folder="validation",
+            sub_folder="verify",
             payload=payload,
             source="verifier"
         )
-        topic = f"/uufi/r/{self.registry_id}/d/butler/events/validation"
+        topic = f"/uufi/r/{self.registry_id}/d/butler/events/verify"
         self.client.publish(topic, json.dumps(msg))
         print(f"[verifier] ERROR: {text}")
 
@@ -102,11 +102,11 @@ class Verifier:
             registry_id=self.registry_id,
             device_id="butler",
             sub_type="events",
-            sub_folder="validation",
+            sub_folder="verify",
             payload=payload,
             source="verifier"
         )
-        topic = f"/uufi/r/{self.registry_id}/d/butler/events/validation"
+        topic = f"/uufi/r/{self.registry_id}/d/butler/events/verify"
         self.client.publish(topic, json.dumps(msg))
         print(f"[verifier] INFO: {device_id} - {text}")
 

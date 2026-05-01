@@ -28,7 +28,7 @@ If not already present, create and activate a Python virtual environment:
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -r butler/requirements.txt
 ```
 
 ### 2. Start MQTT Broker
@@ -42,7 +42,7 @@ Run the setup script to prepare the communication bus. Note that this script wil
 ```bash
 bin/setup
 ```
-**Expected behavior:** The script should output "Mosquitto is running on port 1883" and "Bus setup complete."
+**Expected behavior:** The script should output "Bus setup complete."
 
 ## Manual Operation
 
@@ -59,14 +59,14 @@ The verifier monitors the bus and reports on the success or failure of update se
 ```bash
 bin/verifier
 ```
-**Expected behavior:** The verifier starts listening to the MQTT bus. It will output verification results to the `butler/verify` topic.
+**Expected behavior:** The verifier starts listening to the MQTT bus. It will output verification results to the `verify` sub-folder.
 
 ### 3. Start an Observer (Optional)
 Watch the JSON message traffic in real-time:
 ```bash
 bin/observe
 ```
-**Expected behavior:** The observer will print formatted JSON messages for all traffic on the `butler/#` topics.
+**Expected behavior:** The observer will print formatted JSON messages for all traffic on the bus.
 
 ### 4. Register and Start a Mock Device
 In a new terminal:

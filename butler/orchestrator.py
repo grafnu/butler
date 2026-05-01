@@ -2,6 +2,7 @@ import paho.mqtt.client as mqtt
 import json
 import time
 import sys
+import os
 import argparse
 from butler.blob_repo import BlobRepository
 from butler.messaging import create_uufi_message, parse_uufi_message
@@ -170,9 +171,10 @@ class Orchestrator:
 
     def check_timeouts(self):
         now = time.time()
+        timeout = int(os.environ.get("BUTLER_TIMEOUT", 60))
         to_remove = []
         for device_id, info in self.pending_updates.items():
-            if now - info["timestamp"] > 60:
+            if now - info["timestamp"] > timeout:
                 print(f"[butler] Timeout for {device_id}. Rolling back...")
                 self.rollback_cloud_model(device_id, info["subsystem"])
                 to_remove.append(device_id)

@@ -4,7 +4,7 @@ import hashlib
 class BlobRepository:
     def __init__(self, base_dir=None):
         if base_dir is None:
-            base_dir = os.environ.get("BUTLER_BLOBS_DIR", "blobs")
+            base_dir = os.environ.get("BUTLER_BLOBS_DIR", "testing/blobs")
         self.base_dir = base_dir
         if not os.path.exists(self.base_dir):
             os.makedirs(self.base_dir)
