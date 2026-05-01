@@ -1,3 +1,7 @@
 __pycache__
 *~
 testing/
+opt_a/
+opt_a.log
+opt_b/
+opt_b.log
