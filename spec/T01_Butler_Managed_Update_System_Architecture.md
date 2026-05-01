@@ -108,6 +108,12 @@ The Verifier watches the channel and reports results if the observed sequences p
 It is purely an observational test utility, used to either validate an installed system or to guide an active agent towards a complete
 functioning implementation. When it detects a valid sequence, or an invalid message, it will output a validation message.
 
+**Verifier Requirements:**
+- **Dynamic Configuration:** The Verifier MUST NOT use hardcoded Project ID or Registry ID values. It SHOULD either detect these from the message stream or be configurable via environment variables (e.g., `BUTLER_PROJECT_ID`, `BUTLER_REGISTRY_ID`).
+- **Handshake Awareness:** The Verifier MUST monitor the `/uufi/c/` handshake topics to ensure clients successfully activate before performing operations.
+- **Validation Schema:** It SHOULD validate that all messages contain the mandatory UDMI `payload` fields (`timestamp`, `version`) and that timestamps follow the RFC 3339 format.
+- **State Transition Monitoring:** It MUST track the state transitions for device subsystems using the `update` subfolder (e.g., `quiescent` -> `pending` -> `success/failure`).
+
 The verification watcher and the rest of the system can only communicate over the observable shared bus.
 
 ### Test mode
