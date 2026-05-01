@@ -25,10 +25,6 @@ def create_uufi_message(registry_id, device_id, sub_type, sub_folder, payload, t
     udmi_msg = create_message(sub_folder, payload, source=source)
     envelope = {
         "projectId": project_id,
-        "deviceRegistryId": registry_id,
-        "deviceId": device_id,
-        "subFolder": sub_folder,
-        "subType": sub_type,
         "transactionId": transaction_id,
         "publishTime": udmi_msg["timestamp"],
         "source": source or "system",

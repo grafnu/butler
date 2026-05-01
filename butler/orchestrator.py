@@ -23,7 +23,7 @@ class Orchestrator:
 
     def on_connect(self, client, userdata, flags, rc):
         if rc == 0:
-            client.subscribe(f"/uufi/r/{self.registry_id}/d/+/state/system")
+            client.subscribe(f"/uufi/r/{self.registry_id}/d/+/state/update")
             client.subscribe(f"/uufi/c/butler/config/udmi")
             client.subscribe(f"/uufi/r/{self.registry_id}/d/{self.registry_id}/config/cloud")
         else:
@@ -65,11 +65,11 @@ class Orchestrator:
         if len(self.seen_nonces) > 1000:
             self.seen_nonces.clear()
 
-        if sub_type == "state" and sub_folder == "system":
-            system = message.get("system", {})
-            subsystem = system.get("subsystem", "main")
-            state = system.get("state")
-            current_version = system.get("current_version")
+        if sub_type == "state" and sub_folder == "update":
+            update = message.get("update", {})
+            subsystem = update.get("subsystem", "main")
+            state = update.get("state")
+            current_version = update.get("current_version")
 
             print(f"[butler] Status from {device_id}: {state} ({current_version})", flush=True)
 
@@ -154,7 +154,7 @@ class Orchestrator:
                     )
                     
                     if metadata:
-                        system_payload = {
+                        update_payload = {
                             "version": target,
                             "url": metadata["url"],
                             "sha256": metadata["sha256"]
@@ -163,11 +163,11 @@ class Orchestrator:
                             registry_id=self.registry_id,
                             device_id=device_id,
                             sub_type="config",
-                            sub_folder="system",
-                            payload=system_payload,
+                            sub_folder="update",
+                            payload=update_payload,
                             source="butler"
                         )
-                        topic = f"/uufi/r/{self.registry_id}/d/{device_id}/config/system"
+                        topic = f"/uufi/r/{self.registry_id}/d/{device_id}/config/update"
                         self.client.publish(topic, json.dumps(msg))
                         self.pending_updates[device_id] = {
                             "timestamp": time.time(),

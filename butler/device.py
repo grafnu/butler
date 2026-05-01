@@ -24,7 +24,7 @@ class MockDevice:
 
     def on_connect(self, client, userdata, flags, rc):
         if rc == 0:
-            client.subscribe(f"/uufi/r/{self.registry_id}/d/{self.device_id}/config/system")
+            client.subscribe(f"/uufi/r/{self.registry_id}/d/{self.device_id}/config/update")
             client.subscribe(f"/uufi/c/+/state/udmi")
             client.subscribe(f"/uufi/r/{self.registry_id}/d/{self.registry_id}/query/cloud")
             client.subscribe(f"/uufi/r/{self.registry_id}/d/{self.registry_id}/model/cloud")
@@ -66,20 +66,20 @@ class MockDevice:
         if len(self.seen_nonces) > 1000:
             self.seen_nonces.clear()
 
-        system = message.get("system", {})
-        url = system.get("url")
-        sha256 = system.get("sha256")
-        version = system.get("version")
+        update = message.get("update", {})
+        url = update.get("url")
+        sha256 = update.get("sha256")
+        version = update.get("version")
 
         if not version:
             return
 
-        print(f"[mocket] Device {self.device_id} received update to {version}", flush=True)
+        print(f"[mockit] Device {self.device_id} received update to {version}", flush=True)
         self.state = "pending"
         self.report_status()
 
         if self.fail_mode:
-            print(f"[mocket] FAILURE MODE: Not progressing from pending.", flush=True)
+            print(f"[mockit] FAILURE MODE: Not progressing from pending.", flush=True)
             return
 
         time.sleep(1)
@@ -110,7 +110,7 @@ class MockDevice:
         setup = udmi.get("setup", {})
         transaction_id = setup.get("transaction_id")
 
-        print(f"[mocket] Received UUFI handshake state from {source} (tid: {transaction_id})", flush=True)
+        print(f"[mockit] Received UUFI handshake state from {source} (tid: {transaction_id})", flush=True)
 
         reply_payload = {
             "udmi": {
@@ -130,7 +130,7 @@ class MockDevice:
             sub_folder="udmi",
             payload=reply_payload["udmi"],
             transaction_id=transaction_id,
-            source="mocket"
+            source="mockit"
         )
         topic = f"/uufi/c/{source}/config/udmi"
         self.client.publish(topic, json.dumps(msg))
@@ -163,13 +163,13 @@ class MockDevice:
             sub_type="config",
             sub_folder="cloud",
             payload=model_payload,
-            source="mocket"
+            source="mockit"
         )
         topic = f"/uufi/r/{self.registry_id}/d/{self.registry_id}/config/cloud"
         self.client.publish(topic, json.dumps(msg))
 
     def report_status(self):
-        system_payload = {
+        update_payload = {
             "current_version": self.current_version,
             "state": self.state,
             "subsystem": self.subsystem
@@ -178,11 +178,11 @@ class MockDevice:
             registry_id=self.registry_id,
             device_id=self.device_id,
             sub_type="state",
-            sub_folder="system",
-            payload=system_payload,
-            source="mocket"
+            sub_folder="update",
+            payload=update_payload,
+            source="mockit"
         )
-        topic = f"/uufi/r/{self.registry_id}/d/{self.device_id}/state/system"
+        topic = f"/uufi/r/{self.registry_id}/d/{self.device_id}/state/update"
         self.client.publish(topic, json.dumps(msg))
 
     def run(self):

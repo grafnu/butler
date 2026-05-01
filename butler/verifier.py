@@ -27,6 +27,7 @@ class Verifier:
     def on_message(self, client, userdata, msg):
         message, envelope = parse_uufi_message(msg.payload)
         if not message:
+            print(f"[verifier] RAW: {msg.payload.decode(errors='replace')}", flush=True)
             return
 
         # Mandatory field validation
@@ -74,14 +75,17 @@ class Verifier:
         if not os.environ.get("BUTLER_REGISTRY_ID") and registry_id != self.registry_id:
             self.registry_id = registry_id
 
-        if sub_type == "config" and sub_folder == "system":
+        if sub_type == "config" and sub_folder == "update":
             if device_id in self.sequences:
                 self.report_error(f"New update started for {device_id} before previous one finished")
             self.sequences[device_id] = ["update_sent"]
         
-        elif sub_type == "state" and sub_folder == "system":
-            system = message.get("system", {})
-            state = system.get("state")
+        elif sub_type == "state" and sub_folder == "update":
+            update = message.get("update", {})
+            state = update.get("state")
+            if device_id not in self.sequences and state == "quiescent":
+                self.sequences[device_id] = ["quiescent"]
+            
             if device_id in self.sequences:
                 if state not in self.sequences[device_id]:
                     self.sequences[device_id].append(state)
