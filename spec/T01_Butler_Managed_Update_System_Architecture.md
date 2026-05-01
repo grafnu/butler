@@ -159,8 +159,6 @@ All commands should be restartable without any problems if they are in a quiesce
 in the middle of a transation it's OK if the system reports a transient error as long as it recovers to a stable
 state. Retrying the transation should then behave as expected (assuming no other restarts).
 
-They are all required unless but in square brackets (e.g. [option]).
-
 All commands should ouput any connectivity parameters when they startup. The parameters should be sufficient
 to diagnose if any two components are utilizing the same communication substrate.
 
