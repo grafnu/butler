@@ -90,12 +90,14 @@ For the MQTT transport, the envelope fields are encoded in the topic path:
 `/uufi/r/{registryId}/d/{deviceId}/{subType}/{subFolder}`
 
 #### MQTT Message Wrap
-Since MQTT 3.1.1 does not support separate attributes, the envelope fields are included in the JSON payload alongside the actual UDMI message. **Crucially, the JSON payload MUST NOT include fields that are already encoded in the MQTT topic structure.**
+Since MQTT 3.1.1 does not support separate attributes, the envelope fields are included in the JSON payload alongside the actual UDMI message. **Crucially, the top-level JSON envelope MUST NOT include fields that are already encoded in the MQTT topic structure (e.g., `projectId`, `deviceId`, etc.).**
 
 ```json
 {
   "transactionId": "UUFI:sess123:002",
   "payload": {
+    "version": "1.5.2",
+    "timestamp": "2026-04-29T10:05:00Z",
     "points": {
       "room_temperature": { "set_value": 22.5 }
     }
