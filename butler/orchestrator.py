@@ -2,44 +2,68 @@ import time
 import argparse
 import sys
 import threading
+import os
 from butler.common import ButlerMQTTBase
 from butler.blob_repo import BlobRepository
+from butler.model_repo import ModelRepository
 
 class ButlerOrchestrator(ButlerMQTTBase):
     def __init__(self, failure_mode=False, timeout=60):
         super().__init__(source="butler")
         self.blob_repo = BlobRepository()
+        self.model_repo = ModelRepository()
         self.failure_mode = failure_mode
         self.timeout = timeout
         self.devices_pending = {} # device_id -> start_time
-        self.fleet_model = {} # device_id -> state
+        self.known_devices = set()
 
     def on_connect(self):
         print("[butler] Orchestrator connected")
-        self.start_handshake()
-        # Subscribe to all replies (System -> Client)
-        self.subscribe_uufi(direction="reply")
+        # Orchestrator is the System, it doesn't need to handshake with itself
+        self.handshake_complete = True
+        # Subscribe to all traffic to handle device handshakes and states
+        self.subscribe_uufi()
 
     def on_message(self, topic, device_id, sub_type, sub_folder, data):
+        # 1. Handle UUFI Handshake (System side)
+        if sub_type == "state" and sub_folder == "udmi":
+            self.handle_handshake_state(device_id, data)
+            return
+
         if not self.handshake_complete:
             return
 
-        # Handle model reply (System -> Client)
-        if sub_type == "config" and sub_folder == "cloud":
-            self.handle_model_update(device_id, data)
-            return
-
-        # Handle device state (reflected from System -> Client)
+        # 2. Handle device state (Client -> System)
         if sub_type == "state" and sub_folder == "update":
             self.handle_device_state(device_id, data)
 
-    def handle_model_update(self, device_id, data):
-        if device_id == self.registry_id:
-            return
+    def handle_handshake_state(self, device_id, data):
+        udmi = data.get("udmi", {})
+        setup = udmi.get("setup", {})
+        transaction_id = setup.get("transaction_id")
+        source = data.get("source")
         
-        print(f"[butler] Received model update for {device_id}")
-        self.fleet_model[device_id] = data
-        self.reconcile_device(device_id)
+        if source == self.source:
+            return
+
+        print(f"[butler] Handling handshake from {source}")
+        
+        response_payload = {
+            "udmi": {
+                "setup": {
+                    "functions_min": 9,
+                    "functions_max": 9,
+                    "udmi_version": "1.5.2"
+                },
+                "reply": {
+                    "functions_ver": 9,
+                    "transaction_id": transaction_id,
+                    "msg_source": source
+                }
+            }
+        }
+        # Handshake addressing: /uufi/c/{source}/{subType}/{subFolder}
+        self.publish_uufi(device_id, "config", response_payload, "udmi", direction="reply", target_source=source, transaction_id=transaction_id)
 
     def handle_device_state(self, device_id, data):
         current_version = data.get("version")
@@ -47,26 +71,25 @@ class ButlerOrchestrator(ButlerMQTTBase):
         
         print(f"[butler] Received device state for {device_id}: {status} (v{current_version})")
         
-        device_info = self.fleet_model.get(device_id)
+        device_info = self.model_repo.get_device(device_id)
         if not device_info:
-            # Query the model if we don't have it
-            self.query_model(device_id)
             return
 
+        self.known_devices.add(device_id)
         target_version = device_info.get("target_version")
         
         if status == "quiescent":
             if current_version != target_version:
                 self.trigger_update(device_id, device_info)
             else:
-                # Update model state to quiescent if it was something else
                 if device_info.get("state") != "quiescent":
-                    print(f"[butler] Device {device_id} is quiescent and compliant. Finalizing model state.")
-                    self.update_cloud_model(device_id, current_version=current_version, state="quiescent")
+                    print(f"[butler] Device {device_id} is quiescent and compliant.")
+                    self.model_repo.update_device(device_id, current_version=current_version, state="quiescent")
         
         elif status == "success":
-            print(f"[butler] Device {device_id} success reported. Updating cloud model.")
-            self.update_cloud_model(device_id, current_version=current_version, last_known_good=current_version, state="quiescent")
+            if device_info.get("current_version") != current_version or device_info.get("state") != "quiescent":
+                print(f"[butler] Device {device_id} success reported. Updating model.")
+                self.model_repo.update_device(device_id, current_version=current_version, last_known_good=current_version, state="quiescent")
             if device_id in self.devices_pending:
                 del self.devices_pending[device_id]
         
@@ -75,20 +98,6 @@ class ButlerOrchestrator(ButlerMQTTBase):
             self.trigger_rollback(device_id, device_info)
             if device_id in self.devices_pending:
                 del self.devices_pending[device_id]
-
-    def query_model(self, device_id):
-        print(f"[butler] Querying cloud model for {device_id}")
-        payload = {"operation": "READ"}
-        self.publish_uufi(device_id, "query", payload, "cloud")
-
-    def update_cloud_model(self, device_id, **kwargs):
-        print(f"[butler] Updating cloud model for {device_id}: {kwargs}")
-        payload = {"operation": "UPDATE"}
-        payload.update(kwargs)
-        self.publish_uufi(device_id, "model", payload, "cloud")
-        # Optimistically update local model
-        if device_id in self.fleet_model:
-            self.fleet_model[device_id].update(kwargs)
 
     def trigger_update(self, device_id, device_info):
         if self.failure_mode:
@@ -112,18 +121,20 @@ class ButlerOrchestrator(ButlerMQTTBase):
         }
         self.publish_uufi(device_id, "config", payload, "update")
         self.devices_pending[device_id] = time.time()
-        self.update_cloud_model(device_id, state="active")
+        self.model_repo.update_device(device_id, state="active")
 
     def trigger_rollback(self, device_id, device_info):
         lkg = device_info.get("last_known_good", "1.0")
         print(f"[butler] Rolling back {device_id} to {lkg}")
-        self.update_cloud_model(device_id, target_version=lkg, state="error")
+        self.model_repo.update_device(device_id, target_version=lkg, state="error")
 
-    def reconcile_device(self, device_id):
-        device_info = self.fleet_model.get(device_id)
-        if device_info and device_info.get("current_version") != device_info.get("target_version"):
-            if device_info.get("state") == "quiescent":
-                self.trigger_update(device_id, device_info)
+    def reconcile_all(self):
+        model = self.model_repo.load_model()
+        for device_id, device_info in model.items():
+            self.known_devices.add(device_id)
+            if device_info.get("current_version") != device_info.get("target_version"):
+                if device_info.get("state") in ["quiescent", "error"]:
+                    self.trigger_update(device_id, device_info)
 
     def check_timeouts(self):
         while True:
@@ -131,16 +142,26 @@ class ButlerOrchestrator(ButlerMQTTBase):
             for device_id, start_time in list(self.devices_pending.items()):
                 if now - start_time > self.timeout:
                     print(f"[butler] Timeout for {device_id} after {self.timeout}s")
-                    self.trigger_rollback(device_id, self.fleet_model.get(device_id, {}))
+                    self.trigger_rollback(device_id, self.model_repo.get_device(device_id))
                     del self.devices_pending[device_id]
             time.sleep(1)
 
-    def poll_model(self):
+    def watch_model(self):
+        last_mtime = 0
         while True:
-            if self.handshake_complete:
-                for device_id in list(self.fleet_model.keys()):
-                    self.query_model(device_id)
-            time.sleep(15)
+            try:
+                if os.path.exists(self.model_repo.model_file):
+                    mtime = os.path.getmtime(self.model_repo.model_file)
+                    if mtime > last_mtime:
+                        # We wait a bit to let the write finish
+                        time.sleep(0.5)
+                        if last_mtime > 0:
+                            print(f"[butler] Model file change detected.")
+                            self.reconcile_all()
+                        last_mtime = os.path.getmtime(self.model_repo.model_file)
+            except OSError:
+                pass
+            time.sleep(1)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -152,7 +173,10 @@ def main():
     orchestrator.connect()
     
     threading.Thread(target=orchestrator.check_timeouts, daemon=True).start()
-    threading.Thread(target=orchestrator.poll_model, daemon=True).start()
+    threading.Thread(target=orchestrator.watch_model, daemon=True).start()
+    
+    # Initial reconciliation
+    orchestrator.reconcile_all()
     
     orchestrator.loop_forever()
 
