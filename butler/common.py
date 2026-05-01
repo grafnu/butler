@@ -34,13 +34,25 @@ class ButlerMQTTBase:
             
             parts = msg.topic.split('/')
             # /uufi/r/{registryId}/d/{deviceId}/{subType}/{subFolder}
-            if len(parts) < 7 or parts[1] != "uufi" or parts[2] != "r" or parts[4] != "d":
+            # /uufi/c/{source}/{subType}/{subFolder}
+            
+            if len(parts) < 5 or parts[1] != "uufi":
                 return
 
-            registry_id = parts[3]
-            device_id = parts[5]
-            sub_type = parts[6]
-            sub_folder = parts[7] if len(parts) > 7 else None
+            if parts[2] == "r":
+                if len(parts) < 7 or parts[4] != "d":
+                    return
+                registry_id = parts[3]
+                device_id = parts[5]
+                sub_type = parts[6]
+                sub_folder = parts[7] if len(parts) > 7 else None
+            elif parts[2] == "c":
+                source = parts[3]
+                sub_type = parts[4]
+                sub_folder = parts[5] if len(parts) > 5 else None
+                device_id = None # Handshake messages might not have a device_id yet
+            else:
+                return
 
             # Unwrap payload and merge envelope fields for compatibility
             udmi_payload = data.get("payload", {})
@@ -101,11 +113,19 @@ class ButlerMQTTBase:
         publish_time = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         nonce = self.generate_nonce()
         
+        # Mandatory UDMI fields in payload
+        if "timestamp" not in payload_data:
+            payload_data["timestamp"] = publish_time
+        if "version" not in payload_data:
+            payload_data["version"] = "1.5.2"
+
+        is_handshake = (sub_folder == "udmi")
+
         # Envelope fields
         envelope = {
             "projectId": self.project_id,
-            "deviceRegistryId": self.registry_id,
-            "deviceId": device_id,
+            "deviceRegistryId": "" if is_handshake else self.registry_id,
+            "deviceId": "" if is_handshake else (device_id or ""),
             "subFolder": sub_folder,
             "subType": sub_type,
             "transactionId": transaction_id or f"UUFI:{self.source}:{nonce}",
@@ -116,8 +136,14 @@ class ButlerMQTTBase:
         }
         
         # MQTT Topic Structure according to uufi.md:
-        # /uufi/r/{registryId}/d/{deviceId}/{subType}/{subFolder}
-        topic = f"/uufi/r/{self.registry_id}/d/{device_id}/{sub_type}"
+        if is_handshake:
+            # /uufi/c/{source}/{subType}/{subFolder}
+            source_to_use = target_source or self.source
+            topic = f"/uufi/c/{source_to_use}/{sub_type}"
+        else:
+            # /uufi/r/{registryId}/d/{deviceId}/{subType}/{subFolder}
+            topic = f"/uufi/r/{self.registry_id}/d/{device_id}/{sub_type}"
+            
         if sub_folder:
             topic += f"/{sub_folder}"
         
