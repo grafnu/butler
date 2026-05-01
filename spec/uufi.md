@@ -53,12 +53,19 @@ Because the initial handshake is generic and occurs before the Client is associa
 - **PubSub:** The `deviceRegistryId` and `deviceId` message attributes MUST be empty strings (`""`).
 - **MQTT:** The topic MUST use the prefix `/uufi/c/{source}/` where `{source}` is the Client's unique identifier. The resulting topic structure is `/uufi/c/{source}/{subType}/{subFolder}`.
 
+**Important:** Standard registry-based addressing (`/uufi/r/...`) MUST NOT be used for handshake messages.
+
 ### Timeouts and Retries
 Clients SHOULD implement a handshake timeout (default 30s). If no matching configuration reply is received within this window, the Client SHOULD retry the handshake with an exponential backoff, utilizing a new `transaction_id` for each attempt.
 
 ## 4. Message Encapsulation
 
 All messages exchanged via UUFI are wrapped in a **UUFI Envelope**.
+
+### Mandatory Payload Fields
+To ensure compatibility with UDMI standards and verification tools, the following fields MUST be included in the inner JSON `payload` object for all messages:
+- `timestamp`: RFC 3339 timestamp of when the message was generated.
+- `version`: The UDMI schema version (e.g., `1.5.2`).
 
 ### Envelope Fields
 The following fields are available in the envelope to provide context for the message. Their presence depends on the transport and specific operation (they are not globally mandatory):
@@ -119,12 +126,17 @@ The `CloudModel` object used in these operations contains:
 
 | UDMI Operation | Envelope `subType` | Envelope `subFolder` | Direction |
 | :--- | :--- | :--- | :--- |
-| Device Config Update | `config` | *varies* (e.g., `pointset`) | Publish |
-| Device State Event | `state` | *varies* (e.g., `system`) | Receive |
-| Device Telemetry | `events` | `pointset` | Receive |
-| Device Discovery | `events` | `discovery` | Receive |
-| Handshake State | `state` | `udmi` | Publish |
-| Handshake Config | `config` | `udmi` | Receive |
+| **Handshake State** | `state` | `udmi` | Publish |
+| **Handshake Config** | `config` | `udmi` | Receive |
+| **Device Config Update** | `config` | *varies* (e.g., `pointset`) | Publish |
+| **Device State Event** | `state` | *varies* (e.g., `system`) | Receive |
+| **Device Telemetry** | `events` | `pointset` | Receive |
+| **Device Discovery** | `events` | `discovery` | Receive |
+| **Model Query** | `query` | `cloud` | Publish |
+| **Model Update** | `model` | `cloud` | Publish |
+| **Model Reply** | `config` | `cloud` | Receive |
+| **Update Config** | `config` | `update` | Publish |
+| **Update State** | `state` | `update` | Receive |
 
 ## 7. Examples
 
