@@ -124,8 +124,19 @@ state. When this is the case, `verifier` should detect that there was an invalid
 ### Observer
 
 The `observe` utility should observe _all_ available traffic for the indicated communication channel. This should show all the communication
-between the components, regardless of the `device_id` or other configuration parameters. Output should be on one line, including the complete
-message payload (don't truncate for line length).
+between the components, regardless of the `device_id` or other configuration parameters.
+
+**Output Format:**
+Messages MUST be output to `stdout` in the following format:
+`{topic}: {payload}`
+- `{topic}`: The full MQTT topic string.
+- `{payload}`: The complete, JSON-encoded message payload.
+
+**Requirements:**
+- **Single Line:** Each message MUST be output on exactly one line.
+- **No Truncation:** The complete message payload MUST be included without truncation.
+- **Unbuffered:** Output MUST be unbuffered (e.g., using `flush=True` in Python) to ensure real-time visibility.
+- **Raw Support:** If a message payload is not valid JSON, it MUST be displayed in its raw string format.
 
 ### Smoke Tester
 
