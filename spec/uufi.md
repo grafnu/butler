@@ -139,6 +139,7 @@ The `CloudModel` object used in these operations contains:
 | **Model Reply** | `config` | `cloud` | Receive |
 | **Update Config** | `config` | `update` | Publish |
 | **Update State** | `state` | `update` | Receive |
+| **Error Reporting** | `errors` | *varies* (e.g., `pointset`) | Receive |
 
 ## 7. Examples
 
@@ -329,7 +330,28 @@ Updating device `BLD-1`.
 To ensure reliable delivery of state and configuration messages, all MQTT communications SHOULD use **QoS 1** (At Least Once).
 
 ### Error Reporting
-When the System encounters an error processing a UUFI message, it will respond via the reply channel using the `error` subFolder. The payload will include:
+When the System encounters an error processing a UUFI message, it will respond via the reply channel using the `error` subType.
+The payload will include:
 - `category`: A string describing the error type (e.g., `auth`, `validation`, `not_found`).
 - `message`: A human-readable description of the error.
 - `transactionId`: The ID of the message that caused the error (if available).
+
+## 9. Compliance and Common Pitfalls
+
+Integration testing between different implementations has identified common areas of non-compliance. Implementations MUST adhere to the following to ensure interoperability:
+
+### 9.1. Mandatory Payload Fields
+Every message's inner `payload` object MUST contain `timestamp` and `version` fields.
+- **Pitfall:** Putting `publishTime` only in the envelope. The System and Verifiers often rely on the internal `timestamp` for UDMI compliance.
+- **Pitfall:** Omitting `version` from the payload.
+
+### 9.2. Handshake Addressing
+The `/uufi/c/{source}/` topic prefix MUST be used for the initial handshake.
+- **Pitfall:** Using the registry-based `/uufi/r/` prefix for handshakes. The System may not have the registry context yet, or may reject registry-addressed messages from unauthenticated clients.
+
+### 9.3. Envelope Redundancy
+Top-level envelope fields MUST NOT include data already encoded in the MQTT topic (e.g., `deviceId`, `subType`).
+- **Pitfall:** "Envelope Nesting" where envelope fields are merged into the inner payload during relay. When a component (like a proxy or relay) wraps a message, it should ensure the inner payload remains a clean UDMI message.
+
+### 9.4. Timestamp Format
+All timestamps MUST follow RFC 3339 (e.g., `2026-05-01T22:32:17Z`). Implementations should use UTC to avoid ambiguity.
