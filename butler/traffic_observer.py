@@ -1,21 +1,21 @@
-import paho.mqtt.client as mqtt
 import sys
 import argparse
-from butler.conn_spec import parse_conn_spec
+import json
+from butler.conn_spec import parse_conn_spec, get_default_conn_spec
+from butler.transport import get_transport
 
-def on_connect(client, userdata, flags, rc, conn_spec):
-    if rc == 0:
-        topic = "/uufi/#"
-        if conn_spec.prefix:
-            topic = f"/uufi/{conn_spec.prefix}/#"
-        client.subscribe(topic)
-    else:
-        print(f"Observer failed to connect: {rc}", flush=True)
-        sys.exit(1)
-
-def on_message(client, userdata, msg):
-    payload = msg.payload.decode('utf-8', errors='replace')
-    print(f"{msg.topic}: {payload}", flush=True)
+def on_message(env, payload, topic):
+    # Reconstruct the wrapped message for display if it's not already raw
+    # For MQTT, the spec says "{topic}: {payload}" where {payload} is the complete JSON-encoded message.
+    # Our transport extracts 'env' and 'payload'. Let's reconstruct it.
+    
+    # Actually, let's just create a combined object that looks like what's on the bus.
+    wrapped = {"payload": payload}
+    for field in ["transactionId", "nonce", "publishTime", "source", "projectId", "principal", "deviceId", "deviceRegistryId", "subType", "subFolder"]:
+        if env.get(field):
+            wrapped[field] = env[field]
+    
+    print(f"{topic}: {json.dumps(wrapped)}", flush=True)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -23,24 +23,22 @@ def main():
     args = parser.parse_args()
 
     conn_spec = parse_conn_spec(args.conn_spec)
+    # print(f"Observer starting with {args.conn_spec}...", flush=True)
     
-    host = conn_spec.host
-    port = conn_spec.port or 1883
-    print(f"Observer connecting to MQTT broker at {host}:{port}", flush=True)
+    transport = get_transport(conn_spec)
+    transport.connect()
     
-    client = mqtt.Client(userdata=conn_spec)
-    client.on_connect = lambda c, u, f, r: on_connect(c, u, f, r, conn_spec)
-    client.on_message = on_message
-
-    if conn_spec.username:
-        client.username_pw_set(conn_spec.username)
+    if conn_spec.protocol == "mqtt":
+        transport.subscribe("/uufi/#" if not conn_spec.prefix else f"/uufi/{conn_spec.prefix}/#", on_message)
+    else:
+        transport.subscribe(on_message)
 
     try:
-        client.connect(host, port, 60)
-        client.loop_forever()
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr, flush=True)
-        sys.exit(1)
+        while True:
+            import time
+            time.sleep(1)
+    except KeyboardInterrupt:
+        transport.loop_stop()
 
 if __name__ == "__main__":
     main()

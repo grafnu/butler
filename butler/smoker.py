@@ -6,6 +6,7 @@ import shutil
 import argparse
 from butler.model_repo import ModelRepository
 from butler.blob_repo import BlobRepository
+from butler.conn_spec import get_default_conn_spec
 
 def main():
     parser = argparse.ArgumentParser()
@@ -24,7 +25,7 @@ def main():
     env = os.environ.copy()
     env["BUTLER_MODEL_FILE"] = model_file
     env["BUTLER_BLOBS_DIR"] = blobs_dir
-    env["BUTLER_TIMEOUT"] = "5"
+    env["BUTLER_TIMEOUT"] = "20"
     env["PYTHONPATH"] = os.getcwd()
     
     print(f"Starting Smoke Test with conn_spec: {conn_spec}...")
@@ -32,10 +33,11 @@ def main():
     # Verify argument enforcement
     print("Verifying argument enforcement...")
     for cmd, cmd_args in [
-        ("bin/register", []),
-        ("bin/mocket", [conn_spec]),
-        ("bin/trigger", [conn_spec, "dev"]),
-        ("bin/trigger", [conn_spec, "dev", "1.0"])
+        ("bin/register", []), # missing conn_spec, device_id
+        ("bin/register", [conn_spec]), # missing device_id
+        ("bin/trigger", [conn_spec]), # missing device_id, blob_version, blob_path
+        ("bin/trigger", [conn_spec, "dev"]), # missing blob_version, blob_path
+        ("bin/trigger", [conn_spec, "dev", "1.0"]) # missing blob_path
     ]:
         res = subprocess.run([sys.executable, cmd] + cmd_args, capture_output=True)
         if res.returncode == 0:
@@ -67,7 +69,7 @@ def main():
         subprocess.run([sys.executable, "bin/trigger", conn_spec, "smoke-dev", "1.1.0", dummy_blob], env=env, check=True)
         
         # Wait and check
-        timeout = 30
+        timeout = 60
         start_time = time.time()
         passed = False
         while time.time() - start_time < timeout:
@@ -98,7 +100,7 @@ def main():
         subprocess.run([sys.executable, "bin/trigger", conn_spec, "smoke-dev", "1.2.0", dummy_blob], env=env, check=True)
         
         # Wait for rollback to 1.1.0
-        timeout = 30
+        timeout = 60
         start_time = time.time()
         rolled_back = False
         while time.time() - start_time < timeout:

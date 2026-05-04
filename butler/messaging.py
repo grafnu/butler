@@ -3,43 +3,41 @@ import datetime
 import secrets
 import os
 
-def create_message(subfolder, payload, source=None, nonce=None):
-    if nonce is None:
-        nonce = secrets.token_hex(4) # 8 hex digits
-    
-    msg = {
+def create_payload(sub_folder, payload_data):
+    """Creates the inner UDMI payload."""
+    return {
         "version": "1.5.2",
         "timestamp": datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
-        "nonce": nonce,
-        subfolder: payload
+        sub_folder: payload_data
     }
-    if source:
-        msg["source"] = source
-    return msg
 
-def create_uufi_message(registry_id, device_id, sub_type, sub_folder, payload, transaction_id=None, source=None, project_id=None):
+def create_envelope(transaction_id=None, nonce=None, source=None, project_id=None, 
+                    registry_id=None, device_id=None, sub_type=None, sub_folder=None):
+    """Creates the UUFI envelope metadata."""
     if transaction_id is None:
         transaction_id = f"tid-{secrets.token_hex(4)}"
+    if nonce is None:
+        nonce = secrets.token_hex(4)
     
-    project_id = project_id or os.environ.get("BUTLER_PROJECT_ID", "butler-project")
-    udmi_msg = create_message(sub_folder, payload, source=source)
     envelope = {
-        "projectId": project_id,
         "transactionId": transaction_id,
-        "publishTime": udmi_msg["timestamp"],
-        "source": source or "system",
-        "payload": udmi_msg
+        "nonce": nonce,
+        "publishTime": datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
     }
+    
+    if source: envelope["source"] = source
+    if project_id: envelope["projectId"] = project_id
+    if registry_id: envelope["deviceRegistryId"] = registry_id
+    if device_id: envelope["deviceId"] = device_id
+    if sub_type: envelope["subType"] = sub_type
+    if sub_folder: envelope["subFolder"] = sub_folder
+        
     return envelope
 
 def parse_message(data):
     try:
+        if isinstance(data, bytes):
+            data = data.decode('utf-8')
         return json.loads(data)
-    except json.JSONDecodeError:
+    except Exception:
         return None
-
-def parse_uufi_message(data):
-    msg = parse_message(data)
-    if msg and "payload" in msg:
-        return msg["payload"], msg
-    return msg, None
