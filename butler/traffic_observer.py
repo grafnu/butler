@@ -1,66 +1,37 @@
 import json
-import paho.mqtt.client as mqtt
 import os
 import argparse
 import sys
-from butler.common import parse_conn_spec
+from butler.common import ButlerBusFactory, get_default_conn_spec
 
-def on_connect(client, userdata, flags, rc):
-    if rc == 0:
-        print("[observer] Connected to MQTT broker")
-        # Subscribe to all traffic based on prefix if available
-        prefix = userdata.get("prefix")
-        if prefix:
-            client.subscribe(f"/{prefix}/#")
-        else:
-            client.subscribe("#")
-    else:
-        print(f"[observer] Connection failed with code {rc}")
+class ButlerTrafficObserver:
+    def __init__(self, conn_spec=None):
+        conn_spec = conn_spec or get_default_conn_spec()
+        self.bus = ButlerBusFactory(source="observe", conn_spec=conn_spec)
+        self.bus.on_connect = self.on_connect
+        self.bus.on_message = self.on_message
 
-def on_message(client, userdata, msg):
-    try:
-        # Unbuffered output: ensure stdout is flushed
-        payload = msg.payload.decode()
-        try:
-            data = json.loads(payload)
-            # Output on one line, including complete message payload
-            payload_str = json.dumps(data)
-        except json.JSONDecodeError:
-            # Protocol Decoupling & Graceful Degradation: Show raw if not JSON
-            payload_str = payload
-        
-        print(f"{msg.topic}: {payload_str}")
+    def on_connect(self):
+        print(f"[observe] Observer connected, tapping into message stream...")
+        self.bus.subscribe_uufi()
+
+    def on_message(self, topic, device_id, sub_type, sub_folder, data):
+        # Protocol Decoupling & Graceful Degradation: data is already parsed JSON
+        # Output on one line, including complete message payload
+        print(f"{topic}: {json.dumps(data)}")
         sys.stdout.flush()
-    except Exception as e:
-        print(f"Error processing message on {msg.topic}: {e}")
-        sys.stdout.flush()
+
+    def run(self):
+        self.bus.connect()
+        self.bus.loop_forever()
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("conn_spec", nargs="?", help="Connection specification")
     args = parser.parse_args()
 
-    user, host, port, prefix = parse_conn_spec(args.conn_spec)
-    
-    # Connectivity Parameters: Sufficient to diagnose communication substrate
-    print(f"[observer] Starting Observer...")
-    print(f"MQTT Host: {host}")
-    print(f"MQTT Port: {port}")
-    if prefix:
-        print(f"Topic Prefix: {prefix}")
-    
-    # Try to support both paho-mqtt 1.x and 2.x
-    try:
-        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1, userdata={"prefix": prefix})
-    except AttributeError:
-        client = mqtt.Client(userdata={"prefix": prefix})
-        
-    client.on_connect = on_connect
-    client.on_message = on_message
-    
-    print(f"[observer] Connecting to {host}:{port}...")
-    client.connect(host, port, 60)
-    client.loop_forever()
+    observer = ButlerTrafficObserver(conn_spec=args.conn_spec)
+    observer.run()
 
 if __name__ == "__main__":
     main()

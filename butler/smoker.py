@@ -4,15 +4,13 @@ import os
 import sys
 import json
 
+from butler.common import get_default_conn_spec
+
 def run_command(args, env=None):
     return subprocess.run(args, capture_output=True, text=True, env=env)
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: bin/smokeit conn_spec")
-        sys.exit(1)
-        
-    conn_spec = sys.argv[1]
+    conn_spec = sys.argv[1] if len(sys.argv) > 1 else get_default_conn_spec()
     print(f"Starting Smoke Test with conn_spec: {conn_spec}")
     
     # Ensure testing directory exists
@@ -51,22 +49,23 @@ def main():
     print("Running setup...")
     subprocess.run(["bin/setup", conn_spec], check=True)
     
-    # 3. Start Orchestrator (System) first so it can handle handshakes
+    # 3. Start Mocket (Client/UDMIS) first so it can handle model requests
+    print("Starting Mocket...")
+    mocket = subprocess.Popen(["bin/mocket", conn_spec, "dev1"])
+    time.sleep(5)
+
+    # 4. Start Orchestrator (System)
     print("Starting Orchestrator...")
     orchestrator = subprocess.Popen(["bin/butler", conn_spec])
     time.sleep(5)
-    
-    # 4. Start Verifier
+
+    # 5. Start Verifier
     print("Starting Verifier...")
     verifier = subprocess.Popen(["bin/verifier", conn_spec])
     time.sleep(2)
 
-    # 5. Start Mocket (Client)
-    print("Starting Mocket...")
-    mocket = subprocess.Popen(["bin/mocket", conn_spec, "dev1"])
-    time.sleep(5)
-    
-    # 6. Register device
+    # 6. Register device dev1...
+
     print("Registering device dev1...")
     subprocess.run(["bin/register", conn_spec, "dev1"], check=True)
     
