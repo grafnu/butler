@@ -342,8 +342,10 @@ Integration testing between different implementations has identified common area
 
 ### 9.1. Mandatory Payload Fields
 Every message's inner `payload` object MUST contain `timestamp` and `version` fields.
+- **Payload Structure:** The `payload` object MUST contain exactly one top-level key matching the `subFolder` name (e.g., `system`, `pointset`, `update`, `cloud`), which contains the UDMI data, in addition to the mandatory `timestamp` and `version` fields at the same level.
 - **Pitfall:** Putting `publishTime` only in the envelope. The System and Verifiers often rely on the internal `timestamp` for UDMI compliance.
 - **Pitfall:** Omitting `version` from the payload.
+- **Pitfall:** Placing UDMI fields directly in the `payload` without the subfolder wrapper.
 
 ### 9.2. Handshake Addressing
 The `/uufi/c/{source}/` topic prefix MUST be used for the initial handshake.
