@@ -5,7 +5,7 @@ import shutil
 
 class ModelRepository:
     def __init__(self, model_file=None):
-        self.model_file = model_file or os.environ.get('BUTLER_MODEL_FILE', 'model.json')
+        self.model_file = model_file or os.environ.get('BUTLER_MODEL_FILE', 'tmp/model.json')
         self._ensure_file()
 
     def _ensure_file(self):

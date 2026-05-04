@@ -8,8 +8,8 @@ from butler.blob_repo import BlobRepository
 from butler.model_repo import ModelRepository
 
 class ButlerOrchestrator(ButlerMQTTBase):
-    def __init__(self, failure_mode=False, timeout=60):
-        super().__init__(source="butler")
+    def __init__(self, conn_spec=None, failure_mode=False, timeout=60):
+        super().__init__(source="butler", conn_spec=conn_spec)
         self.blob_repo = BlobRepository()
         self.model_repo = ModelRepository()
         self.failure_mode = failure_mode
@@ -62,8 +62,8 @@ class ButlerOrchestrator(ButlerMQTTBase):
                 }
             }
         }
-        # Handshake addressing: /uufi/c/{source}/{subType}/{subFolder}
-        self.publish_uufi(device_id, "config", response_payload, "udmi", direction="reply", target_source=source, transaction_id=transaction_id)
+        # Handshake addressing: /uufi/p/{principal}/{subType}/{subFolder}
+        self.publish_uufi(device_id, "config", response_payload, "udmi", direction="reply", target_principal=source, transaction_id=transaction_id)
 
     def handle_device_state(self, device_id, data):
         current_version = data.get("version")
@@ -165,11 +165,12 @@ class ButlerOrchestrator(ButlerMQTTBase):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("conn_spec", nargs="?", help="Connection specification (e.g. mqtt://localhost:1883)")
     parser.add_argument("-f", "--failure", action="store_true", help="Enable failure mode")
     parser.add_argument("-t", "--timeout", type=int, default=60, help="Pending state timeout (seconds)")
     args = parser.parse_args()
 
-    orchestrator = ButlerOrchestrator(failure_mode=args.failure, timeout=args.timeout)
+    orchestrator = ButlerOrchestrator(conn_spec=args.conn_spec, failure_mode=args.failure, timeout=args.timeout)
     orchestrator.connect()
     
     threading.Thread(target=orchestrator.check_timeouts, daemon=True).start()

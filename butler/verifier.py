@@ -1,10 +1,11 @@
 import json
 import re
+import argparse
 from butler.common import ButlerMQTTBase
 
 class ButlerVerifier(ButlerMQTTBase):
-    def __init__(self):
-        super().__init__(source="verifier")
+    def __init__(self, conn_spec=None):
+        super().__init__(source="verifier", conn_spec=conn_spec)
         self.device_states = {}
         self.active_clients = set()
         self.rfc3339_regex = re.compile(
@@ -41,7 +42,8 @@ class ButlerVerifier(ButlerMQTTBase):
                 self.report_verification(device_id or "unknown", f"VALIDATION ERROR: {err}", level="ERROR")
 
         # Handshake Awareness
-        if "/uufi/c/" in topic and sub_type == "state" and sub_folder == "udmi":
+        # Pattern: /uufi/p/{principal}/{subType}/{subFolder}
+        if "/uufi/p/" in topic and sub_type == "state" and sub_folder == "udmi":
             self.report_verification(device_id or source, f"Handshake started by {source}")
         
         if sub_type == "config" and sub_folder == "udmi":
@@ -88,7 +90,11 @@ def data_now():
     return datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 def main():
-    verifier = ButlerVerifier()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("conn_spec", nargs="?", help="Connection specification")
+    args = parser.parse_args()
+    
+    verifier = ButlerVerifier(conn_spec=args.conn_spec)
     verifier.connect()
     verifier.loop_forever()
 

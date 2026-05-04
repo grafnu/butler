@@ -8,7 +8,12 @@ def run_command(args, env=None):
     return subprocess.run(args, capture_output=True, text=True, env=env)
 
 def main():
-    print("Starting Smoke Test...")
+    if len(sys.argv) < 2:
+        print("Usage: bin/smokeit conn_spec")
+        sys.exit(1)
+        
+    conn_spec = sys.argv[1]
+    print(f"Starting Smoke Test with conn_spec: {conn_spec}")
     
     # Ensure testing directory exists
     os.makedirs("testing", exist_ok=True)
@@ -22,48 +27,48 @@ def main():
     # 1. Verify Argument Enforcement
     print("Verifying argument enforcement...")
     
-    # register requires device_id
+    # register requires conn_spec and device_id
     res = run_command(["bin/register"])
     if res.returncode == 0:
-        print("FAIL: bin/register should require device_id")
+        print("FAIL: bin/register should require arguments")
         sys.exit(1)
         
-    # trigger requires device_id blob_version blob_path
-    res = run_command(["bin/trigger", "dev1", "1.1"])
+    # trigger requires conn_spec, device_id, blob_version, blob_path
+    res = run_command(["bin/trigger", conn_spec, "dev1", "1.1"])
     if res.returncode == 0:
-        print("FAIL: bin/trigger should require 3 arguments")
+        print("FAIL: bin/trigger should require 4 arguments")
         sys.exit(1)
 
-    # mocket requires device_id
+    # mocket requires conn_spec and device_id
     res = run_command(["bin/mocket"])
     if res.returncode == 0:
-        print("FAIL: bin/mocket should require device_id")
+        print("FAIL: bin/mocket should require arguments")
         sys.exit(1)
 
     print("Argument enforcement verified.")
 
     # 2. Setup
     print("Running setup...")
-    subprocess.run(["bin/setup"], check=True)
+    subprocess.run(["bin/setup", conn_spec], check=True)
     
     # 3. Start Orchestrator (System) first so it can handle handshakes
     print("Starting Orchestrator...")
-    orchestrator = subprocess.Popen(["bin/butler"])
+    orchestrator = subprocess.Popen(["bin/butler", conn_spec])
     time.sleep(5)
     
     # 4. Start Verifier
     print("Starting Verifier...")
-    verifier = subprocess.Popen(["bin/verifier"])
+    verifier = subprocess.Popen(["bin/verifier", conn_spec])
     time.sleep(2)
 
     # 5. Start Mocket (Client)
     print("Starting Mocket...")
-    mocket = subprocess.Popen(["bin/mocket", "dev1"])
+    mocket = subprocess.Popen(["bin/mocket", conn_spec, "dev1"])
     time.sleep(5)
     
     # 6. Register device
     print("Registering device dev1...")
-    subprocess.run(["bin/register", "dev1"], check=True)
+    subprocess.run(["bin/register", conn_spec, "dev1"], check=True)
     
     # 7. Trigger update
     print("Triggering update...")
@@ -72,7 +77,7 @@ def main():
     with open(blob_path, "wb") as f:
         f.write(b"smoke test blob")
         
-    subprocess.run(["bin/trigger", "dev1", "9.9.9-smoke", blob_path], check=True)
+    subprocess.run(["bin/trigger", conn_spec, "dev1", "9.9.9-smoke", blob_path], check=True)
     
     # 8. Wait for update
     print("Waiting for update...")

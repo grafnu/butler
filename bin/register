@@ -13,11 +13,17 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from butler.model_repo import ModelRepository
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: bin/register device_id")
+    if len(sys.argv) < 2:
+        print("Usage: bin/register conn_spec device_id")
         sys.exit(1)
     
-    device_id = sys.argv[1]
+    if len(sys.argv) == 2:
+        # Fallback for old usage if only device_id is provided, but we should prefer conn_spec first
+        device_id = sys.argv[1]
+    else:
+        # conn_spec = sys.argv[1]
+        device_id = sys.argv[2]
+    
     model_repo = ModelRepository()
     # Default make/model based on spec and existing blobs: vibrant/butler-v1/main
     model_repo.set_device_info(device_id, "vibrant", "butler-v1", "main")

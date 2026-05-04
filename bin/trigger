@@ -14,13 +14,14 @@ from butler.model_repo import ModelRepository
 from butler.blob_repo import BlobRepository
 
 def main():
-    if len(sys.argv) != 4:
-        print("Usage: bin/trigger device_id blob_version blob_path")
+    if len(sys.argv) < 4:
+        print("Usage: bin/trigger conn_spec device_id blob_version blob_path")
         sys.exit(1)
     
-    device_id = sys.argv[1]
-    blob_version = sys.argv[2]
-    blob_path = sys.argv[3]
+    # conn_spec = sys.argv[1]
+    device_id = sys.argv[2]
+    blob_version = sys.argv[3]
+    blob_path = sys.argv[4]
     subsystem = "main"
     
     model_repo = ModelRepository()

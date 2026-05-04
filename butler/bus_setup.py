@@ -1,17 +1,26 @@
 import os
+import argparse
 from butler.model_repo import ModelRepository
 from butler.blob_repo import BlobRepository
+from butler.common import parse_conn_spec
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("conn_spec", nargs="?", help="Connection specification")
+    args = parser.parse_args()
+
+    user, host, port, prefix = parse_conn_spec(args.conn_spec)
+
     print("Setting up Butler environment...")
     project_id = os.environ.get("BUTLER_PROJECT_ID", "vibrant")
     registry_id = os.environ.get("BUTLER_REGISTRY_ID", "controller")
-    mqtt_host = os.environ.get("MQTT_HOST", "localhost")
-    mqtt_port = os.environ.get("MQTT_PORT", "1883")
+    
     print(f"Project ID: {project_id}")
     print(f"Registry ID: {registry_id}")
-    print(f"MQTT Host: {mqtt_host}")
-    print(f"MQTT Port: {mqtt_port}")
+    print(f"MQTT Host: {host}")
+    print(f"MQTT Port: {port}")
+    if prefix:
+        print(f"Topic Prefix: {prefix}")
     
     model_repo = ModelRepository()
     # Clean up model for a fresh start

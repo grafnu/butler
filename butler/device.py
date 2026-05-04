@@ -6,8 +6,8 @@ import os
 from butler.common import ButlerMQTTBase
 
 class MocketDevice(ButlerMQTTBase):
-    def __init__(self, device_id, failure_mode=False):
-        super().__init__(source="mockit")
+    def __init__(self, device_id, conn_spec=None, failure_mode=False):
+        super().__init__(source="mockit", conn_spec=conn_spec)
         self.device_id = device_id
         self.failure_mode = failure_mode
         self.current_version = "1.0"
@@ -104,11 +104,12 @@ class MocketDevice(ButlerMQTTBase):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("conn_spec", nargs="?", help="Connection specification")
     parser.add_argument("device_id")
     parser.add_argument("-f", "--failure", action="store_true", help="Enable failure mode")
     args = parser.parse_args()
     
-    device = MocketDevice(args.device_id, failure_mode=args.failure)
+    device = MocketDevice(args.device_id, conn_spec=args.conn_spec, failure_mode=args.failure)
     device.connect()
     
     threading.Thread(target=device.heartbeat, daemon=True).start()

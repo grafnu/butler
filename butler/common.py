@@ -4,12 +4,41 @@ import datetime
 import time
 import os
 import paho.mqtt.client as mqtt
+from urllib.parse import urlparse
+
+def parse_conn_spec(conn_spec):
+    """
+    Parses a connection string like mqtt://user@host:port/prefix
+    Returns (user, host, port, prefix)
+    """
+    if not conn_spec:
+        return None, "localhost", 1883, ""
+    
+    parsed = urlparse(conn_spec)
+    if parsed.scheme != "mqtt":
+        # Fallback for simple host or host:port
+        if ":" in conn_spec:
+            host, port = conn_spec.split(":")
+            return None, host, int(port), ""
+        return None, conn_spec, 1883, ""
+
+    user = parsed.username
+    host = parsed.hostname or "localhost"
+    port = parsed.port or 1883
+    prefix = parsed.path.strip("/")
+    
+    return user, host, port, prefix
 
 class ButlerMQTTBase:
-    def __init__(self, source, host=None, port=None, track_nonces=True):
+    def __init__(self, source, conn_spec=None, track_nonces=True):
         self.source = source
-        self.host = host or os.environ.get("MQTT_HOST", "localhost")
-        self.port = int(port or os.environ.get("MQTT_PORT", 1883))
+        user, host, port, prefix = parse_conn_spec(conn_spec or os.environ.get("BUTLER_CONN_SPEC"))
+        
+        self.principal = user or source
+        self.host = host
+        self.port = port
+        self.prefix = prefix
+        
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
@@ -32,25 +61,35 @@ class ButlerMQTTBase:
         try:
             data = json.loads(msg.payload.decode())
             
-            parts = msg.topic.split('/')
-            # /uufi/r/{registryId}/d/{deviceId}/{subType}/{subFolder}
-            # /uufi/c/{source}/{subType}/{subFolder}
+            # Topic patterns:
+            # /{prefix}/uufi/p/{principal}/{subType}/{subFolder}
+            # /{prefix}/uufi/r/{registryId}/d/{deviceId}/{subType}/{subFolder}
             
-            if len(parts) < 5 or parts[1] != "uufi":
+            parts = msg.topic.strip("/").split('/')
+            
+            # Find the 'uufi' index
+            try:
+                uufi_idx = parts.index("uufi")
+            except ValueError:
                 return
 
-            if parts[2] == "r":
-                if len(parts) < 7 or parts[4] != "d":
+            if len(parts) < uufi_idx + 3:
+                return
+
+            branch = parts[uufi_idx + 1]
+            
+            if branch == "r":
+                if len(parts) < uufi_idx + 5 or parts[uufi_idx + 3] != "d":
                     return
-                registry_id = parts[3]
-                device_id = parts[5]
-                sub_type = parts[6]
-                sub_folder = parts[7] if len(parts) > 7 else None
-            elif parts[2] == "c":
-                source = parts[3]
-                sub_type = parts[4]
-                sub_folder = parts[5] if len(parts) > 5 else None
-                device_id = None # Handshake messages might not have a device_id yet
+                registry_id = parts[uufi_idx + 2]
+                device_id = parts[uufi_idx + 4]
+                sub_type = parts[uufi_idx + 5]
+                sub_folder = parts[uufi_idx + 6] if len(parts) > uufi_idx + 6 else None
+            elif branch == "p":
+                principal = parts[uufi_idx + 2]
+                sub_type = parts[uufi_idx + 3]
+                sub_folder = parts[uufi_idx + 4] if len(parts) > uufi_idx + 4 else None
+                device_id = None
             else:
                 return
 
@@ -60,13 +99,13 @@ class ButlerMQTTBase:
                 if k != "payload":
                     udmi_payload[k] = v
             
-            source = udmi_payload.get("source")
-            if source == self.source:
+            msg_source = udmi_payload.get("source")
+            if msg_source == self.source:
                 return
 
             if self.track_nonces:
                 nonce = udmi_payload.get("nonce")
-                if nonce and source != self.source:
+                if nonce:
                     if nonce in self.seen_nonces:
                         return
                     self.seen_nonces.add(nonce)
@@ -76,15 +115,16 @@ class ButlerMQTTBase:
             # Handshake check
             if sub_type == "config" and sub_folder == "udmi":
                 udmi = udmi_payload.get("udmi", {})
-                reply = udmi.get("reply", {})
-                if reply.get("transaction_id") == self.handshake_transaction_id:
+                reply = udmi.get("reply")
+                if reply and reply.get("transaction_id") == self.handshake_transaction_id:
                     self.handshake_complete = True
                     print(f"[{self.source}] Handshake complete!")
 
             self.on_message(msg.topic, device_id, sub_type, sub_folder, udmi_payload)
         except Exception as e:
-            if self.track_nonces:
-                print(f"[{self.source}] Error decoding message on {msg.topic}: {e}")
+            # If not valid JSON, we might still want to see it if we are an observer
+            # but for the base class we just ignore it unless specifically handled
+            pass
 
     def on_connect(self):
         pass
@@ -95,6 +135,8 @@ class ButlerMQTTBase:
     def connect(self):
         print(f"[{self.source}] Connecting to MQTT broker at {self.host}:{self.port}...")
         print(f"[{self.source}] Project ID: {self.project_id}, Registry ID: {self.registry_id}")
+        if self.prefix:
+            print(f"[{self.source}] Topic Prefix: {self.prefix}")
         self.client.connect(self.host, self.port, 60)
 
     def loop_start(self):
@@ -107,9 +149,9 @@ class ButlerMQTTBase:
         self.client.loop_forever()
 
     def generate_nonce(self):
-        return secrets.token_hex(4)
+        return secrets.token_hex(4) # 8-digit hex
 
-    def publish_uufi(self, device_id, sub_type, payload_data, sub_folder=None, direction="reflect", target_source=None, transaction_id=None):
+    def publish_uufi(self, device_id, sub_type, payload_data, sub_folder=None, direction="reflect", target_principal=None, transaction_id=None):
         publish_time = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         nonce = self.generate_nonce()
         
@@ -135,27 +177,38 @@ class ButlerMQTTBase:
             "payload": payload_data
         }
         
-        # MQTT Topic Structure according to uufi.md:
-        if is_handshake:
-            # /uufi/c/{source}/{subType}/{subFolder}
-            source_to_use = target_source or self.source
-            topic = f"/uufi/c/{source_to_use}/{sub_type}"
-        else:
-            # /uufi/r/{registryId}/d/{deviceId}/{subType}/{subFolder}
-            topic = f"/uufi/r/{self.registry_id}/d/{device_id}/{sub_type}"
-            
-        if sub_folder:
-            topic += f"/{sub_folder}"
+        # Topic Structure
+        topic_parts = []
+        if self.prefix:
+            topic_parts.append(self.prefix)
+        topic_parts.append("uufi")
         
+        if is_handshake:
+            topic_parts.append("p")
+            topic_parts.append(target_principal or self.principal)
+        else:
+            topic_parts.append("r")
+            topic_parts.append(self.registry_id)
+            topic_parts.append("d")
+            topic_parts.append(device_id)
+        
+        topic_parts.append(sub_type)
+        if sub_folder:
+            topic_parts.append(sub_folder)
+        
+        topic = "/" + "/".join(topic_parts)
         self.client.publish(topic, json.dumps(envelope))
 
-    def subscribe_uufi(self, direction="reflect", target_source=None):
-        # In the new MQTT scheme, reflect/reply are on the same topics
-        # We subscribe to the whole /uufi namespace
-        self.client.subscribe("/uufi/#")
+    def subscribe_uufi(self):
+        # Subscribe to all traffic under the prefix
+        topic = "/#"
+        if self.prefix:
+            topic = f"/{self.prefix}/#"
+        else:
+            topic = "/uufi/#"
+        self.client.subscribe(topic)
 
     def start_handshake(self, device_id=None):
-        device_id = device_id or self.registry_id
         self.handshake_transaction_id = f"UUFI:{self.source}:{self.generate_nonce()}"
         payload = {
             "udmi": {
@@ -163,12 +216,12 @@ class ButlerMQTTBase:
                     "functions_ver": 9,
                     "transaction_id": self.handshake_transaction_id,
                     "msg_source": self.source,
-                    "user": self.source
+                    "user": self.principal
                 }
             }
         }
         self.subscribe_uufi()
-        self.publish_uufi(device_id, "state", payload, "udmi", transaction_id=self.handshake_transaction_id)
+        self.publish_uufi(None, "state", payload, "udmi", transaction_id=self.handshake_transaction_id)
         print(f"[{self.source}] Started handshake with transaction {self.handshake_transaction_id}")
 
     def wait_for_handshake(self, timeout=10):
