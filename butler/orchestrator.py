@@ -22,7 +22,8 @@ class Orchestrator:
         self.model = {}
         self.principal = self.conn_spec.principal or "butler"
 
-    def on_message(self, env, payload, topic):
+    def on_message(self, env, payload, topic, raw=None):
+        if not payload: return
         sub_type = env.get("subType")
         sub_folder = env.get("subFolder")
         device_id = env.get("deviceId")

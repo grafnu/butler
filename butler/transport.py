@@ -37,20 +37,21 @@ class MqttTransport(Transport):
     def on_message(self, client, userdata, msg):
         if not self.callback: return
         
+        raw_payload = msg.payload.decode('utf-8', errors='replace')
+        data = parse_message(msg.payload)
+        
+        env = {}
+        payload = None
+        if data:
+            payload = data.get("payload", data)
+            # Envelope fields from JSON if present
+            for field in ["transactionId", "nonce", "publishTime", "source", "projectId"]:
+                if field in data: env[field] = data[field]
+        
         # Parse topic to extract envelope
         parts = msg.topic.split('/')
         offset = 1 if self.conn_spec.prefix else 0
         
-        env = {}
-        data = parse_message(msg.payload)
-        if not data: return
-        
-        payload = data.get("payload", data)
-        
-        # Envelope fields from JSON if present
-        for field in ["transactionId", "nonce", "publishTime", "source", "projectId"]:
-            if field in data: env[field] = data[field]
-            
         # Envelope fields from topic
         if len(parts) >= 6 + offset and parts[1] == "uufi":
             if parts[2+offset] == "p":
@@ -63,7 +64,7 @@ class MqttTransport(Transport):
                 env["subType"] = parts[6+offset]
                 env["subFolder"] = parts[7+offset]
 
-        self.callback(env, payload, msg.topic)
+        self.callback(env, payload, msg.topic, raw_payload)
 
     def publish(self, envelope, payload):
         topic = self.get_topic(envelope)

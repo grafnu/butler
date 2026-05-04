@@ -17,7 +17,8 @@ class Verifier:
         self.timestamp_regex = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$')
         self.registry_id = "butler-registry"
 
-    def on_message(self, env, payload, topic):
+    def on_message(self, env, payload, topic, raw=None):
+        if not payload: return
         # Mandatory field validation
         if "timestamp" not in payload or "version" not in payload:
             self.log_verification("Missing mandatory UDMI fields (timestamp or version)", level="FAIL")
