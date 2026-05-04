@@ -1,5 +1,12 @@
 Prefer python unless otherwise specified.
-mqtt and mosquitto are available.
+mqtt and mosquitto are available on the system.
+
+If the BUTLER_CONN_SPEC env variable is defined, it should use that as the connectivity specificaiton for all tools.
+It would conform to the `uufi.md` spec as defined. Otherwise, the tests should use `mqtt://<branchname>@localhost/` as
+the specification, where `<branchname>` is the current git branch (defaulting to `unknown` if not in a git directory).
+
+* For `mqtt` connections, the only valid hostname for testing is `localhost`
+* For `pubsub` connections, it can be assumed that the necessary authentication will already be setup.
 
 The top-level files should not be removed or altered.
 * README.md
