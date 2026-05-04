@@ -24,7 +24,9 @@ To provide a standard way to connect into the system using a single string desig
 * `mqtt` uses the industry standard [mqtt protocol](https://github.com/mqtt)
 * `pubsub` uses [Google Cloud Platform's PubSub](https://cloud.google.com/pubsub)
 
-You can use optional tags like `user@` and `:port` as necessary within the URL format.
+You can use the optional like `user@` and `:port` as necessary within the URL format.
+* If `user@` is not specified then it should default to `default`
+* If `:port` is not specified, then it should default to the protocol-specific meaningful default.
 
 #### Protocol Mapping
 
@@ -46,12 +48,12 @@ should be filtered to only include messsages that have this (matching) attribute
 **MQTT (`mqtt://`)**
 *   The base `host` and `:port` map as expected.
 *   The `user@` prefix maps to a `username` property that's added to the MQTT topic path (e.g., as the `{principal}` identifier in `/uufi/p/{principal}/...`).
-  * If present, a client needs to subscribe to two topics (with and without the principal) to also receive generic broadcast messages.
+  * Clients need to subscribe to two topics (with and without the principal) to also receive generic broadcast messages.
 *   The first URL path part, if present, maps to an optional topic prefix (else empty)
-*   *Example:* `mqtt://the-user@localhost:8883/a-prefix` maps to:
-  * The MQTT broker at `localhost:8883`
+*   *Example:* `mqtt://the-user@localhost:8783/a-prefix` maps to:
+  * The MQTT broker at `localhost:8783`
   * Adds `the-user` and `a-prefix` into the MQTT topic path (e.g., `/uufi/a-prefix/p/the-user/...`).
-    * Both fields are optional, with the pattern being `/uufi/` + [`prefix/`] + [`p/user/`].
+    * The prefix is optional, with the pattern being `/uufi/` + [`{prefix}/`]
 
 ### 2.2. PubSub Transport
 The Client must have access to the GCP project where the UDMI system is deployed.
