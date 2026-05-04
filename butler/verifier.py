@@ -5,7 +5,7 @@ import sys
 import argparse
 import re
 from butler.messaging import create_payload, create_envelope
-from butler.conn_spec import parse_conn_spec, get_default_conn_spec
+from butler.conn_spec import parse_conn_spec
 from butler.transport import get_transport
 
 class Verifier:

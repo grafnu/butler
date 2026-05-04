@@ -1,7 +1,7 @@
 import sys
 import argparse
 from butler.model_repo import ModelRepository
-from butler.conn_spec import parse_conn_spec, get_default_conn_spec
+from butler.conn_spec import parse_conn_spec
 
 def main():
     parser = argparse.ArgumentParser()

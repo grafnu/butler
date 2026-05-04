@@ -1,15 +1,14 @@
 import sys
 import argparse
 import json
-from butler.conn_spec import parse_conn_spec, get_default_conn_spec
+from butler.conn_spec import parse_conn_spec
 from butler.transport import get_transport
 
 def on_message(env, payload, topic):
     # Reconstruct the wrapped message for display if it's not already raw
     # For MQTT, the spec says "{topic}: {payload}" where {payload} is the complete JSON-encoded message.
-    # Our transport extracts 'env' and 'payload'. Let's reconstruct it.
     
-    # Actually, let's just create a combined object that looks like what's on the bus.
+    # Create a combined object that looks like what's on the bus.
     wrapped = {"payload": payload}
     for field in ["transactionId", "nonce", "publishTime", "source", "projectId", "principal", "deviceId", "deviceRegistryId", "subType", "subFolder"]:
         if env.get(field):
@@ -23,7 +22,6 @@ def main():
     args = parser.parse_args()
 
     conn_spec = parse_conn_spec(args.conn_spec)
-    # print(f"Observer starting with {args.conn_spec}...", flush=True)
     
     transport = get_transport(conn_spec)
     transport.connect()

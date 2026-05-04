@@ -1,6 +1,6 @@
 import sys
 import argparse
-from butler.conn_spec import parse_conn_spec, get_default_conn_spec
+from butler.conn_spec import parse_conn_spec
 
 def main():
     parser = argparse.ArgumentParser()
@@ -13,19 +13,42 @@ def main():
 
     if conn_spec.protocol == "mqtt":
         import paho.mqtt.client as mqtt
+        import subprocess
+        import time
         host = conn_spec.host
         port = conn_spec.port or 1883
-        print(f"Connecting to MQTT broker at {host}:{port}...")
-        client = mqtt.Client()
-        if conn_spec.username:
-            client.username_pw_set(conn_spec.username)
-        try:
-            client.connect(host, port, 10)
+        
+        def check_mqtt():
+            client = mqtt.Client()
+            if conn_spec.username:
+                client.username_pw_set(conn_spec.username)
+            try:
+                client.connect(host, port, 5)
+                client.disconnect()
+                return True
+            except Exception:
+                return False
+
+        print(f"Checking connectivity to MQTT broker at {host}:{port}...")
+        if check_mqtt():
             print("Successfully connected to MQTT broker.")
-            client.disconnect()
-        except Exception as e:
-            print(f"Failed to connect to MQTT broker: {e}")
+        elif host == "localhost":
+            print("Failed to connect. Attempting to start local mosquitto server...")
+            try:
+                subprocess.Popen(["mosquitto", "-d"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                time.sleep(2)
+                if check_mqtt():
+                    print("Successfully started and connected to local mosquitto.")
+                else:
+                    print("Failed to start mosquitto or it is still not accessible.")
+                    sys.exit(1)
+            except Exception as e:
+                print(f"Error starting mosquitto: {e}")
+                sys.exit(1)
+        else:
+            print(f"Failed to connect to remote MQTT broker at {host}:{port}.")
             sys.exit(1)
+
     elif conn_spec.protocol == "pubsub":
         from google.cloud import pubsub_v1
         from google.api_core import exceptions
@@ -41,8 +64,8 @@ def main():
             publisher.get_topic(topic=topic_path)
             print(f"Topic {conn_spec.root_topic} exists.")
         except exceptions.NotFound:
-            print(f"Creating topic {conn_spec.root_topic}...")
-            publisher.create_topic(name=topic_path)
+            print(f"FAIL: Topic {conn_spec.root_topic} not found. PubSub resources must be pre-configured.")
+            sys.exit(1)
         except Exception as e:
             print(f"Error checking topic: {e}")
             sys.exit(1)
@@ -52,8 +75,8 @@ def main():
             subscriber.get_subscription(subscription=sub_path)
             print(f"Subscription {conn_spec.subscription} exists.")
         except exceptions.NotFound:
-            print(f"Creating subscription {conn_spec.subscription}...")
-            subscriber.create_subscription(name=sub_path, topic=topic_path)
+            print(f"FAIL: Subscription {conn_spec.subscription} not found. PubSub resources must be pre-configured.")
+            sys.exit(1)
         except Exception as e:
             print(f"Error checking subscription: {e}")
             sys.exit(1)

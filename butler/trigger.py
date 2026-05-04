@@ -3,7 +3,7 @@ import argparse
 import os
 from butler.model_repo import ModelRepository
 from butler.blob_repo import BlobRepository
-from butler.conn_spec import parse_conn_spec, get_default_conn_spec
+from butler.conn_spec import parse_conn_spec
 
 def main():
     parser = argparse.ArgumentParser()
