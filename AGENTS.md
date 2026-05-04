@@ -7,4 +7,9 @@ The top-level files should not be removed or altered.
 * BUTLER.md
 * MERGER.md
 * .wincolor
+* .gitignore
 
+The result of all work should be contained within the following directories:
+
+* bin/
+* butler/
