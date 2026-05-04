@@ -21,6 +21,8 @@ UUFI utilizes a messaging transport where the Client interacts with the System v
 
 ### 2.1. Connection String Designator
 To provide a standard way to connect into the system using a single string designator, UUFI interfaces support a URL-like connection string format. The two supported schemes are `mqtt://` and `pubsub://`.
+* `mqtt` uses the industry standard [mqtt protocol](https://github.com/mqtt)
+* `pubsub` uses [Google Cloud Platform's PubSub](https://cloud.google.com/pubsub)
 
 You can use optional tags like `user@` and `:port` as necessary within the URL format.
 
