@@ -27,6 +27,3 @@ Any test files should be generated in directories covered by `.gitignore`. Do no
 execution. At the end of the testing, there should not be any artifacts left that are visible by `git status`,
 and the `opt_a` and `opt_b` directories (and corresponding logs) should remain.
 
-If the BUTLER_MERGER_SPEC env variable is defined, it should use that as the connectivity specificaiton for all tools.
-It would conform to the `uufi.md` spec as defined. Otherwise, the tests should use `mqtt://mergetest@localhost/` as
-the specification.
