@@ -19,7 +19,39 @@ UUFI utilizes a messaging transport where the Client interacts with the System v
 
 ## 2. Connectivity and Authentication
 
-### 2.1. PubSub Transport
+### 2.1. Connection String Designator
+To provide a standard way to connect into the system using a single string designator, UUFI interfaces support a URL-like connection string format. The two supported schemes are `mqtt://` and `pubsub://`.
+
+You can use optional tags like `user@` and `:port` as necessary within the URL format.
+
+#### Protocol Mapping
+
+**PubSub (`pubsub://`)**
+*   The base `host` maps to the GCP project.
+*   The `user@` prefix maps to a `+user` suffix on the subscription and a `principal` attribute in the envelope (including the @).
+*   The `:port` suffix is invalid and should not be used.
+*   The first URL path part, if present, maps to the root name to use instead of `udmi_uufi`.
+*   *Example:* `pubsub://the-user@my-project/a-topic` maps to:
+  * The GCP project `my-project`
+  * The topic `a-topic`
+  * The receive subscription `a-topic+the-user`
+  * Messages have an attribute `principal` that is `the-user@`
+
+Not all reeived messages will have a `principal` attribute as some are generic (e.g. telemetry recieved from a building). Only
+messages that are explicitly intended for the recipeint (e.g. message acks) will have this attribute present. The subscription
+should be filtered to only include messsages that have this (matching) attribute or the attribute missing.
+
+**MQTT (`mqtt://`)**
+*   The base `host` and `:port` map as expected.
+*   The `user@` prefix maps to a `username` property that's added to the MQTT topic path (e.g., as the `{principal}` identifier in `/uufi/p/{principal}/...`).
+  * If present, a client needs to subscribe to two topics (with and without the principal) to also receive generic broadcast messages.
+*   The first URL path part, if present, maps to an optional topic prefix (else empty)
+*   *Example:* `mqtt://the-user@localhost:8883/a-prefix` maps to:
+  * The MQTT broker at `localhost:8883`
+  * Adds `the-user` and `a-prefix` into the MQTT topic path (e.g., `/uufi/a-prefix/p/the-user/...`).
+    * Both fields are optional, with the pattern being `/uufi/` + [`prefix/`] + [`p/user/`].
+
+### 2.2. PubSub Transport
 The Client must have access to the GCP project where the UDMI system is deployed.
 
 *   **Project ID:** The GCP project ID.
@@ -27,7 +59,7 @@ The Client must have access to the GCP project where the UDMI system is deployed
 *   **Receive Subscription:** A subscription to the `udmi_uufi` topic (e.g., `prefix-udmi_uufi-user_id`).
 *   **Authentication:** Standard **GCP IAM**.
 
-### 2.2. MQTT Transport (Local Mosquitto)
+### 2.3. MQTT Transport (Local Mosquitto)
 For local testing or on-premise deployments, a standard MQTT broker (like Mosquitto) can be used.
 
 *   **Broker URL:** Typically `tcp://localhost:1883` or `ssl://localhost:8883`.
@@ -51,7 +83,8 @@ The Client is considered **Active** only after receiving a configuration reply w
 Because the initial handshake is generic and occurs before the Client is associated with a specific registry or device, a distinct addressing scheme is used:
 
 - **PubSub:** The `deviceRegistryId` and `deviceId` message attributes MUST be empty strings (`""`).
-- **MQTT:** The topic MUST use the prefix `/uufi/c/{source}/` where `{source}` is the Client's unique identifier. The resulting topic structure is `/uufi/c/{source}/{subType}/{subFolder}`.
+- **MQTT:** The topic MUST use the prefix `/uufi/p/{principal}/` where `{principal}` is the Client's unique identifier.
+  - The resulting topic structure is `/uufi/p/{principal}/{subType}/{subFolder}`.
 
 **Important:** Standard registry-based addressing (`/uufi/r/...`) MUST NOT be used for handshake messages.
 
@@ -159,7 +192,9 @@ The Client initiates the session using generic addressing.
   "subFolder": "udmi",
   "subType": "state",
   "transactionId": "UUFI:sess123:001",
-  "source": "-my-user-id"
+  "nonce": "a1b2c3d4",
+  "source": "my-user-id",
+  "principal": "my-user-id@"
 }
 ```
 
@@ -172,7 +207,7 @@ The Client initiates the session using generic addressing.
     "setup": {
       "functions_ver": 9,
       "transaction_id": "UUFI:sess123:001",
-      "msg_source": "-my-user-id",
+      "msg_source": "my-user-id",
       "user": "my-user-id"
     }
   }
@@ -190,7 +225,9 @@ The System confirms the session is active.
   "deviceId": "",
   "subFolder": "udmi",
   "subType": "config",
-  "transactionId": "UUFI:sess123:001"
+  "transactionId": "UUFI:sess123:001",
+  "nonce": "a1b2c3d4",
+  "principal": "my-user-id@"
 }
 ```
 
@@ -208,7 +245,7 @@ The System confirms the session is active.
     "reply": {
       "functions_ver": 9,
       "transaction_id": "UUFI:sess123:001",
-      "msg_source": "-my-user-id"
+      "msg_source": "my-user-id"
     }
   }
 }
@@ -230,7 +267,9 @@ Updating the `room_temperature` setpoint for device `BLD-1`.
   "subFolder": "pointset",
   "subType": "config",
   "transactionId": "UUFI:sess123:002",
-  "source": "-my-user-id"
+  "nonce": "e5f6a7b8",
+  "source": "my-user-id",
+  "principal": "my-user-id@"
 }
 ```
 
@@ -258,6 +297,7 @@ Receiving the current `room_temperature` reading from device `BLD-1`.
   "deviceId": "BLD-1",
   "subFolder": "pointset",
   "subType": "events",
+  "nonce": "c9d0e1f2",
   "publishTime": "2026-04-29T10:06:00Z"
 }
 ```
@@ -281,12 +321,14 @@ The following examples demonstrate the same operations using the MQTT transport,
 #### Example: Handshake State (Publish)
 Using generic addressing for the initial handshake.
 
-**Topic:** `/uufi/c/-my-user-id/state/udmi`
+**Topic:** `/uufi/p/my-user-id/state/udmi`
 
 **Payload (JSON):**
 ```json
 {
   "transactionId": "UUFI:sess123:001",
+  "nonce": "a1b2c3d4",
+  "source": "my-user-id",
   "payload": {
     "version": "1.5.2",
     "timestamp": "2026-04-29T10:00:00Z",
@@ -294,7 +336,7 @@ Using generic addressing for the initial handshake.
       "setup": {
         "functions_ver": 9,
         "transaction_id": "UUFI:sess123:001",
-        "msg_source": "-my-user-id",
+        "msg_source": "my-user-id",
         "user": "my-user-id"
       }
     }
@@ -311,6 +353,8 @@ Updating device `BLD-1`.
 ```json
 {
   "transactionId": "UUFI:sess123:002",
+  "nonce": "e5f6a7b8",
+  "source": "my-user-id",
   "payload": {
     "version": "1.5.2",
     "timestamp": "2026-04-29T10:05:00Z",
