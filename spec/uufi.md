@@ -368,8 +368,10 @@ Updating device `BLD-1`.
     "version": "1.5.2",
     "timestamp": "2026-04-29T10:05:00Z",
     "pointset": {
-      "room_temperature": {
-        "set_value": 22.5
+      "points": {
+        "room_temperature": {
+          "set_value": 22.5
+        }
       }
     }
   }
