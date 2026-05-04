@@ -2,9 +2,6 @@
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from butler.model_repo import ModelRepository
+from butler.register import main
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: bin/register device_id")
-        sys.exit(1)
-    ModelRepository().set_device_info(sys.argv[1], "main", "vibrant", "butler-v1")
+    main()

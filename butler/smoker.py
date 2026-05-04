@@ -3,10 +3,16 @@ import subprocess
 import time
 import sys
 import shutil
+import argparse
 from butler.model_repo import ModelRepository
 from butler.blob_repo import BlobRepository
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("conn_spec", help="Connection spec URL")
+    args = parser.parse_args()
+    conn_spec = args.conn_spec
+
     test_dir = "testing"
     if os.path.exists(test_dir):
         shutil.rmtree(test_dir)
@@ -21,24 +27,24 @@ def main():
     env["BUTLER_TIMEOUT"] = "5"
     env["PYTHONPATH"] = os.getcwd()
     
-    print("Starting Smoke Test...")
+    print(f"Starting Smoke Test with conn_spec: {conn_spec}...")
     
     # Verify argument enforcement
     print("Verifying argument enforcement...")
-    for cmd, args in [
+    for cmd, cmd_args in [
         ("bin/register", []),
-        ("bin/mocket", []),
-        ("bin/trigger", ["dev"]),
-        ("bin/trigger", ["dev", "1.0"])
+        ("bin/mocket", [conn_spec]),
+        ("bin/trigger", [conn_spec, "dev"]),
+        ("bin/trigger", [conn_spec, "dev", "1.0"])
     ]:
-        res = subprocess.run([sys.executable, cmd] + args, capture_output=True)
+        res = subprocess.run([sys.executable, cmd] + cmd_args, capture_output=True)
         if res.returncode == 0:
-            print(f"FAILED: {cmd} {args} should have failed due to missing arguments.")
+            print(f"FAILED: {cmd} {cmd_args} should have failed due to missing arguments.")
             sys.exit(1)
     print("Argument enforcement verified.")
 
     # Setup
-    subprocess.run([sys.executable, "bin/setup"], check=True)
+    subprocess.run([sys.executable, "bin/setup", conn_spec], check=True)
     
     # Prepare model and blob
     model_repo = ModelRepository(model_file)
@@ -48,15 +54,17 @@ def main():
     blob_repo.store_blob("vibrant", "butler-v1", "main", "1.1.0", b"SMOKE_TEST_CONTENT")
     
     # Start components
-    butler = subprocess.Popen([sys.executable, "bin/butler"], env=env)
-    mocket = subprocess.Popen([sys.executable, "bin/mocket", "smoke-dev"], env=env)
+    butler = subprocess.Popen([sys.executable, "bin/butler", conn_spec], env=env)
+    mocket = subprocess.Popen([sys.executable, "bin/mocket", conn_spec, "smoke-dev"], env=env)
     
     try:
         time.sleep(5)
         
         # Trigger update
         print("Triggering update...")
-        subprocess.run([sys.executable, "bin/trigger", "smoke-dev", "1.1.0", "butler/requirements.txt"], env=env, check=True)
+        dummy_blob = os.path.join(test_dir, "dummy.bin")
+        with open(dummy_blob, "wb") as f: f.write(b"NEW_VERSION_CONTENT")
+        subprocess.run([sys.executable, "bin/trigger", conn_spec, "smoke-dev", "1.1.0", dummy_blob], env=env, check=True)
         
         # Wait and check
         timeout = 30
@@ -82,12 +90,12 @@ def main():
         mocket.wait()
         
         # Start mocket in failure mode
-        mocket = subprocess.Popen([sys.executable, "bin/mocket", "smoke-dev", "-f"], env=env)
+        mocket = subprocess.Popen([sys.executable, "bin/mocket", conn_spec, "smoke-dev", "-f"], env=env)
         
         # Trigger another update
         print("Triggering update (should fail)...")
-        blob_repo.store_blob("vibrant", "butler-v1", "main", "1.2.0", b"FAILURE_TEST_CONTENT")
-        subprocess.run([sys.executable, "bin/trigger", "smoke-dev", "1.2.0", "butler/requirements.txt"], env=env, check=True)
+        with open(dummy_blob, "wb") as f: f.write(b"FAILURE_TEST_CONTENT")
+        subprocess.run([sys.executable, "bin/trigger", conn_spec, "smoke-dev", "1.2.0", dummy_blob], env=env, check=True)
         
         # Wait for rollback to 1.1.0
         timeout = 30

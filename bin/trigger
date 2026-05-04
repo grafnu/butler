@@ -2,16 +2,6 @@
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from butler.model_repo import ModelRepository
-from butler.blob_repo import BlobRepository
+from butler.trigger import main
 if __name__ == "__main__":
-    if len(sys.argv) != 4:
-        print("Usage: bin/trigger device_id blob_version blob_path")
-        sys.exit(1)
-    device_id, version, path = sys.argv[1], sys.argv[2], sys.argv[3]
-    repo = ModelRepository()
-    state = repo.get_device_state(device_id, "main")
-    if not state: sys.exit(1)
-    with open(path, "rb") as f:
-        BlobRepository().store_blob(state["make"], state["model"], "main", version, f.read())
-    repo.set_target_version(device_id, "main", version)
+    main()

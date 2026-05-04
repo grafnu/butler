@@ -6,9 +6,11 @@ import os
 import argparse
 from butler.blob_repo import BlobRepository
 from butler.messaging import create_uufi_message, parse_uufi_message
+from butler.conn_spec import parse_conn_spec
 
 class Orchestrator:
-    def __init__(self, fail_mode=False):
+    def __init__(self, conn_spec, fail_mode=False):
+        self.conn_spec = conn_spec
         self.blob_repo = BlobRepository()
         self.fail_mode = fail_mode
         self.client = mqtt.Client()
@@ -20,12 +22,25 @@ class Orchestrator:
         self.handshake_tid = None
         self.registry_id = "butler-registry"
         self.model = {}
+        self.principal = self.conn_spec.username or "butler"
+
+    def get_topic(self, base, suffix=None):
+        parts = ["uufi"]
+        if self.conn_spec.prefix:
+            parts.append(self.conn_spec.prefix)
+        parts.append(base)
+        if suffix:
+            parts.append(suffix)
+        return "/" + "/".join(parts)
 
     def on_connect(self, client, userdata, flags, rc):
         if rc == 0:
-            client.subscribe(f"/uufi/r/{self.registry_id}/d/+/state/update")
-            client.subscribe(f"/uufi/c/butler/config/udmi")
-            client.subscribe(f"/uufi/r/{self.registry_id}/d/{self.registry_id}/config/cloud")
+            # Subscribe to handshake reply
+            client.subscribe(self.get_topic(f"p/{self.principal}/config/udmi"))
+            # Subscribe to device state updates
+            client.subscribe(self.get_topic("r/+/d/+/state/update"))
+            # Subscribe to cloud model updates
+            client.subscribe(self.get_topic(f"r/{self.registry_id}/d/{self.registry_id}/config/cloud"))
         else:
             print(f"Orchestrator failed to connect: {rc}", flush=True)
 
@@ -34,54 +49,55 @@ class Orchestrator:
         if not message:
             return
 
-        parts = msg.topic.split('/')
-        if len(parts) < 5:
-            return
+        topic = msg.topic
         
-        if parts[2] == 'c' and parts[3] == 'butler':
-            sub_type = parts[4]
-            sub_folder = parts[5]
-            if sub_type == "config" and sub_folder == "udmi":
-                self.handle_handshake_reply(message)
+        # Check for handshake reply
+        handshake_reply_topic = self.get_topic(f"p/{self.principal}/config/udmi")
+        if topic == handshake_reply_topic:
+            self.handle_handshake_reply(message)
             return
 
-        if len(parts) < 8:
-            return
-
-        device_id = parts[5]
-        sub_type = parts[6]
-        sub_folder = parts[7]
-
-        if device_id == self.registry_id and sub_folder == "cloud" and sub_type == "config":
-            # message is {"cloud": {"devices": {...}}}
-            self.model = message.get("cloud", {})
+        # Check for cloud model update
+        cloud_config_topic = self.get_topic(f"r/{self.registry_id}/d/{self.registry_id}/config/cloud")
+        if topic == cloud_config_topic:
+            self.model = message.get("cloud", message) # Handle both wrapped and unwrapped for flexibility
             print(f"[butler] Received model update from cloud", flush=True)
             return
 
-        nonce = message.get("nonce")
-        if nonce in self.seen_nonces:
-            return
-        self.seen_nonces.add(nonce)
-        if len(self.seen_nonces) > 1000:
-            self.seen_nonces.clear()
+        # Check for device state update
+        # Topic: /uufi/[prefix/]r/{registryId}/d/{deviceId}/state/update
+        parts = topic.split('/')
+        # Adjust parts based on prefix
+        offset = 1 if self.conn_spec.prefix else 0
+        if len(parts) >= 8 + offset and parts[1] == "uufi" and parts[2+offset] == "r":
+            device_id = parts[5+offset]
+            sub_type = parts[6+offset]
+            sub_folder = parts[7+offset]
 
-        if sub_type == "state" and sub_folder == "update":
-            update = message.get("update", {})
-            subsystem = update.get("subsystem", "main")
-            state = update.get("state")
-            current_version = update.get("current_version")
+            if sub_type == "state" and sub_folder == "update":
+                nonce = message.get("nonce")
+                if nonce in self.seen_nonces:
+                    return
+                self.seen_nonces.add(nonce)
+                if len(self.seen_nonces) > 1000:
+                    self.seen_nonces.clear()
 
-            print(f"[butler] Status from {device_id}: {state} ({current_version})", flush=True)
+                update = message.get("update", {})
+                subsystem = update.get("subsystem", "main")
+                state = update.get("state")
+                current_version = update.get("current_version")
 
-            if state == "success" or state == "quiescent":
-                self.update_cloud_model(device_id, subsystem, current_version=current_version)
-                if state == "success" and device_id in self.pending_updates:
-                    del self.pending_updates[device_id]
-            elif state == "failure":
-                print(f"[butler] Device {device_id} reported FAILURE. Rolling back...", flush=True)
-                self.rollback_cloud_model(device_id, subsystem)
-                if device_id in self.pending_updates:
-                    del self.pending_updates[device_id]
+                print(f"[butler] Status from {device_id}: {state} ({current_version})", flush=True)
+
+                if state == "success" or state == "quiescent":
+                    self.update_cloud_model(device_id, subsystem, current_version=current_version)
+                    if state == "success" and device_id in self.pending_updates:
+                        del self.pending_updates[device_id]
+                elif state == "failure":
+                    print(f"[butler] Device {device_id} reported FAILURE. Rolling back...", flush=True)
+                    self.rollback_cloud_model(device_id, subsystem)
+                    if device_id in self.pending_updates:
+                        del self.pending_updates[device_id]
 
     def handle_handshake_reply(self, message):
         udmi = message.get("udmi", {})
@@ -101,7 +117,7 @@ class Orchestrator:
             payload={"operation": "READ"},
             source="butler"
         )
-        topic = f"/uufi/r/{self.registry_id}/d/{self.registry_id}/query/cloud"
+        topic = self.get_topic(f"r/{self.registry_id}/d/{self.registry_id}/query/cloud")
         self.client.publish(topic, json.dumps(msg))
 
     def update_cloud_model(self, device_id, subsystem, target_version=None, current_version=None):
@@ -117,7 +133,7 @@ class Orchestrator:
             payload=payload,
             source="butler"
         )
-        topic = f"/uufi/r/{self.registry_id}/d/{self.registry_id}/model/cloud"
+        topic = self.get_topic(f"r/{self.registry_id}/d/{self.registry_id}/model/cloud")
         self.client.publish(topic, json.dumps(msg))
 
     def rollback_cloud_model(self, device_id, subsystem):
@@ -167,7 +183,7 @@ class Orchestrator:
                             payload=update_payload,
                             source="butler"
                         )
-                        topic = f"/uufi/r/{self.registry_id}/d/{device_id}/config/update"
+                        topic = self.get_topic(f"r/{self.registry_id}/d/{device_id}/config/update")
                         self.client.publish(topic, json.dumps(msg))
                         self.pending_updates[device_id] = {
                             "timestamp": time.time(),
@@ -194,44 +210,30 @@ class Orchestrator:
             "setup": {
                 "functions_ver": 9,
                 "transaction_id": self.handshake_tid,
-                "msg_source": "butler",
-                "user": "butler"
+                "msg_source": self.principal,
+                "user": self.principal
             }
         }
         msg = create_uufi_message(
             registry_id=self.registry_id,
-            device_id="butler",
+            device_id=self.principal,
             sub_type="state",
             sub_folder="udmi",
             payload=udmi_payload,
             transaction_id=self.handshake_tid,
-            source="butler"
+            source=self.principal
         )
-        topic = f"/uufi/c/butler/state/udmi"
+        topic = self.get_topic(f"p/{self.principal}/state/udmi")
         self.client.publish(topic, json.dumps(msg))
 
     def run(self):
-        host = "localhost"
-        port = 1883
+        host = self.conn_spec.host
+        port = self.conn_spec.port or 1883
         print(f"Orchestrator connecting to MQTT broker at {host}:{port}", flush=True)
+        if self.conn_spec.username:
+            self.client.username_pw_set(self.conn_spec.username)
         self.client.connect(host, port, 60)
         self.client.loop_start()
-        
-        last_handshake = 0
-        try:
-            while True:
-                if not self.is_active:
-                    now = time.time()
-                    if now - last_handshake > 5:
-                        self.send_handshake()
-                        last_handshake = now
-                
-                if self.is_active:
-                    self.check_reconciliation()
-                    self.check_timeouts()
-                time.sleep(2)
-        except KeyboardInterrupt:
-            self.client.loop_stop()
         
         last_handshake = 0
         try:
@@ -251,10 +253,12 @@ class Orchestrator:
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("conn_spec", help="Connection spec URL")
     parser.add_argument("-f", action="store_true", help="Enable failure mode")
     args = parser.parse_args()
 
-    orchestrator = Orchestrator(fail_mode=args.f)
+    conn_spec = parse_conn_spec(args.conn_spec)
+    orchestrator = Orchestrator(conn_spec, fail_mode=args.f)
     print("Starting Butler Orchestrator...")
     orchestrator.run()
 
