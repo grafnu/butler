@@ -13,5 +13,3 @@ The result of all work should be contained within the following directories:
 
 * bin/
 * butler/
-
-
