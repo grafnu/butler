@@ -109,8 +109,7 @@ It is purely an observational test utility, used to either validate an installed
 functioning implementation. When it detects a valid sequence, or an invalid message, it will output a validation message.
 
 **Verifier Requirements:**
-- **Dynamic Configuration:** The Verifier MUST NOT use hardcoded Project ID or Registry ID values. It SHOULD either detect these from the message stream or be configurable via environment variables (e.g., `BUTLER_PROJECT_ID`, `BUTLER_REGISTRY_ID`).
-- **Handshake Awareness:** The Verifier MUST monitor the `/uufi/c/` handshake topics to ensure clients successfully activate before performing operations.
+- **Handshake Awareness:** The Verifier MUST monitor the `/uufi/p/` handshake topics to ensure clients successfully activate before performing operations.
 - **Validation Schema:** It SHOULD validate that all messages contain the mandatory UDMI `payload` fields (`timestamp`, `version`) and that timestamps follow the RFC 3339 format.
 - **State Transition Monitoring:** It MUST track the state transitions for device subsystems using the `update` subfolder (e.g., `quiescent` -> `pending` -> `success/failure`).
 
@@ -124,8 +123,19 @@ state. When this is the case, `verifier` should detect that there was an invalid
 ### Observer
 
 The `observe` utility should observe _all_ available traffic for the indicated communication channel. This should show all the communication
-between the components, regardless of the `device_id` or other configuration parameters. Output should be on one line, including the complete
-message payload (don't truncate for line length).
+between the components, regardless of the `device_id` or other configuration parameters.
+
+**Output Format:**
+Messages MUST be output to `stdout` in the following format:
+`{topic}: {payload}`
+- `{topic}`: The full MQTT topic string.
+- `{payload}`: The complete, JSON-encoded message payload.
+
+**Requirements:**
+- **Single Line:** Each message MUST be output on exactly one line.
+- **No Truncation:** The complete message payload MUST be included without truncation.
+- **Unbuffered:** Output MUST be unbuffered (e.g., using `flush=True` in Python) to ensure real-time visibility.
+- **Raw Support:** If a message payload is not valid JSON, it MUST be displayed in its raw string format.
 
 ### Smoke Tester
 
@@ -152,7 +162,7 @@ To ensure the reliability and transparency of the system, all monitoring and dia
 1.  **Protocol Decoupling:** Monitoring tools SHOULD NOT share stateful protocol logic (such as nonce tracking, idempotency checks, or handshake state) with the core `butler` or `mocket` components. They must operate as "transparent taps" to avoid masking underlying network or protocol issues.
 2.  **Graceful Degradation:** Tools MUST handle malformed, non-JSON, or non-compliant messages gracefully. If a message cannot be parsed according to the UUFI schema, it MUST be displayed in its raw format rather than being suppressed.
 3.  **Real-time Transparency:** Tools designed for real-time monitoring MUST use unbuffered output (e.g., explicit flushing of `stdout`) to ensure that messages are visible to the operator immediately upon arrival, especially when piped or redirected.
-4.  **Schema Agnosticism:** While tools should "pretty-print" known schemas, they MUST NOT use strict topic-parsing logic that drops messages that do not match the expected `udmi/{reflect,reply}/...` structure.
+4.  **Schema Agnosticism:** While tools should "pretty-print" known schemas, they MUST NOT use strict topic-parsing logic that drops messages that do not match the expected `/uufi/{r,p}/...` structure.
 
 ### 6.1 Tooling List
 All commands should be restartable without any problems if they are in a quiescent state. If the are restarted
@@ -164,26 +174,29 @@ to diagnose if any two components are utilizing the same communication substrate
 
 They are all required unless put in square brackets (e.g. [option]).
 
+The universal `conn_spec` paramater is a connection string URL, as defined by the UUFI spec.
+
 - **Smoker:** A complete quick testing utility that tests all the basic components to make sure they work at basic level, but is not comprehensive.
-  - `bin/smokeit`
+  - `bin/smokeit conn_spec`
 - **Setup:** A mechanism to initialize the persistent communication substrate.
-  - `bin/setup`
+  - `bin/setup conn_spec`
+  - The tool also does a quick check (just connect) to make sure the target service is accessible.
 - **Observer:** A tool to monitor and pretty-print the JSON message stream in real-time.
-  - `bin/observe`
+  - `bin/observe conn_spec`
 - **Verifier:** A monitoring utility to monitor the communication channel and report results onto the `verify` topic.
-  - `bin/verifier`
+  - `bin/verifier conn_spec`
   - Tag should be `verifier` in messages source and logging
 - **Butler**: The core butler program that handlers the necessary orchestration and state machine.
-  - `bin/butler`
+  - `bin/butler conn_spec`
   - Tag should be `butler` in messages source and logging
 - **Mocket:** An mock implementation of the UDMIS service (and consequently target device). This is a major component that utilizes the message bus.
-  - `bin/mocket device_id`
+  - `bin/mocket conn_spec device_id`
   - Tag should be `mocket` in messages source and logging
   - The following commands run in the same context as `mocket` and should NOT use the message bus for communication (rather something in the local filesystem)
     - **Register:** A tool to add a device to the model.
-      - `bin/register device_id`
+      - `bin/register conn_spec device_id`
     - **Trigger**: A utility that triggers necessary situations to test the system, e.g. changing the available blob version.
-      - `bin/trigger device_id blob_version blob_path`
+      - `bin/trigger conn_spec device_id blob_version blob_path`
         - 'device_id' the device id for the blob upate.
         - 'blob_version' is the semantic version of the blob (e.g. '1.3').
         - 'blob_path' is the path to the blob binary.
