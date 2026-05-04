@@ -135,7 +135,7 @@ Since MQTT 3.1.1 does not support separate attributes, the envelope fields are i
   "payload": {
     "version": "1.5.2",
     "timestamp": "2026-04-29T10:05:00Z",
-    "points": {
+    "pointset": {
       "room_temperature": { "set_value": 22.5 }
     }
   }
@@ -283,9 +283,11 @@ Updating the `room_temperature` setpoint for device `BLD-1`.
 {
   "version": "1.5.2",
   "timestamp": "2026-04-29T10:05:00Z",
-  "points": {
-    "room_temperature": {
-      "set_value": 22.5
+  "pointset": {
+    "points": {
+      "room_temperature": {
+        "set_value": 22.5
+      }
     }
   }
 }
@@ -312,9 +314,11 @@ Receiving the current `room_temperature` reading from device `BLD-1`.
 {
   "version": "1.5.2",
   "timestamp": "2026-04-29T10:06:00Z",
-  "points": {
-    "room_temperature": {
-      "present_value": 22.1
+  "pointset": {
+    "points": {
+      "room_temperature": {
+        "present_value": 22.1
+      }
     }
   }
 }
@@ -363,7 +367,7 @@ Updating device `BLD-1`.
   "payload": {
     "version": "1.5.2",
     "timestamp": "2026-04-29T10:05:00Z",
-    "points": {
+    "pointset": {
       "room_temperature": {
         "set_value": 22.5
       }
@@ -396,7 +400,7 @@ Every message's inner `payload` object MUST contain `timestamp` and `version` fi
 - **Pitfall:** Placing UDMI fields directly in the `payload` without the subfolder wrapper.
 
 ### 9.2. Handshake Addressing
-The `/uufi/c/{source}/` topic prefix MUST be used for the initial handshake.
+The `/uufi/p/{principal}/` topic prefix MUST be used for the initial handshake.
 - **Pitfall:** Using the registry-based `/uufi/r/` prefix for handshakes. The System may not have the registry context yet, or may reject registry-addressed messages from unauthenticated clients.
 
 ### 9.3. Envelope Redundancy

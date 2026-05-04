@@ -10,7 +10,7 @@ Butler is a declarative, state-based property management system for device firmw
 There should be no files or directories at the top-level other than those explicitly listed here:
 
 * AGENTS.md: Generic instructions for agentic systems.
-* BUTLER.md: Specific instructions on how things for this repo.
+* REBUILD.md: Instructions on how to rebuild the system.
 * README.md: Human-centric documentation.
 * `spec/`: Input specifications.
 * `bin/`: Operational tooling programs.
@@ -113,6 +113,7 @@ functioning implementation. When it detects a valid sequence, or an invalid mess
 - **Handshake Awareness:** The Verifier MUST monitor the `/uufi/p/` handshake topics to ensure clients successfully activate before performing operations.
 - **Validation Schema:** It SHOULD validate that all messages contain the mandatory UDMI `payload` fields (`timestamp`, `version`) and that timestamps follow the RFC 3339 format.
 - **State Transition Monitoring:** It MUST track the state transitions for device subsystems using the `update` subfolder (e.g., `quiescent` -> `pending` -> `success/failure`).
+- **Output:** Results MUST be reported using a UUFI-compliant envelope with the `validation` subFolder.
 
 The verification watcher and the rest of the system can only communicate over the observable shared bus.
 
@@ -184,20 +185,21 @@ The universal `conn_spec` paramater is a connection string URL, as defined by th
   - The tool also does a quick check (just connect) to make sure the target service is accessible.
 - **Observer:** A tool to monitor and pretty-print the JSON message stream in real-time.
   - `bin/observe conn_spec`
-- **Verifier:** A monitoring utility to monitor the communication channel and report results onto the `verify` topic.
+- **Verifier:** A monitoring utility to monitor the communication channel and report results onto the bus.
   - `bin/verifier conn_spec`
   - Tag should be `verifier` in messages source and logging
 - **Butler**: The core butler program that handlers the necessary orchestration and state machine.
-  - `bin/butler conn_spec`
+  - `bin/butler conn_spec [-f]`
   - Tag should be `butler` in messages source and logging
 - **Mocket:** An mock implementation of the UDMIS service (and consequently target device). This is a major component that utilizes the message bus.
-  - `bin/mocket conn_spec device_id`
+  - `bin/mocket conn_spec registry_id device_id [-f]`
   - Tag should be `mocket` in messages source and logging
   - The following commands run in the same context as `mocket` and should NOT use the message bus for communication (rather something in the local filesystem)
     - **Register:** A tool to add a device to the model.
-      - `bin/register conn_spec device_id`
+      - `bin/register registry_id device_id`
     - **Trigger**: A utility that triggers necessary situations to test the system, e.g. changing the available blob version.
-      - `bin/trigger conn_spec device_id blob_version blob_path`
+      - `bin/trigger registry_id device_id blob_version blob_path`
+        - 'registry_id' the registry id for the device.
         - 'device_id' the device id for the blob upate.
         - 'blob_version' is the semantic version of the blob (e.g. '1.3').
         - 'blob_path' is the path to the blob binary.
