@@ -19,11 +19,10 @@ If the smoke test fails, indicating that there is an incompatibility in the impl
 determine what the problem is, and recommend a change to the specs (in `spec/`) to remediate.
 
 If the smoke test passes, analyze the generated log files to see if there is any other discrepancy or ambiguities
-that should be addressed (and likewise recomment a change to the specs).
+that should be addressed (and likewise recomment a change to `spec/`).
 
 The actual implementation in `opt_a/butler` and `opt_b/butler` will be different and that's expected. (Same with `*/bin/`).
 
 Any test files should be generated in directories covered by `.gitignore`. Do not clean up the test runs after
 execution. At the end of the testing, there should not be any artifacts left that are visible by `git status`,
 and the `opt_a` and `opt_b` directories (and corresponding logs) should remain.
-
