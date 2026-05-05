@@ -22,7 +22,7 @@ There should be no files or directories at the top-level other than those explic
 * `venv/`: Python virtual environment.
 
 ## 2. Communication Substrate Requirements
-The system MUST use a message-based communication layer (e.g., MQTT) that satisfies the following:
+The system MUST use a message-based communication layer (e.g., MQTT, PubSub) that satisfies the following:
 - **Visibility:** All messages must be inspectable and loggable.
 - **Format:** Messages MUST be JSON-encoded.
 - **Access:** Only major components (`mocket`, `observe`, `butler`, `verifier`) should utilize the message bus for inter-process communication.
@@ -31,9 +31,22 @@ The system MUST use a message-based communication layer (e.g., MQTT) that satisf
 
 See `uufi.md` for the binding of the communication substrate to UDMI.
 
-### MQTT Binding
+#### Debug differentiation
 
-The MQTT binding should follow the UDMI message format, but encode the necessary message attributes in a canonical MQTT topic.
+For protocols that need a differentiation for a "singular" receiver (like PubSub), the system should use the following username `.` (dot) differentiator:
+* `butler`: _default_ (no suffix)
+* `observe`: `.observe`
+* `verifier`: `.verifier`
+* `mocket`: `.mocket`
+
+This value should automatically be appended to the `user` component of the URL specification (which defaults to `unknown` if not provided). It is an error if the original URL specification for a singular protocol includes a `:port` designator or a `.` (dot) in the `user` component, as these are reserved for internal tool differentiation. The tools MUST throw an error if a manual differentiator is detected.
+
+For example, `pubsub://my-user@my-project` used by the verifier becomes `pubsub://my-user.verifier@my-project`.
+
+For MQTT, the `:port` component is used as the network port for the broker connection and should not be used for debug differentiation. 
+
+The `PubSub` subscriptions will be setup in such a way that the utilities receive all necessary messages (i.e., don't filter based on the debug differentiator).
+this setup will be handled out of scope of these tools, so nothing should be done to try and manipulate or change GCP PubSub settings.
 
 ## 3. Functional Components
 

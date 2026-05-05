@@ -24,34 +24,54 @@ To provide a standard way to connect into the system using a single string desig
 * `mqtt` uses the industry standard [mqtt protocol](https://github.com/mqtt)
 * `pubsub` uses [Google Cloud Platform's PubSub](https://cloud.google.com/pubsub)
 
-You can use the optional like `user@` and `:port` as necessary within the URL format.
-* If `user@` is not specified then it should default to `default`
+You can use the optional `user@` and `:port` as necessary within the URL format.
+* If `user@` is not specified then it should default to `unknown`
+* The `@` character is only allowed if it is preceded by a non-empty `user` identifier.
 * If `:port` is not specified, then it should default to the protocol-specific meaningful default.
+
+`PubSub` is considered a "singular" receiver binding in that if multiple entities want to use the same
+channel, they must use different `user` identities, otherwise they will
+not all receive every message. 
 
 #### Protocol Mapping
 
 **PubSub (`pubsub://`)**
 *   The base `host` maps to the GCP project.
-*   The `user@` prefix maps to a `+user` suffix on the subscription and a `principal` attribute in the envelope (including the @).
-*   The `:port` suffix is invalid and should not be used.
+*   The `principal` is derived from the (optional) `user@` component into `user@`
+    * If `user` is not defined then it defaults to `unknown`
+    *   The entire string in the `user` component is used as the identity.
+
+    * The principal is included in the message envelope when publishing a message to the topic.
+      * This includes the `@`
+*   The `user` component maps to a suffix on the subscription.
 *   The first URL path part, if present, maps to the root name to use instead of `udmi_uufi`.
+*   **Note:** The `:port` component is NOT allowed for `pubsub://` URLs.
 *   *Example:* `pubsub://the-user@my-project/a-topic` maps to:
   * The GCP project `my-project`
   * The topic `a-topic`
+  * The principal `the-user@`
   * The receive subscription `a-topic+the-user`
   * Messages have an attribute `principal` that is `the-user@`
+*   *Example:* `pubsub://user2.10@diff-project` maps to:
+  * The GCP project `diff-project`
+  * The topic `udmi_uufi`
+  * The principal `user2.10@`
+  * The receive subscription `udmi_uufi+user2.10`
+  * Messages have an attribute `principal` that is `user2.10@`
 
-Not all reeived messages will have a `principal` attribute as some are generic (e.g. telemetry recieved from a building). Only
-messages that are explicitly intended for the recipeint (e.g. message acks) will have this attribute present. The subscription
-should be filtered to only include messsages that have this (matching) attribute or the attribute missing.
+Not all received messages will have a `principal` attribute as some are generic (e.g. telemetry received from a building). Only
+messages that are explicitly intended for the recipient (e.g. message acks) will have this attribute present. The subscription
+should be filtered to only include messages that have this (matching) attribute or the attribute missing. Received UUFI
+will have the principle of _butler_, not of the sending entity. The principal in a received message indicates the intended principal
+of the receiver, not the sender. All messages in/out from one entity (e.g. `butler`) will have the same `principal` attribute value.
 
 **MQTT (`mqtt://`)**
-*   The base `host` and `:port` map as expected.
+*   The base `host` and `:port` map as expected (network address).
 *   The `user@` prefix maps to a `username` property that's added to the MQTT topic path (e.g., as the `{principal}` identifier in `/uufi/p/{principal}/...`).
   * Clients need to subscribe to two topics (with and without the principal) to also receive generic broadcast messages.
 *   The first URL path part, if present, maps to an optional topic prefix (else empty)
-*   *Example:* `mqtt://the-user@localhost:8783/a-prefix` maps to:
-  * The MQTT broker at `localhost:8783`
+*   *Example:* `mqtt://the-user@localhost:1883/a-prefix` maps to:
+  * The MQTT broker at `localhost:1883`
   * Adds `the-user` and `a-prefix` into the MQTT topic path (e.g., `/uufi/a-prefix/p/the-user/...`).
     * The prefix is optional, with the pattern being `/uufi/` + [`{prefix}/`]
 
