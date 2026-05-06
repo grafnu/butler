@@ -40,7 +40,7 @@ mosquitto
 ### 3. Initialize the System
 Run the setup script to prepare the communication bus. Note that this script will attempt to start the `mosquitto` broker if it is not already running on the default port (1883):
 ```bash
-bin/setup
+bin/setup mqtt://localhost
 ```
 **Expected behavior:** The script should output "Bus setup complete."
 
@@ -50,21 +50,21 @@ To run the components individually and observe their behavior:
 
 ### 1. Start the Orchestrator
 ```bash
-bin/butler
+bin/butler mqtt://localhost
 ```
 **Expected behavior:** The orchestrator starts and waits for state changes. It will periodically check the model for required updates.
 
 ### 2. Start the Verifier (Optional)
 The verifier monitors the bus and reports on the success or failure of update sequences.
 ```bash
-bin/verifier
+bin/verifier mqtt://localhost
 ```
-**Expected behavior:** The verifier starts listening to the MQTT bus. It will output verification results to the `verify` sub-folder.
+**Expected behavior:** The verifier starts listening to the MQTT bus. It will output verification results to the bus.
 
 ### 3. Start an Observer (Optional)
 Watch the JSON message traffic in real-time:
 ```bash
-bin/observe
+bin/observe mqtt://localhost
 ```
 **Expected behavior:** The observer will print formatted JSON messages for all traffic on the bus.
 
@@ -72,10 +72,10 @@ bin/observe
 In a new terminal:
 ```bash
 # Register the device in the model
-bin/register dev-001
+bin/register my-registry dev-001
 
 # Start the mock device
-bin/mocket dev-001
+bin/mocket mqtt://localhost my-registry dev-001
 ```
 **Expected behavior:** 
 - `bin/register` will output "Registered device dev-001 in model."
@@ -85,7 +85,7 @@ bin/mocket dev-001
 Create a dummy firmware file and trigger an update for the device:
 ```bash
 echo "V1.1 CONTENT" > fw_v1.1.0.bin
-bin/trigger dev-001 1.1.0 fw_v1.1.0.bin
+bin/trigger my-registry dev-001 1.1.0 fw_v1.1.0.bin
 ```
 **Expected behavior:** 
 - `bin/trigger` will report that the blob was stored and the target version was updated.
@@ -98,7 +98,7 @@ bin/trigger dev-001 1.1.0 fw_v1.1.0.bin
 ### Smoke Test
 Run a quick end-to-end smoke test that verifies basic component connectivity:
 ```bash
-bin/smokeit
+bin/smokeit mqtt://localhost
 ```
 **Expected behavior:** The script will launch temporary instances of the system components, run a sample update, and output "Smoke test passed" (or a detailed error if something is misconfigured).
 
