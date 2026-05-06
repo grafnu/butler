@@ -28,7 +28,7 @@ If not already present, create and activate a Python virtual environment:
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -r butler/requirements.txt
 ```
 
 ### 2. Start MQTT Broker
@@ -42,7 +42,7 @@ Run the setup script to prepare the communication bus. Note that this script wil
 ```bash
 bin/setup mqtt://localhost
 ```
-**Expected behavior:** The script should output "Mosquitto is running on port 1883" and "Bus setup complete."
+**Expected behavior:** The script should output "Bus setup complete."
 
 ## Manual Operation
 
@@ -66,7 +66,7 @@ Watch the JSON message traffic in real-time:
 ```bash
 bin/observe mqtt://localhost
 ```
-**Expected behavior:** The observer will print formatted JSON messages for all traffic on the `butler/#` topics.
+**Expected behavior:** The observer will print formatted JSON messages for all traffic on the bus.
 
 ### 4. Register and Start a Mock Device
 In a new terminal:
