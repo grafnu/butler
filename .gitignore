@@ -3,7 +3,5 @@ __pycache__
 testing/
 tmp/
 blobs/
-opt_a/
-opt_a.log
-opt_b/
-opt_b.log
+opt_*/
+opt_*.log

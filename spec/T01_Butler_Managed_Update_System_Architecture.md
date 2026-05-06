@@ -10,7 +10,7 @@ Butler is a declarative, state-based property management system for device firmw
 There should be no files or directories at the top-level other than those explicitly listed here:
 
 * AGENTS.md: Generic instructions for agentic systems.
-* BUTLER.md: Specific instructions on how things for this repo.
+* REBUILD.md: Instructions on how to rebuild the system.
 * README.md: Human-centric documentation.
 * `spec/`: Input specifications.
 * `bin/`: Operational tooling programs.
@@ -22,7 +22,7 @@ There should be no files or directories at the top-level other than those explic
 * `venv/`: Python virtual environment.
 
 ## 2. Communication Substrate Requirements
-The system MUST use a message-based communication layer (e.g., MQTT) that satisfies the following:
+The system MUST use a message-based communication layer (e.g., MQTT, PubSub) that satisfies the following:
 - **Visibility:** All messages must be inspectable and loggable.
 - **Format:** Messages MUST be JSON-encoded.
 - **Access:** Only major components (`mocket`, `observe`, `butler`, `verifier`) should utilize the message bus for inter-process communication.
@@ -31,9 +31,22 @@ The system MUST use a message-based communication layer (e.g., MQTT) that satisf
 
 See `uufi.md` for the binding of the communication substrate to UDMI.
 
-### MQTT Binding
+#### Debug differentiation
 
-The MQTT binding should follow the UDMI message format, but encode the necessary message attributes in a canonical MQTT topic.
+For protocols that need a differentiation for a "singular" receiver (like PubSub), the system should use the following username `.` (dot) differentiator:
+* `butler`: _default_ (no suffix)
+* `observe`: `.observe`
+* `verifier`: `.verifier`
+* `mocket`: `.mocket`
+
+This value should automatically be appended to the `user` component of the URL specification (which defaults to `unknown` if not provided). It is an error if the original URL specification for a singular protocol includes a `:port` designator or a `.` (dot) in the `user` component, as these are reserved for internal tool differentiation. The tools MUST throw an error if a manual differentiator is detected.
+
+For example, `pubsub://my-user@my-project` used by the verifier becomes `pubsub://my-user.verifier@my-project`.
+
+For MQTT, the `:port` component is used as the network port for the broker connection and should not be used for debug differentiation. 
+
+The `PubSub` subscriptions will be setup in such a way that the utilities receive all necessary messages (i.e., don't filter based on the debug differentiator).
+this setup will be handled out of scope of these tools, so nothing should be done to try and manipulate or change GCP PubSub settings.
 
 ## 3. Functional Components
 
@@ -48,9 +61,10 @@ Responsible for tracking the "source of truth" for the fleet. The internal struc
 - **State Tracking:** Must maintain `target_version` and `current_version` for every device subsystem.
 - **History:** Must track the `last_known_good` (LKG) version for each subsystem to support recovery.
 - **Reconciliation:** Any change to a `target_version` should act as a trigger for the Butler Orchestrator.
+- **Subsystem Default:** The default subsystem identifier MUST be `main`. Use `main` for all standard device operations.
 - **Environment Isolation:** The repository MUST support an environment variable `BUTLER_MODEL_FILE` to override the default model storage path. This is critical for parallel testing and isolating demo environments from developer state.
 - **Atomicity:** All updates to the model file MUST be atomic (e.g., write to a temporary file and rename) to prevent corruption during system crashes.
-- **Access:** Direct access is restricted to `mocket`, `register`, and `trigger`. The `butler` component MUST NOT access the model file directly and instead must interact with it indirectly through `mocket` via the communication substrate.
+- **Access:** Direct access is restricted to `mocket`, `register`, and `trigger`. The `butler` component MUST interact with the model file exclusively through `mocket` via the communication substrate.
 - **MQTT Representation:** While internal storage is an implementation detail, the representation of the model on the communication substrate (via UUFI `cloud` messages) MUST be strictly standardized to ensure interoperability. When replying to a model query, the `cloud` payload MUST follow the nested structure: `{"devices": { "device_id": { "subsystem": { "target_version": "...", "current_version": "...", "lkg_version": "..." } } } }` (wrapped in the mandatory UUFI `cloud` subfolder).
 
 ### 3.3 Butler Orchestrator (Control Logic)
@@ -58,6 +72,7 @@ The central engine that manages the update lifecycle state machine:
 - **Quiescent State:** Device is compliant (Current == Target).
 - **Active State:** Triggered when Target != Current (as observed via `mocket` status reports). The Orchestrator pushes an `update_payload` containing the URL and SHA256.
 - **Error State:** Triggered by device-reported failure or timeout.
+- **Loop Prevention (Settling Time):** The Orchestrator MUST implement a "Settling Time" (minimum 5s) after issuing an update command or detecting a state change before re-evaluating reconciliation for that specific device subsystem. This prevents aggressive re-triggering loops caused by message propagation latency.
 - **Rollback Logic:** On critical failure, the Orchestrator MUST automatically revert the `target_version` in the Model Repository (via `mocket`) to the LKG version.
 - **LKG Update:** The `last_known_good` (LKG) version is updated to the `current_version` only upon the successful completion and verification of an update sequence.
 - **Trigger Detect:** Butler should automatically detect changes in the site model (reported by `mocket`) for the target or expected version.
@@ -113,6 +128,7 @@ functioning implementation. When it detects a valid sequence, or an invalid mess
 - **Handshake Awareness:** The Verifier MUST monitor the `/uufi/p/` handshake topics to ensure clients successfully activate before performing operations.
 - **Validation Schema:** It SHOULD validate that all messages contain the mandatory UDMI `payload` fields (`timestamp`, `version`) and that timestamps follow the RFC 3339 format.
 - **State Transition Monitoring:** It MUST track the state transitions for device subsystems using the `update` subfolder (e.g., `quiescent` -> `pending` -> `success/failure`).
+- **Output:** Results MUST be reported using a UUFI-compliant envelope with the `validation` subFolder.
 
 The verification watcher and the rest of the system can only communicate over the observable shared bus.
 
@@ -163,7 +179,7 @@ To ensure the reliability and transparency of the system, all monitoring and dia
 1.  **Protocol Decoupling:** Monitoring tools SHOULD NOT share stateful protocol logic (such as nonce tracking, idempotency checks, or handshake state) with the core `butler` or `mocket` components. They must operate as "transparent taps" to avoid masking underlying network or protocol issues.
 2.  **Graceful Degradation:** Tools MUST handle malformed, non-JSON, or non-compliant messages gracefully. If a message cannot be parsed according to the UUFI schema, it MUST be displayed in its raw format rather than being suppressed.
 3.  **Real-time Transparency:** Tools designed for real-time monitoring MUST use unbuffered output (e.g., explicit flushing of `stdout`) to ensure that messages are visible to the operator immediately upon arrival, especially when piped or redirected.
-4.  **Schema Agnosticism:** While tools should "pretty-print" known schemas, they MUST NOT use strict topic-parsing logic that drops messages that do not match the expected `/uufi/{r,p}/...` structure.
+4.  **Schema Agnosticism:** While tools should "pretty-print" known schemas, they MUST process all messages regardless of whether they match the expected `/uufi/{r,p}/...` structure.
 
 ### 6.1 Tooling List
 All commands should be restartable without any problems if they are in a quiescent state. If the are restarted
@@ -184,20 +200,21 @@ The universal `conn_spec` paramater is a connection string URL, as defined by th
   - The tool also does a quick check (just connect) to make sure the target service is accessible.
 - **Observer:** A tool to monitor and pretty-print the JSON message stream in real-time.
   - `bin/observe conn_spec`
-- **Verifier:** A monitoring utility to monitor the communication channel and report results onto the `verify` topic.
+- **Verifier:** A monitoring utility to monitor the communication channel and report results onto the bus.
   - `bin/verifier conn_spec`
   - Tag should be `verifier` in messages source and logging
 - **Butler**: The core butler program that handlers the necessary orchestration and state machine.
-  - `bin/butler conn_spec`
+  - `bin/butler conn_spec [-f]`
   - Tag should be `butler` in messages source and logging
 - **Mocket:** An mock implementation of the UDMIS service (and consequently target device). This is a major component that utilizes the message bus.
-  - `bin/mocket conn_spec device_id`
+  - `bin/mocket conn_spec registry_id device_id [-f]`
   - Tag should be `mocket` in messages source and logging
   - The following commands run in the same context as `mocket` and should NOT use the message bus for communication (rather something in the local filesystem)
     - **Register:** A tool to add a device to the model.
-      - `bin/register conn_spec device_id`
+      - `bin/register registry_id device_id`
     - **Trigger**: A utility that triggers necessary situations to test the system, e.g. changing the available blob version.
-      - `bin/trigger conn_spec device_id blob_version blob_path`
+      - `bin/trigger registry_id device_id blob_version blob_path`
+        - 'registry_id' the registry id for the device.
         - 'device_id' the device id for the blob upate.
         - 'blob_version' is the semantic version of the blob (e.g. '1.3').
         - 'blob_path' is the path to the blob binary.

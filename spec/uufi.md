@@ -24,34 +24,54 @@ To provide a standard way to connect into the system using a single string desig
 * `mqtt` uses the industry standard [mqtt protocol](https://github.com/mqtt)
 * `pubsub` uses [Google Cloud Platform's PubSub](https://cloud.google.com/pubsub)
 
-You can use the optional like `user@` and `:port` as necessary within the URL format.
-* If `user@` is not specified then it should default to `default`
+You can use the optional `user@` and `:port` as necessary within the URL format.
+* If `user@` is not specified then it should default to `unknown`
+* The `@` character is only allowed if it is preceded by a non-empty `user` identifier.
 * If `:port` is not specified, then it should default to the protocol-specific meaningful default.
+
+`PubSub` is considered a "singular" receiver binding in that if multiple entities want to use the same
+channel, they must use different `user` identities, otherwise they will
+not all receive every message. 
 
 #### Protocol Mapping
 
 **PubSub (`pubsub://`)**
 *   The base `host` maps to the GCP project.
-*   The `user@` prefix maps to a `+user` suffix on the subscription and a `principal` attribute in the envelope (including the @).
-*   The `:port` suffix is invalid and should not be used.
+*   The `principal` is derived from the (optional) `user@` component into `user@`
+    * If `user` is not defined then it defaults to `unknown`
+    *   The entire string in the `user` component is used as the identity.
+
+    * The principal is included in the message envelope when publishing a message to the topic.
+      * This includes the `@`
+*   The `user` component maps to a suffix on the subscription.
 *   The first URL path part, if present, maps to the root name to use instead of `udmi_uufi`.
+*   **Note:** The `:port` component is NOT allowed for `pubsub://` URLs.
 *   *Example:* `pubsub://the-user@my-project/a-topic` maps to:
   * The GCP project `my-project`
   * The topic `a-topic`
+  * The principal `the-user@`
   * The receive subscription `a-topic+the-user`
   * Messages have an attribute `principal` that is `the-user@`
+*   *Example:* `pubsub://user2.10@diff-project` maps to:
+  * The GCP project `diff-project`
+  * The topic `udmi_uufi`
+  * The principal `user2.10@`
+  * The receive subscription `udmi_uufi+user2.10`
+  * Messages have an attribute `principal` that is `user2.10@`
 
-Not all reeived messages will have a `principal` attribute as some are generic (e.g. telemetry recieved from a building). Only
-messages that are explicitly intended for the recipeint (e.g. message acks) will have this attribute present. The subscription
-should be filtered to only include messsages that have this (matching) attribute or the attribute missing.
+Not all received messages will have a `principal` attribute as some are generic (e.g. telemetry received from a building). Only
+messages that are explicitly intended for the recipient (e.g. message acks) will have this attribute present. The subscription
+should be filtered to only include messages that have this (matching) attribute or the attribute missing. Received UUFI
+will have the principle of _butler_, not of the sending entity. The principal in a received message indicates the intended principal
+of the receiver, not the sender. All messages in/out from one entity (e.g. `butler`) will have the same `principal` attribute value.
 
 **MQTT (`mqtt://`)**
-*   The base `host` and `:port` map as expected.
+*   The base `host` and `:port` map as expected (network address).
 *   The `user@` prefix maps to a `username` property that's added to the MQTT topic path (e.g., as the `{principal}` identifier in `/uufi/p/{principal}/...`).
   * Clients need to subscribe to two topics (with and without the principal) to also receive generic broadcast messages.
 *   The first URL path part, if present, maps to an optional topic prefix (else empty)
-*   *Example:* `mqtt://the-user@localhost:8783/a-prefix` maps to:
-  * The MQTT broker at `localhost:8783`
+*   *Example:* `mqtt://the-user@localhost:1883/a-prefix` maps to:
+  * The MQTT broker at `localhost:1883`
   * Adds `the-user` and `a-prefix` into the MQTT topic path (e.g., `/uufi/a-prefix/p/the-user/...`).
     * The prefix is optional, with the pattern being `/uufi/` + [`{prefix}/`]
 
@@ -90,7 +110,7 @@ Because the initial handshake is generic and occurs before the Client is associa
 - **MQTT:** The topic MUST use the prefix `/uufi/p/{principal}/` where `{principal}` is the Client's unique identifier.
   - The resulting topic structure is `/uufi/p/{principal}/{subType}/{subFolder}`.
 
-**Important:** Standard registry-based addressing (`/uufi/r/...`) MUST NOT be used for handshake messages.
+**Important:** Handshake messages MUST be addressed using this principal-based scheme instead of the standard registry-based addressing (`/uufi/r/...`).
 
 ### Timeouts and Retries
 Clients SHOULD implement a handshake timeout (default 30s). If no matching configuration reply is received within this window, the Client SHOULD retry the handshake with an exponential backoff, utilizing a new `transaction_id` for each attempt.
@@ -123,11 +143,12 @@ The following fields are available in the envelope to provide context for the me
 | **MQTT** | Topic Structure & Payload | Payload `payload` field |
 
 #### MQTT Topic Structure
-For the MQTT transport, the envelope fields are encoded in the topic path:
-`/uufi/r/{registryId}/d/{deviceId}/{subType}/{subFolder}`
+There are two primary topic structures supported for MQTT:
+1. **Registry-based:** `/uufi/r/{registryId}/d/{deviceId}/{subType}/{subFolder}`
+2. **Principal-based:** `/uufi/p/{principal}/{subType}/{subFolder}`
 
 #### MQTT Message Wrap
-Since MQTT 3.1.1 does not support separate attributes, the envelope fields are included in the JSON payload alongside the actual UDMI message. **Crucially, the top-level JSON envelope MUST NOT include fields that are already encoded in the MQTT topic structure (e.g., `projectId`, `deviceId`, etc.).**
+Since MQTT 3.1.1 does not support separate attributes, the envelope fields are included in the JSON payload alongside the actual UDMI message. **Crucially, the top-level JSON envelope fields MUST only include data NOT already encoded in the MQTT topic structure (e.g., omitting projectId, deviceId, etc.).**
 
 ```json
 {
@@ -135,7 +156,7 @@ Since MQTT 3.1.1 does not support separate attributes, the envelope fields are i
   "payload": {
     "version": "1.5.2",
     "timestamp": "2026-04-29T10:05:00Z",
-    "points": {
+    "pointset": {
       "room_temperature": { "set_value": 22.5 }
     }
   }
@@ -146,20 +167,20 @@ Since MQTT 3.1.1 does not support separate attributes, the envelope fields are i
 
 UUFI supports direct operations on the Cloud Model by setting specific attributes.
 
-### Cloud Model Schema
+### 5.1. Cloud Model Schema
 The `CloudModel` object used in these operations contains:
 - `operation`: The action to perform (`READ`, `CREATE`, `UPDATE`, `DELETE`, `BIND`, `UNBIND`).
-- `registryId`: (Optional) The target registry if different from the envelope.
-- `deviceId`: (Optional) The target device if different from the envelope.
+- `devices`: A map where keys are `deviceId` and values are a map of `subsystem` identifiers to their state objects.
+  - *Example structure:* `{"devices": {"dev-001": {"main": {"target_version": "1.1.0", "current_version": "1.0.0"}}}}`
 - `detail`: (Optional) Additional parameters specific to the operation.
 
-### Cloud Model Queries
+### 5.2. Cloud Model Queries
 - Set `subFolder: cloud` and `subType: query`.
 - **Payload:** A `CloudModel` object with `operation: READ`.
 
-### Cloud Model Updates
+### 5.3. Cloud Model Updates
 - Set `subFolder: cloud` and `subType: model`.
-- **Payload:** A `CloudModel` object specifying the `operation` (e.g., `CREATE`, `UPDATE`, `DELETE`, `BIND`, `UNBIND`).
+- **Payload:** A `CloudModel` object specifying the `operation` (e.g., `CREATE`, `UPDATE`, `DELETE`, `BIND`, `UNBIND`) and the target `devices` map.
 
 ## 6. Mapping UDMI to UUFI Envelopes
 
@@ -177,6 +198,8 @@ The `CloudModel` object used in these operations contains:
 | **Update Config** | `config` | `update` | Publish |
 | **Update State** | `state` | `update` | Receive |
 | **Error Reporting** | `errors` | *varies* (e.g., `pointset`) | Receive |
+
+**Note on Managed Updates:** For firmware and software lifecycle management, the `update` subfolder MUST be used for both `config` (triggers) and `state` (reporting). The `system` subfolder is reserved for general device health and metadata.
 
 ## 7. Examples
 
@@ -283,9 +306,11 @@ Updating the `room_temperature` setpoint for device `BLD-1`.
 {
   "version": "1.5.2",
   "timestamp": "2026-04-29T10:05:00Z",
-  "points": {
-    "room_temperature": {
-      "set_value": 22.5
+  "pointset": {
+    "points": {
+      "room_temperature": {
+        "set_value": 22.5
+      }
     }
   }
 }
@@ -312,9 +337,11 @@ Receiving the current `room_temperature` reading from device `BLD-1`.
 {
   "version": "1.5.2",
   "timestamp": "2026-04-29T10:06:00Z",
-  "points": {
-    "room_temperature": {
-      "present_value": 22.1
+  "pointset": {
+    "points": {
+      "room_temperature": {
+        "present_value": 22.1
+      }
     }
   }
 }
@@ -363,9 +390,11 @@ Updating device `BLD-1`.
   "payload": {
     "version": "1.5.2",
     "timestamp": "2026-04-29T10:05:00Z",
-    "points": {
-      "room_temperature": {
-        "set_value": 22.5
+    "pointset": {
+      "points": {
+        "room_temperature": {
+          "set_value": 22.5
+        }
       }
     }
   }
@@ -391,17 +420,19 @@ Integration testing between different implementations has identified common area
 ### 9.1. Mandatory Payload Fields
 Every message's inner `payload` object MUST contain `timestamp` and `version` fields.
 - **Payload Structure:** The `payload` object MUST contain exactly one top-level key matching the `subFolder` name (e.g., `system`, `pointset`, `update`, `cloud`), which contains the UDMI data, in addition to the mandatory `timestamp` and `version` fields at the same level.
-- **Pitfall:** Putting `publishTime` only in the envelope. The System and Verifiers often rely on the internal `timestamp` for UDMI compliance.
-- **Pitfall:** Omitting `version` from the payload.
-- **Pitfall:** Placing UDMI fields directly in the `payload` without the subfolder wrapper.
+- **Field Consistency:**
+    - **Current Version:** Devices MUST report their active firmware version using the `current_version` field within the inner `state` data.
+    - **Operation Status:** Devices MUST report their operational state (e.g., `quiescent`, `pending`, `success`, `failure`) using the `status` field.
+- **Guidance:** Ensure `publishTime` is in the envelope and `timestamp` is in the inner payload. Ensure `version` is present in the payload. Use the subfolder wrapper for all UDMI fields.
 
 ### 9.2. Handshake Addressing
-The `/uufi/c/{source}/` topic prefix MUST be used for the initial handshake.
-- **Pitfall:** Using the registry-based `/uufi/r/` prefix for handshakes. The System may not have the registry context yet, or may reject registry-addressed messages from unauthenticated clients.
+The `/uufi/p/{principal}/` topic prefix MUST be used for the initial handshake.
+- **Strict Prefix:** The handshake topic MUST exactly match the `/uufi/p/{principal}/` pattern to ensure early-session identification.
+- **Guidance:** Reserve `/uufi/r/` for post-handshake, registry-associated traffic.
 
 ### 9.3. Envelope Redundancy
-Top-level envelope fields MUST NOT include data already encoded in the MQTT topic (e.g., `deviceId`, `subType`).
-- **Pitfall:** "Envelope Nesting" where envelope fields are merged into the inner payload during relay. When a component (like a proxy or relay) wraps a message, it should ensure the inner payload remains a clean UDMI message.
+Top-level envelope fields MUST only include data NOT already encoded in the MQTT topic structure.
+- **Guidance:** Maintain a clean inner UDMI message by omitting redundant fields like `deviceId` or `subType` from the outer JSON wrap.
 
 ### 9.4. Timestamp Format
 All timestamps MUST follow RFC 3339 (e.g., `2026-05-01T22:32:17Z`). Implementations should use UTC to avoid ambiguity.
