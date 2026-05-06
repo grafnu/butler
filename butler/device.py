@@ -68,7 +68,7 @@ class MocketDevice:
         # Cloud data is wrapped in 'cloud' key
         cloud_data = data.get("cloud", {})
         operation = cloud_data.get("operation")
-        target_device = cloud_data.get("deviceId") or data.get("deviceId")
+        target_device = data.get("deviceId")
         transaction_id = data.get("transactionId")
         source = data.get("source")
         
@@ -76,7 +76,7 @@ class MocketDevice:
         
         if operation == "READ":
             model = self.model_repo.load_model()
-            if target_device:
+            if target_device and target_device != "all":
                 raw_devices = {target_device: model.get(target_device)}
             else:
                 raw_devices = model
@@ -95,10 +95,12 @@ class MocketDevice:
             
         elif operation in ["UPDATE", "CREATE"]:
             # Perform update in ModelRepository
-            # For simplicity, we assume 'cloud_data' contains the new fields
-            # or 'detail' contains them.
-            detail = cloud_data.get("detail", {})
-            self.model_repo.update_device(target_device, **detail)
+            # Structure: {"devices": { "device_id": { "subsystem": { ... } } } }
+            devices = cloud_data.get("devices", {})
+            for dev_id, subsystems in devices.items():
+                for subsystem_id, detail in subsystems.items():
+                    print(f"[mocket] Updating {dev_id}/{subsystem_id} with {detail}")
+                    self.model_repo.update_device(dev_id, **detail)
             
             # Confirm change
             payload = { "status": "success", "operation": operation }

@@ -141,16 +141,20 @@ class ButlerOrchestrator:
 
     def query_model(self, device_id=None):
         payload = {
-            "operation": "READ",
-            "deviceId": device_id
+            "operation": "READ"
         }
         self.publish_uufi(device_id, "query", payload, "cloud", target_principal="mocket")
 
     def update_model(self, device_id, **detail):
+        # Nested structure as per 5.1/5.3: {"devices": { "device_id": { "subsystem": { ... } } } }
+        subsystem = "main" # default for this system
         payload = {
             "operation": "UPDATE",
-            "deviceId": device_id,
-            "detail": detail
+            "devices": {
+                device_id: {
+                    subsystem: detail
+                }
+            }
         }
         self.publish_uufi(device_id, "model", payload, "cloud", target_principal="mocket")
 
