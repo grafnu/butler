@@ -100,12 +100,12 @@ class Verifier:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("conn_spec", help="Connection spec URL")
+    parser.add_argument("conn_spec", nargs="?", help="Connection spec URL")
     args = parser.parse_args()
 
-    conn_spec = parse_conn_spec(args.conn_spec)
+    conn_spec = parse_conn_spec(args.conn_spec, differentiator="verifier")
     verifier = Verifier(conn_spec)
-    print(f"Starting Verifier Watcher with {args.conn_spec}...")
+    print(f"Starting Verifier Watcher with {conn_spec}...")
     verifier.run()
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ from butler.conn_spec import parse_conn_spec
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("conn_spec", help="Connection spec URL")
+    parser.add_argument("conn_spec", nargs="?", help="Connection spec URL")
     args = parser.parse_args()
 
     conn_spec = parse_conn_spec(args.conn_spec)

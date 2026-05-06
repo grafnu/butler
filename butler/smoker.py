@@ -9,9 +9,11 @@ from butler.blob_repo import BlobRepository
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("conn_spec", help="Connection spec URL")
+    parser.add_argument("conn_spec", nargs="?", help="Connection spec URL")
     args = parser.parse_args()
-    conn_spec = args.conn_spec
+    
+    from butler.conn_spec import get_default_conn_spec
+    conn_spec = args.conn_spec or get_default_conn_spec()
 
     test_dir = "testing"
     if os.path.exists(test_dir):
@@ -32,11 +34,10 @@ def main():
     # Verify argument enforcement
     print("Verifying argument enforcement...")
     for cmd, cmd_args in [
-        ("bin/register", []), # missing conn_spec, device_id
-        ("bin/register", [conn_spec]), # missing device_id
-        ("bin/trigger", [conn_spec]), # missing device_id, blob_version, blob_path
-        ("bin/trigger", [conn_spec, "dev"]), # missing blob_version, blob_path
-        ("bin/trigger", [conn_spec, "dev", "1.0"]) # missing blob_path
+        ("bin/register", []), # missing device_id
+        ("bin/trigger", []), # missing device_id, blob_version, blob_path
+        ("bin/trigger", ["dev"]), # missing blob_version, blob_path
+        ("bin/trigger", ["dev", "1.0"]) # missing blob_path
     ]:
         res = subprocess.run([sys.executable, cmd] + cmd_args, capture_output=True)
         if res.returncode == 0:
@@ -65,7 +66,7 @@ def main():
         print("Triggering update...")
         dummy_blob = os.path.join(test_dir, "dummy.bin")
         with open(dummy_blob, "wb") as f: f.write(b"NEW_VERSION_CONTENT")
-        subprocess.run([sys.executable, "bin/trigger", conn_spec, "smoke-dev", "1.1.0", dummy_blob], env=env, check=True)
+        subprocess.run([sys.executable, "bin/trigger", "smoke-dev", "1.1.0", dummy_blob], env=env, check=True)
         
         # Wait and check
         timeout = 60
@@ -96,7 +97,7 @@ def main():
         # Trigger another update
         print("Triggering update (should fail)...")
         with open(dummy_blob, "wb") as f: f.write(b"FAILURE_TEST_CONTENT")
-        subprocess.run([sys.executable, "bin/trigger", conn_spec, "smoke-dev", "1.2.0", dummy_blob], env=env, check=True)
+        subprocess.run([sys.executable, "bin/trigger", "smoke-dev", "1.2.0", dummy_blob], env=env, check=True)
         
         # Wait for rollback to 1.1.0
         timeout = 60

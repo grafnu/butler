@@ -216,13 +216,13 @@ class Orchestrator:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("conn_spec", help="Connection spec URL")
+    parser.add_argument("conn_spec", nargs="?", help="Connection spec URL")
     parser.add_argument("-f", action="store_true", help="Enable failure mode")
     args = parser.parse_args()
 
-    conn_spec = parse_conn_spec(args.conn_spec)
+    conn_spec = parse_conn_spec(args.conn_spec, differentiator="butler")
     orchestrator = Orchestrator(conn_spec, fail_mode=args.f)
-    print(f"Starting Butler Orchestrator with {args.conn_spec}...")
+    print(f"Starting Butler Orchestrator with {conn_spec}...")
     orchestrator.run()
 
 if __name__ == "__main__":

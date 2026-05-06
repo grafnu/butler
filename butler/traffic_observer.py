@@ -10,10 +10,10 @@ def on_message(env, payload, topic, raw):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("conn_spec", help="Connection spec URL")
+    parser.add_argument("conn_spec", nargs="?", help="Connection spec URL")
     args = parser.parse_args()
 
-    conn_spec = parse_conn_spec(args.conn_spec)
+    conn_spec = parse_conn_spec(args.conn_spec, differentiator="observe")
     print(f"Starting Observer with {conn_spec}...", flush=True)
     
     transport = get_transport(conn_spec)

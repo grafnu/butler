@@ -7,13 +7,12 @@ from butler.conn_spec import parse_conn_spec
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("conn_spec", help="Connection spec URL")
     parser.add_argument("device_id")
     parser.add_argument("blob_version")
     parser.add_argument("blob_path")
     args = parser.parse_args()
 
-    print(f"Triggering update for {args.device_id} to version {args.blob_version} for conn_spec {args.conn_spec}")
+    print(f"Triggering update for {args.device_id} to version {args.blob_version}")
     
     repo = ModelRepository()
     state = repo.get_device_state(args.device_id, "main")

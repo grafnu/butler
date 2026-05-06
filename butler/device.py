@@ -116,7 +116,7 @@ class MockDevice:
             sub_type="config",
             sub_folder="udmi",
             transaction_id=tid,
-            source="mocket"
+            source="mockit"
         )
         env["principal"] = principal
 
@@ -150,7 +150,7 @@ class MockDevice:
             device_id=self.registry_id,
             sub_type="config",
             sub_folder="cloud",
-            source="mocket"
+            source="mockit"
         )
         payload = create_payload("cloud", model_payload_data)
         self.transport.publish(env, payload)
@@ -166,7 +166,7 @@ class MockDevice:
             device_id=self.device_id,
             sub_type="state",
             sub_folder="update",
-            source="mocket"
+            source="mockit"
         )
         payload = create_payload("update", update_data)
         self.transport.publish(env, payload)
@@ -198,14 +198,20 @@ class MockDevice:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("conn_spec", help="Connection spec URL")
-    parser.add_argument("device_id")
+    parser.add_argument("args", nargs="+", help="[conn_spec] device_id")
     parser.add_argument("-f", action="store_true", help="Enable failure mode")
-    args = parser.parse_args()
+    parsed_args = parser.parse_args()
 
-    conn_spec = parse_conn_spec(args.conn_spec)
-    device = MockDevice(conn_spec, args.device_id, fail_mode=args.f)
-    print(f"Starting mock device {args.device_id} with {args.conn_spec}...")
+    if len(parsed_args.args) == 1:
+        conn_str = None
+        device_id = parsed_args.args[0]
+    else:
+        conn_str = parsed_args.args[0]
+        device_id = parsed_args.args[1]
+
+    conn_spec = parse_conn_spec(conn_str, differentiator="mocket")
+    device = MockDevice(conn_spec, device_id, fail_mode=parsed_args.f)
+    print(f"Starting mock device {device_id} with {conn_spec}...")
     device.run()
 
 if __name__ == "__main__":
