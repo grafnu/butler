@@ -166,20 +166,20 @@ Since MQTT 3.1.1 does not support separate attributes, the envelope fields are i
 
 UUFI supports direct operations on the Cloud Model by setting specific attributes.
 
-### Cloud Model Schema
+### 5.1. Cloud Model Schema
 The `CloudModel` object used in these operations contains:
 - `operation`: The action to perform (`READ`, `CREATE`, `UPDATE`, `DELETE`, `BIND`, `UNBIND`).
-- `registryId`: (Optional) The target registry if different from the envelope.
-- `deviceId`: (Optional) The target device if different from the envelope.
+- `devices`: A map where keys are `deviceId` and values are a map of `subsystem` identifiers to their state objects.
+  - *Example structure:* `{"devices": {"dev-001": {"main": {"target_version": "1.1.0", "current_version": "1.0.0"}}}}`
 - `detail`: (Optional) Additional parameters specific to the operation.
 
-### Cloud Model Queries
+### 5.2. Cloud Model Queries
 - Set `subFolder: cloud` and `subType: query`.
 - **Payload:** A `CloudModel` object with `operation: READ`.
 
-### Cloud Model Updates
+### 5.3. Cloud Model Updates
 - Set `subFolder: cloud` and `subType: model`.
-- **Payload:** A `CloudModel` object specifying the `operation` (e.g., `CREATE`, `UPDATE`, `DELETE`, `BIND`, `UNBIND`).
+- **Payload:** A `CloudModel` object specifying the `operation` (e.g., `CREATE`, `UPDATE`, `DELETE`, `BIND`, `UNBIND`) and the target `devices` map.
 
 ## 6. Mapping UDMI to UUFI Envelopes
 
@@ -197,6 +197,8 @@ The `CloudModel` object used in these operations contains:
 | **Update Config** | `config` | `update` | Publish |
 | **Update State** | `state` | `update` | Receive |
 | **Error Reporting** | `errors` | *varies* (e.g., `pointset`) | Receive |
+
+**Note on Managed Updates:** For firmware and software lifecycle management, the `update` subfolder MUST be used for both `config` (triggers) and `state` (reporting). The `system` subfolder is reserved for general device health and metadata.
 
 ## 7. Examples
 
