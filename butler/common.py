@@ -50,27 +50,28 @@ class ButlerBusBase:
         self.source = source
         self.conn_spec = conn_spec
         scheme, user, host, port_or_topic, prefix = parse_conn_spec(self.conn_spec)
-        
-        # 2.1 Protocol Mapping & Debug differentiation
+
+        # 2. Protocol Mapping & Debug differentiation
         # Singular protocols like PubSub need differentiator. 
         # But UUFI spec says "system should use the following username . (dot) differentiator"
         if user and "." in user:
              # Tool MUST throw an error if a manual differentiator is detected.
              raise ValueError(f"Manual differentiator detected in user component: {user}")
-             
+
         if scheme == "pubsub" and port_or_topic and ":" in str(port_or_topic):
              # The :port component is NOT allowed for pubsub:// URLs.
              raise ValueError(f"Port component not allowed for pubsub: {port_or_topic}")
 
         # Differentiator suffix
         suffix = "" if source == "butler" else f".{source}"
-        
+
         self.scheme = scheme
-        self.principal = (user or "unknown") + suffix
+        self.user = (user or "unknown") + suffix
+        self.principal = self.user + ("@" if scheme == "pubsub" else "")
         self.host = host # project_id for pubsub
         self.port_or_topic = port_or_topic
         self.prefix = prefix
-        
+
         self.handshake_complete = False
         self.handshake_transaction_id = None
         self.project_id = os.environ.get("BUTLER_PROJECT_ID", "vibrant")
@@ -79,6 +80,7 @@ class ButlerBusBase:
         self.seen_nonces = set()
         self.max_seen_nonces = 1000
         self.filter_principal = source not in ["butler", "verifier", "observe"]
+
 
     def generate_nonce(self):
         return secrets.token_hex(4) # 8-digit hex
@@ -192,7 +194,7 @@ class ButlerMQTTBase(ButlerBusBase):
                     device_id = parts[uufi_idx + 4]
                     sub_type = parts[uufi_idx + 5]
                     sub_folder = parts[uufi_idx + 6] if len(parts) > uufi_idx + 6 else None
-                elif branch in ["p", "c"]:
+                elif branch == "p":
                     sub_type = parts[uufi_idx + 3]
                     sub_folder = parts[uufi_idx + 4] if len(parts) > uufi_idx + 4 else None
                     device_id = None
@@ -250,7 +252,7 @@ class ButlerMQTTBase(ButlerBusBase):
         topic_parts = [self.prefix] if self.prefix else []
         topic_parts.append("uufi")
         if is_handshake:
-            topic_parts.extend(["c", target_principal or self.principal])
+            topic_parts.extend(["p", target_principal or self.principal])
         else:
             topic_parts.extend(["r", self.registry_id, "d", str(device_id) if device_id is not None else "all"])
         topic_parts.append(sub_type)
@@ -273,7 +275,7 @@ class ButlerPubSubBase(ButlerBusBase):
         self.publisher = pubsub_v1.PublisherClient()
         self.subscriber = pubsub_v1.SubscriberClient()
         self.topic_path = self.publisher.topic_path(self.host, self.port_or_topic)
-        self.sub_name = f"{self.port_or_topic}+{self.principal}"
+        self.sub_name = f"{self.port_or_topic}+{self.user}"
         self.subscription_path = self.subscriber.subscription_path(self.host, self.sub_name)
 
     def connect(self):
@@ -316,7 +318,8 @@ class ButlerPubSubBase(ButlerBusBase):
         
         p = target_principal or self.principal
         if p:
-            attributes["principal"] = f"{p}@"
+            # Ensure the principal matches the required format (toolname@)
+            attributes["principal"] = p if "@" in p else f"{p}@"
 
         data = json.dumps(wrapped_payload).encode("utf-8")
         self.publisher.publish(self.topic_path, data, **attributes)
@@ -336,7 +339,7 @@ class ButlerPubSubBase(ButlerBusBase):
             
             # Principal filtering as per 2.1
             target_principal = attributes.get("principal")
-            if self.filter_principal and target_principal and target_principal != f"{self.principal}@":
+            if self.filter_principal and target_principal and target_principal != self.principal:
                 message.ack()
                 return
 

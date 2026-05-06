@@ -27,29 +27,20 @@ class MocketDevice:
         
         # Ensure bus uses our registry_id
         self.bus.registry_id = registry_id
+        self.bus.filter_principal = False
         
         self.bus.on_connect = self.on_connect
         self.bus.on_message = self.on_message
 
     def on_connect(self):
-        print(f"[mocket] Device/UDMIS connected: {self.device_id}")
-        # Start handshake in a separate thread to allow retries
-        threading.Thread(target=self.handshake_loop, daemon=True).start()
-        # Subscribe to all config messages for this device
+        print(f"[mocket] System/Device connected: {self.device_id}")
+        # Subscribe to all config/state messages to handle handshakes and cloud ops
         self.subscribe_uufi()
 
-    def handshake_loop(self):
-        while not self.bus.handshake_complete:
-            print(f"[mocket] Attempting handshake for {self.device_id}...")
-            self.start_handshake(device_id=self.device_id)
-            # Wait for 5 seconds for a reply
-            for _ in range(50):
-                if self.bus.handshake_complete:
-                    return
-                time.sleep(0.1)
-
     def on_message(self, topic, device_id, sub_type, sub_folder, data):
-        if not self.bus.handshake_complete:
+        # Handle UUFI Handshake (System side response)
+        if sub_type == "state" and sub_folder == "udmi":
+            self.handle_handshake_state(data)
             return
 
         # Handle Cloud Model Queries/Updates (UDMIS side)
@@ -64,6 +55,33 @@ class MocketDevice:
         if sub_type == "config" and sub_folder == "update":
             self.handle_update_config(data)
 
+    def handle_handshake_state(self, data):
+        udmi = data.get("udmi", {})
+        setup = udmi.get("setup", {})
+        transaction_id = setup.get("transaction_id")
+        source = data.get("source")
+        principal = data.get("user")
+        
+        if source == self.source:
+            return
+
+        print(f"[mocket] Responding to handshake from {source} ({principal})")
+        
+        response_payload = {
+            "setup": {
+                "functions_min": 9,
+                "functions_max": 9,
+                "udmi_version": "1.5.2"
+            },
+            "reply": {
+                "functions_ver": 9,
+                "transaction_id": transaction_id,
+                "msg_source": source
+            }
+        }
+        # Reply to the principal's p-branch
+        self.publish_uufi(None, "config", response_payload, "udmi", direction="reply", target_principal=principal, transaction_id=transaction_id)
+
     def handle_cloud_message(self, data):
         # Cloud data is wrapped in 'cloud' key
         cloud_data = data.get("cloud", {})
@@ -77,19 +95,12 @@ class MocketDevice:
         if operation == "READ":
             model = self.model_repo.load_model()
             if target_device and target_device != "all":
-                raw_devices = {target_device: model.get(target_device)}
+                raw_devices = {target_device: self.model_repo.get_device_subsystems(target_device)}
             else:
                 raw_devices = model
             
-            # Nested structure as per 3.2: {"devices": { "device_id": { "subsystem": { ... } } } }
-            nested_devices = {}
-            for dev_id, dev_data in raw_devices.items():
-                if dev_data:
-                    subsystem = dev_data.get("subsystem", "main")
-                    nested_devices[dev_id] = { subsystem: dev_data }
-            
             payload = {
-                "devices": nested_devices
+                "devices": raw_devices
             }
             self.publish_uufi(target_device, "config", payload, "cloud", target_principal=source, transaction_id=transaction_id)
             
@@ -99,8 +110,8 @@ class MocketDevice:
             devices = cloud_data.get("devices", {})
             for dev_id, subsystems in devices.items():
                 for subsystem_id, detail in subsystems.items():
-                    print(f"[mocket] Updating {dev_id}/{subsystem_id} with {detail}")
-                    self.model_repo.update_device(dev_id, **detail)
+                    print(f"[mocket] Replacing {dev_id}/{subsystem_id} with {detail}")
+                    self.model_repo.save_subsystem(dev_id, subsystem_id, detail)
             
             # Confirm change
             payload = { "status": "success", "operation": operation }

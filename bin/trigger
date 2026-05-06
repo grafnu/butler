@@ -29,7 +29,7 @@ def main():
     subsystem = "main"
     
     model_repo = ModelRepository()
-    device_state = model_repo.get_device_state(device_id)
+    device_state = model_repo.get_subsystem(device_id, subsystem_id="main")
     if not device_state:
         print(f"Error: Device {device_id} not found in model.")
         sys.exit(1)

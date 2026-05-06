@@ -52,8 +52,8 @@ class ButlerVerifier:
                 self.report_verification(device_id or "unknown", f"VALIDATION ERROR: {err}", level="ERROR")
 
         # Handshake Awareness
-        # Pattern: /uufi/[pc]/{principal}/{subType}/{subFolder}
-        is_handshake_topic = "/uufi/p/" in topic or "/uufi/c/" in topic
+        # Pattern: /uufi/p/{principal}/{subType}/{subFolder}
+        is_handshake_topic = "/uufi/p/" in topic
         if is_handshake_topic and sub_type == "state" and sub_folder == "udmi":
             self.report_verification(device_id or source, f"Handshake started by {source}")
         

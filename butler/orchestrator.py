@@ -26,60 +26,30 @@ class ButlerOrchestrator:
         self.blob_repo = BlobRepository()
         self.failure_mode = failure_mode
         self.timeout = timeout
+        self.settling_time = 5
         self.devices_pending = {} # device_id -> start_time
         self.known_devices = {} # device_id -> device_info
+        self.last_action_time = {} # device_id -> time
 
     def on_connect(self):
-        print("[butler] Orchestrator connected")
-        # Orchestrator is the System, it doesn't need to handshake with itself
-        self.bus.handshake_complete = True
+        print("[butler] Orchestrator connected, starting handshake...")
+        self.bus.start_handshake()
         # Subscribe to all traffic to handle device handshakes and states
         self.subscribe_uufi()
 
     def on_message(self, topic, device_id, sub_type, sub_folder, data):
-        # 1. Handle UUFI Handshake (System side)
-        if sub_type == "state" and sub_folder == "udmi":
-            self.handle_handshake_state(device_id, data)
-            return
-
         if not self.bus.handshake_complete:
+            # Check for handshake reply in the common bus handler
             return
 
-        # 2. Handle Cloud Model Replies (mocket -> System)
+        # 1. Handle Cloud Model Replies (mocket -> System)
         if sub_type == "config" and sub_folder == "cloud":
             self.handle_cloud_reply(data)
             return
 
-        # 3. Handle device state (Client -> System)
+        # 2. Handle device state (Client -> System)
         if sub_type == "state" and sub_folder == "update":
             self.handle_device_state(device_id, data)
-
-    def handle_handshake_state(self, device_id, data):
-        # Handshake is in 'udmi' subfolder
-        udmi = data.get("udmi", {})
-        setup = udmi.get("setup", {})
-        transaction_id = setup.get("transaction_id")
-        source = data.get("source")
-        
-        if source == self.source:
-            return
-
-        print(f"[butler] Handling handshake from {source}")
-        
-        response_payload = {
-            "setup": {
-                "functions_min": 9,
-                "functions_max": 9,
-                "udmi_version": "1.5.2"
-            },
-            "reply": {
-                "functions_ver": 9,
-                "transaction_id": transaction_id,
-                "msg_source": source
-            }
-        }
-        # Handshake addressing will be /uufi/c/{principal}/{subType}/{subFolder} because sub_folder is 'udmi'
-        self.publish_uufi(device_id, "config", response_payload, "udmi", direction="reply", target_principal=source, transaction_id=transaction_id)
 
     def handle_cloud_reply(self, data):
         # Nested structure as per 3.2: {"devices": { "device_id": { "subsystem": { ... } } } }
@@ -89,8 +59,8 @@ class ButlerOrchestrator:
             for device_id, subsystems in devices.items():
                 if subsystems:
                     # For now, we just take the first subsystem data
-                    subsystem_data = next(iter(subsystems.values()))
-                    print(f"[butler] Received model info for {device_id}")
+                    subsystem_id, subsystem_data = next(iter(subsystems.items()))
+                    print(f"[butler] Received model info for {device_id}/{subsystem_id}")
                     self.known_devices[device_id] = subsystem_data
                     # Reconcile if needed
                     self.reconcile_device(device_id)
@@ -113,10 +83,14 @@ class ButlerOrchestrator:
             return
 
         target_version = device_info.get("target_version")
+        old_status = device_info.get("state")
         
+        if status != old_status:
+            self.last_action_time[device_id] = time.time()
+
         if status == "quiescent":
             if current_version != target_version:
-                self.trigger_update(device_id, device_info)
+                self.reconcile_device(device_id)
             else:
                 if device_info.get("state") != "quiescent":
                     print(f"[butler] Device {device_id} is quiescent and compliant.")
@@ -143,20 +117,25 @@ class ButlerOrchestrator:
         payload = {
             "operation": "READ"
         }
-        self.publish_uufi(device_id, "query", payload, "cloud", target_principal="mocket")
+        self.publish_uufi(device_id, "query", payload, "cloud")
 
     def update_model(self, device_id, **detail):
-        # Nested structure as per 5.1/5.3: {"devices": { "device_id": { "subsystem": { ... } } } }
-        subsystem = "main" # default for this system
+        # Nested structure as per 3.2: {"devices": { "device_id": { "subsystem": { ... } } } }
+        device_info = self.known_devices.get(device_id, {}).copy()
+        device_info.update(detail)
+        self.known_devices[device_id] = device_info # update cache
+        
+        subsystem = device_info.get("subsystem", "main")
         payload = {
             "operation": "UPDATE",
             "devices": {
                 device_id: {
-                    subsystem: detail
+                    subsystem: device_info
                 }
             }
         }
-        self.publish_uufi(device_id, "model", payload, "cloud", target_principal="mocket")
+        self.publish_uufi(device_id, "model", payload, "cloud")
+        self.last_action_time[device_id] = time.time()
 
     def trigger_update(self, device_id, device_info):
         if self.failure_mode:
@@ -165,7 +144,7 @@ class ButlerOrchestrator:
         version = device_info.get("target_version")
         make = device_info.get("make", "default")
         model = device_info.get("model", "default")
-        subsystem = device_info.get("subsystem", "default")
+        subsystem = device_info.get("subsystem", "main")
         
         print(f"[butler] Triggering update for {device_id} to version {version}")
         metadata = self.blob_repo.get_blob_metadata(make, model, subsystem, version)
@@ -186,6 +165,7 @@ class ButlerOrchestrator:
         }
         self.publish_uufi(device_id, "config", payload, "update", target_principal="mocket")
         self.devices_pending[device_id] = time.time()
+        self.last_action_time[device_id] = time.time()
         # Update local cache and model
         device_info["state"] = "active"
         self.update_model(device_id, state="active")
@@ -197,10 +177,19 @@ class ButlerOrchestrator:
         device_info["target_version"] = lkg
         device_info["state"] = "error"
         self.update_model(device_id, target_version=lkg, state="error")
+        self.last_action_time[device_id] = time.time()
 
     def reconcile_device(self, device_id):
         device_info = self.known_devices.get(device_id)
-        if device_info and device_info.get("current_version") != device_info.get("target_version"):
+        if not device_info:
+            return
+
+        now = time.time()
+        last_action = self.last_action_time.get(device_id, 0)
+        if now - last_action < self.settling_time:
+            return
+
+        if device_info.get("current_version") != device_info.get("target_version"):
             if device_info.get("state") in ["quiescent", "error"]:
                 self.trigger_update(device_id, device_info)
 
@@ -242,8 +231,12 @@ def main():
     orchestrator.connect()
     # Start loop in a separate thread
     threading.Thread(target=orchestrator.loop_forever, daemon=True).start()
-    time.sleep(1) # Wait for connection and subscriptions
     
+    print("[butler] Waiting for handshake completion...")
+    if not orchestrator.bus.wait_for_handshake(timeout=20):
+        print("[butler] Handshake timed out. Exiting.")
+        sys.exit(1)
+
     threading.Thread(target=orchestrator.check_timeouts, daemon=True).start()
     threading.Thread(target=orchestrator.watch_model, daemon=True).start()
     

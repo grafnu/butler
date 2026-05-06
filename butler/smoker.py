@@ -90,7 +90,7 @@ def main():
     repo = ModelRepository(model_file=model_file)
     
     while time.time() - start_time < 30:
-        device = repo.get_device("dev1")
+        device = repo.get_subsystem("dev1", "main")
         if device.get("current_version") == "9.9.9-smoke":
             print("Update success detected in model!")
             success = True

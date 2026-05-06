@@ -15,13 +15,20 @@ class ModelRepository:
     def load_model(self):
         try:
             with open(self.model_file, 'r') as f:
-                return json.load(f)
+                data = json.load(f)
+                # Migration check: if the first value is not a dict of subsystems, it might be old flat format
+                if data and not all(isinstance(v, dict) for v in data.values()):
+                    return {} # Clear old format to avoid confusion
+                return data
         except (json.JSONDecodeError, FileNotFoundError):
             return {}
 
     def save_model(self, model):
         # Atomic write
-        fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(os.path.abspath(self.model_file)))
+        dir_name = os.path.dirname(os.path.abspath(self.model_file))
+        if not os.path.exists(dir_name):
+            os.makedirs(dir_name)
+        fd, temp_path = tempfile.mkstemp(dir=dir_name)
         try:
             with os.fdopen(fd, 'w') as f:
                 json.dump(model, f, indent=2)
@@ -31,12 +38,13 @@ class ModelRepository:
                 os.remove(temp_path)
             raise e
 
-    def get_device_state(self, device_id):
+    def get_device_subsystems(self, device_id):
         model = self.load_model()
-        return model.get(device_id)
+        return model.get(device_id, {})
 
-    def get_device(self, device_id):
-        state = self.get_device_state(device_id)
+    def get_subsystem(self, device_id, subsystem_id="main"):
+        subsystems = self.get_device_subsystems(device_id)
+        state = subsystems.get(subsystem_id)
         if not state:
             return {
                 "target_version": "1.0",
@@ -45,34 +53,31 @@ class ModelRepository:
                 "state": "quiescent",
                 "make": "default",
                 "model": "default",
-                "subsystem": "default"
+                "subsystem": subsystem_id
             }
         return state
 
-    def update_device(self, device_id, **kwargs):
+    def save_subsystem(self, device_id, subsystem_id, data):
         model = self.load_model()
-        device = model.get(device_id, {
-            "target_version": "1.0",
-            "current_version": "1.0",
-            "last_known_good": "1.0",
-            "state": "quiescent",
-            "make": "default",
-            "model": "default",
-            "subsystem": "default"
-        })
-        device.update(kwargs)
-        model[device_id] = device
+        if device_id not in model:
+            model[device_id] = {}
+        model[device_id][subsystem_id] = data
         self.save_model(model)
-        return device
+        return data
+
+    def update_subsystem(self, device_id, subsystem_id, **kwargs):
+        state = self.get_subsystem(device_id, subsystem_id)
+        state.update(kwargs)
+        return self.save_subsystem(device_id, subsystem_id, state)
 
     def set_device_info(self, device_id, make, model, subsystem, registry_id=None):
         kwargs = {"make": make, "model": model, "subsystem": subsystem}
         if registry_id:
             kwargs["registry_id"] = registry_id
-        return self.update_device(device_id, **kwargs)
+        return self.update_subsystem(device_id, subsystem, **kwargs)
 
-    def set_target_version(self, device_id, version):
-        return self.update_device(device_id, target_version=version)
+    def set_target_version(self, device_id, version, subsystem="main"):
+        return self.update_subsystem(device_id, subsystem, target_version=version)
 
-    def register_device(self, device_id):
-        return self.update_device(device_id)
+    def register_device(self, device_id, subsystem="main"):
+        return self.update_subsystem(device_id, subsystem)
