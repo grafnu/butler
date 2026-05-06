@@ -28,3 +28,7 @@ The actual implementation in `*/butler/` will be different and that's expected. 
 
 Any test files should be generated in directories covered by `.gitignore`. Do not clean up the test runs after
 execution. At the end of the testing, there should not be any artifacts left that are visible by `git status`.
+
+Run the setup and tests multiple times, exactly just enough iterations to satisfy the following constraints:
+* Every branch is run at least twice, once as `butler` and the other as `observe`.
+* The graph of connected components should be a connected graph.
