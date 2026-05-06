@@ -39,9 +39,7 @@ For protocols that need a differentiation for a "singular" receiver (like PubSub
 * `verifier`: `.verifier`
 * `mocket`: `.mocket`
 
-This value should automatically be appended to the `user` component of the URL specification (which defaults to `unknown` if not provided). It is an error if the original URL specification for a singular protocol includes a `:port` designator or a `.` (dot) in the `user` component, as these are reserved for internal tool differentiation. The tools MUST throw an error if a manual differentiator is detected.
-
-For example, `pubsub://my-user@my-project` used by the verifier becomes `pubsub://my-user.verifier@my-project`.
+This value should automatically be appended to the `user` component of the URL specification (which defaults to `unknown` if not provided). For example, `pubsub://admin@my-project` used by the verifier becomes `pubsub://admin.verifier@my-project`.
 
 For MQTT, the `:port` component is used as the network port for the broker connection and should not be used for debug differentiation. 
 
@@ -74,15 +72,16 @@ The central engine that manages the update lifecycle state machine:
 - **Error State:** Triggered by device-reported failure or timeout.
 - **Loop Prevention (Settling Time):** The Orchestrator MUST implement a "Settling Time" (minimum 5s) after issuing an update command or detecting a state change before re-evaluating reconciliation for that specific device subsystem. This prevents aggressive re-triggering loops caused by message propagation latency.
 - **Rollback Logic:** On critical failure, the Orchestrator MUST automatically revert the `target_version` in the Model Repository (via `mocket`) to the LKG version.
-- **LKG Update:** The `last_known_good` (LKG) version is updated to the `current_version` only upon the successful completion and verification of an update sequence.
+- **LKG Update:** The `last_known_good` (LKG) version in the Model Repository is updated by the Orchestrator whenever it is reported by the device in its `status` message.
 - **Trigger Detect:** Butler should automatically detect changes in the site model (reported by `mocket`) for the target or expected version.
 - **Timeout Management:** The Orchestrator MUST implement a configurable timeout (default 60s) for each device subsystem in the `pending` state. If a device fails to report `success` or `failure` within this window, it must be treated as a failure and potentially trigger a rollback.
 - **Handshake:** Should implement the UUFI startup handshake.
 - **Model Interaction:** All requests to read or update the model MUST be sent to `mocket` over the communication substrate. Butler maintains no direct connection to the model storage.
+- **Dynamic Registry Discovery:** The Orchestrator MUST dynamically discover registries and devices by monitoring the communication substrate using wildcards (e.g., `/uufi/r/+/d/+/...`). It identifies the relevant `registry_id` from the message envelope or topic structure and initializes its internal state for any newly observed device subsystems.
 
 ### 3.4 Device Conduit (Client-side)
 The implementation on the device must adhere to this state flow:
-- **Report Status:** Periodically publish current version and state (`quiescent`).
+- **Report Status:** Periodically publish current version, state (`quiescent`), and its own `last_known_good` version (`lkg_version`).
 - **Handle Update:** Upon receiving `update_payload`, transition to `pending`.
 - **Verify & Apply:** Download the blob, verify the SHA256 hash, and apply the update.
 - **Finalize:** Report `success` (if verified) or `failure` (if hash mismatch or install error).
@@ -95,8 +94,8 @@ The implementation on the device must adhere to this state flow:
 2. `mocket` detects the change and publishes updated status to the communication substrate.
 3. Orchestrator detects mismatch from `mocket` messages and fetches metadata from Blob Repository.
 4. Orchestrator publishes `update_payload` to the device.
-5. Device reports `pending`, applies update, then reports `success`.
-6. Orchestrator sends a model update request to `mocket` to reflect the new `current_version`.
+5. Device reports `pending`, applies update, then reports `success` and updated `lkg_version`.
+6. Orchestrator sends a model update request to `mocket` to reflect the new `current_version` and `lkg_version`.
 7. `mocket` updates the Model Repository and confirms the change.
 
 ### 4.2 Rollback Sequence
