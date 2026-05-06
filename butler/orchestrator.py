@@ -84,9 +84,18 @@ class Orchestrator:
         self.transport.publish(env, payload)
 
     def update_cloud_model(self, device_id, subsystem, target_version=None, current_version=None):
-        payload_data = {"operation": "UPDATE", "device_id": device_id, "subsystem": subsystem}
-        if target_version: payload_data["target_version"] = target_version
-        if current_version: payload_data["current_version"] = current_version
+        subsystem_data = {}
+        if target_version: subsystem_data["target_version"] = target_version
+        if current_version: subsystem_data["current_version"] = current_version
+        
+        payload_data = {
+            "operation": "UPDATE",
+            "devices": {
+                device_id: {
+                    subsystem: subsystem_data
+                }
+            }
+        }
         
         env = create_envelope(
             registry_id=self.registry_id,

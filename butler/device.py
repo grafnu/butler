@@ -131,15 +131,18 @@ class MockDevice:
         if sub_type == "query" and operation == "READ":
             self.push_model()
         elif sub_type == "model" and operation == "UPDATE":
-            dev_id = cloud.get("device_id")
-            subsystem = cloud.get("subsystem")
-            target = cloud.get("target_version")
-            current = cloud.get("current_version")
+            devices = cloud.get("devices", {})
+            for dev_id, subsystems in devices.items():
+                if not isinstance(subsystems, dict): continue
+                for subsystem, info in subsystems.items():
+                    if not isinstance(info, dict): continue
+                    target = info.get("target_version")
+                    current = info.get("current_version")
 
-            if target is not None:
-                self.model_repo.set_target_version(dev_id, subsystem, target)
-            if current is not None:
-                self.model_repo.update_current_version(dev_id, subsystem, current)
+                    if target is not None:
+                        self.model_repo.set_target_version(dev_id, subsystem, target)
+                    if current is not None:
+                        self.model_repo.update_current_version(dev_id, subsystem, current)
             self.push_model()
 
     def push_model(self):
