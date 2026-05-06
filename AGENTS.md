@@ -7,14 +7,14 @@ It would conform to the `uufi.md` spec as defined. Otherwise, the tests should u
 the specification, where `<branchname>` is the current git branch (defaulting to `unknown` if not in a git directory).
 
 * For `mqtt` connections, the only valid hostname for testing is `localhost`
-  * The `setup` utility should perform a connectivity check and start a local mqtt server if necessary.
+  * Only the `setup` utility should perform a connectivity check and start a local mqtt server if necessary.
 * For `pubsub` connections, it can be assumed that the necessary authentication and cloud resources will already be setup.
-  * The `setup` utility should perform a connectivity check but not try to change anything in the cloud.
+  * The tools should perform a connectivity check but not try to change anything in the cloud.
 
 The top-level files should not be removed or altered.
 * README.md
 * AGENTS.md
-* BUTLER.md
+* REBUILD.md
 * MERGER.md
 * .wincolor
 * .gitignore
