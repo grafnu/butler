@@ -16,10 +16,10 @@ def main():
 
     transport = MqttTransport(conn_spec)
     blob_repo = BlobRepo()
-    registry_id = "default_registry"
     device_states = {}
+    settling_times = {}
 
-    def fetch_model_state(device_id):
+    def fetch_model_state(registry_id, device_id):
         topic = transport.format_topic("query", "cloud", registry_id, device_id)
         msg = wrap_message({"cloud": {"operation": "READ"}})
         transport.publish(topic, msg)
@@ -27,7 +27,9 @@ def main():
     def on_message(topic, payload):
         parsed = transport.parse_topic(topic)
         device_id = parsed.get('deviceId')
-        if not device_id:
+        registry_id = parsed.get('registryId')
+
+        if not device_id or not registry_id:
             return
 
         subType = parsed.get('subType')
@@ -49,6 +51,7 @@ def main():
                 state_data['target_version'] = data.get('target_version')
                 state_data['current_version'] = data.get('current_version')
                 state_data['lkg_version'] = data.get('lkg_version')
+                state_data['registry_id'] = registry_id
 
         elif subType == 'state' and subFolder == 'update':
             update = unwrapped.get('update', {})
@@ -58,17 +61,20 @@ def main():
             if device_id not in device_states:
                 device_states[device_id] = {}
 
-            subsystem = "default"
+            subsystem = "main"
             if subsystem not in device_states[device_id]:
                 device_states[device_id][subsystem] = {}
 
             state_data = device_states[device_id][subsystem]
 
             if 'target_version' not in state_data:
-                fetch_model_state(device_id)
+                fetch_model_state(registry_id, device_id)
                 return
 
             state_data['state'] = state
+            state_data['registry_id'] = registry_id
+
+            settling_times[(device_id, subsystem)] = time.time()
 
             if state == 'success':
                 if 'pending_start' in state_data:
@@ -117,9 +123,16 @@ def main():
                     target = state_data.get('target_version')
                     current = state_data.get('current_version')
                     state = state_data.get('state')
+                    registry_id = state_data.get('registry_id')
+
+                    if not registry_id:
+                        continue
 
                     if target and current and target != current and state == 'quiescent':
                         if args.fail:
+                            continue
+
+                        if now - settling_times.get((device_id, subsystem), 0) < 5.0:
                             continue
 
                         blob_info = blob_repo.get_blob_info("default", "default", subsystem, target)
@@ -134,6 +147,7 @@ def main():
                             })
                             transport.publish(topic, msg)
                             state_data['pending_start'] = now
+                            settling_times[(device_id, subsystem)] = now
 
                     elif state == 'pending' and 'pending_start' in state_data:
                         if now - state_data['pending_start'] > 60:

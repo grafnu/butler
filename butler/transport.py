@@ -39,13 +39,22 @@ from typing import Callable, Any
 
 def wrap_message(payload: dict, **envelope_kwargs) -> dict:
     from datetime import datetime, timezone
+    import uuid
 
     msg = envelope_kwargs.copy()
+
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+    if 'publishTime' not in msg:
+        msg['publishTime'] = now
+    if 'nonce' not in msg:
+        msg['nonce'] = uuid.uuid4().hex[:8]
+
     if 'payload' not in msg:
         msg['payload'] = payload.copy()
 
     if 'timestamp' not in msg['payload']:
-        msg['payload']['timestamp'] = datetime.now(timezone.utc).isoformat()
+        msg['payload']['timestamp'] = now
     if 'version' not in msg['payload']:
         msg['payload']['version'] = "1.5.2"
 
@@ -59,6 +68,7 @@ class MqttTransport:
         self.conn_spec = conn_spec
         self.client = mqtt.Client()
         self.on_message_callback: Optional[Callable[[str, Any], None]] = None
+        self.seen_nonces = []
 
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
@@ -177,4 +187,13 @@ class MqttTransport:
                 payload = json.loads(msg.payload.decode('utf-8'))
             except json.JSONDecodeError:
                 payload = msg.payload.decode('utf-8')
+
+            if isinstance(payload, dict) and 'nonce' in payload:
+                nonce = payload['nonce']
+                if nonce in self.seen_nonces:
+                    return
+                self.seen_nonces.append(nonce)
+                if len(self.seen_nonces) > 1000:
+                    self.seen_nonces.pop(0)
+
             self.on_message_callback(msg.topic, payload)
