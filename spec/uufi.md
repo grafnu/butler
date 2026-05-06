@@ -435,4 +435,4 @@ Top-level envelope fields MUST only include data NOT already encoded in the MQTT
 - **Guidance:** Maintain a clean inner UDMI message by omitting redundant fields like `deviceId` or `subType` from the outer JSON wrap.
 
 ### 9.4. Timestamp Format
-All timestamps MUST follow RFC 3339 (e.g., `2026-05-01T22:32:17Z`). Implementations should use UTC to avoid ambiguity.
+All timestamps MUST follow RFC 3339 in the **minimal precision format** (e.g., `2026-05-01T22:32:17Z`). Implementations should use UTC to avoid ambiguity. Microseconds or numeric time zone offsets MUST NOT be used when generating messages, although receiving components SHOULD handle them gracefully for compatibility.
