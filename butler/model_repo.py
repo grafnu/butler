@@ -65,8 +65,11 @@ class ModelRepository:
         self.save_model(model)
         return device
 
-    def set_device_info(self, device_id, make, model, subsystem):
-        return self.update_device(device_id, make=make, model=model, subsystem=subsystem)
+    def set_device_info(self, device_id, make, model, subsystem, registry_id=None):
+        kwargs = {"make": make, "model": model, "subsystem": subsystem}
+        if registry_id:
+            kwargs["registry_id"] = registry_id
+        return self.update_device(device_id, **kwargs)
 
     def set_target_version(self, device_id, version):
         return self.update_device(device_id, target_version=version)

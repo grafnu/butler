@@ -10,7 +10,10 @@ def run_command(args, env=None):
     return subprocess.run(args, capture_output=True, text=True, env=env)
 
 def main():
-    conn_spec = sys.argv[1] if len(sys.argv) > 1 else get_default_conn_spec()
+    if len(sys.argv) < 2:
+        print("Usage: bin/smokeit conn_spec")
+        sys.exit(1)
+    conn_spec = sys.argv[1]
     print(f"Starting Smoke Test with conn_spec: {conn_spec}")
     
     # Ensure testing directory exists
@@ -25,19 +28,19 @@ def main():
     # 1. Verify Argument Enforcement
     print("Verifying argument enforcement...")
     
-    # register requires conn_spec and device_id
+    # register requires registry_id and device_id
     res = run_command(["bin/register"])
     if res.returncode == 0:
         print("FAIL: bin/register should require arguments")
         sys.exit(1)
         
-    # trigger requires conn_spec, device_id, blob_version, blob_path
-    res = run_command(["bin/trigger", conn_spec, "dev1", "1.1"])
+    # trigger requires registry_id, device_id, blob_version, blob_path
+    res = run_command(["bin/trigger", "reg1", "dev1", "1.1"])
     if res.returncode == 0:
         print("FAIL: bin/trigger should require 4 arguments")
         sys.exit(1)
 
-    # mocket requires conn_spec and device_id
+    # mocket requires conn_spec, registry_id, and device_id
     res = run_command(["bin/mocket"])
     if res.returncode == 0:
         print("FAIL: bin/mocket should require arguments")
@@ -51,7 +54,7 @@ def main():
     
     # 3. Start Mocket (Client/UDMIS) first so it can handle model requests
     print("Starting Mocket...")
-    mocket = subprocess.Popen(["bin/mocket", conn_spec, "dev1"])
+    mocket = subprocess.Popen(["bin/mocket", conn_spec, "reg1", "dev1"])
     time.sleep(5)
 
     # 4. Start Orchestrator (System)
@@ -67,7 +70,7 @@ def main():
     # 6. Register device dev1...
 
     print("Registering device dev1...")
-    subprocess.run(["bin/register", conn_spec, "dev1"], check=True)
+    subprocess.run(["bin/register", "reg1", "dev1"], check=True)
     
     # 7. Trigger update
     print("Triggering update...")
@@ -76,7 +79,7 @@ def main():
     with open(blob_path, "wb") as f:
         f.write(b"smoke test blob")
         
-    subprocess.run(["bin/trigger", conn_spec, "dev1", "9.9.9-smoke", blob_path], check=True)
+    subprocess.run(["bin/trigger", "reg1", "dev1", "9.9.9-smoke", blob_path], check=True)
     
     # 8. Wait for update
     print("Waiting for update...")

@@ -51,8 +51,22 @@ class ButlerBusBase:
         self.conn_spec = conn_spec
         scheme, user, host, port_or_topic, prefix = parse_conn_spec(self.conn_spec)
         
+        # 2.1 Protocol Mapping & Debug differentiation
+        # Singular protocols like PubSub need differentiator. 
+        # But UUFI spec says "system should use the following username . (dot) differentiator"
+        if user and "." in user:
+             # Tool MUST throw an error if a manual differentiator is detected.
+             raise ValueError(f"Manual differentiator detected in user component: {user}")
+             
+        if scheme == "pubsub" and port_or_topic and ":" in str(port_or_topic):
+             # The :port component is NOT allowed for pubsub:// URLs.
+             raise ValueError(f"Port component not allowed for pubsub: {port_or_topic}")
+
+        # Differentiator suffix
+        suffix = "" if source == "butler" else f".{source}"
+        
         self.scheme = scheme
-        self.principal = user or source
+        self.principal = (user or "unknown") + suffix
         self.host = host # project_id for pubsub
         self.port_or_topic = port_or_topic
         self.prefix = prefix
@@ -97,6 +111,9 @@ class ButlerBusBase:
         pass
 
     def on_message(self, topic, device_id, sub_type, sub_folder, data):
+        pass
+
+    def on_raw_message(self, topic, data):
         pass
 
     def connect(self):
@@ -153,38 +170,49 @@ class ButlerMQTTBase(ButlerBusBase):
 
     def _on_mqtt_message(self, client, userdata, msg):
         try:
-            data = json.loads(msg.payload.decode())
-            parts = msg.topic.strip("/").split('/')
-            
+            payload_str = msg.payload.decode()
             try:
-                uufi_idx = parts.index("uufi")
-            except ValueError:
-                return
+                data = json.loads(payload_str)
+                parts = msg.topic.strip("/").split('/')
+                
+                try:
+                    uufi_idx = parts.index("uufi")
+                except ValueError:
+                    # Non-UUFI JSON message
+                    self.on_raw_message(msg.topic, payload_str)
+                    return
 
-            if len(parts) < uufi_idx + 3:
-                return
+                if len(parts) < uufi_idx + 3:
+                    self.on_raw_message(msg.topic, payload_str)
+                    return
 
-            branch = parts[uufi_idx + 1]
-            if branch == "r":
-                registry_id = parts[uufi_idx + 2]
-                device_id = parts[uufi_idx + 4]
-                sub_type = parts[uufi_idx + 5]
-                sub_folder = parts[uufi_idx + 6] if len(parts) > uufi_idx + 6 else None
-            elif branch in ["p", "c"]:
-                sub_type = parts[uufi_idx + 3]
-                sub_folder = parts[uufi_idx + 4] if len(parts) > uufi_idx + 4 else None
-                device_id = None
-            else:
-                return
+                branch = parts[uufi_idx + 1]
+                if branch == "r":
+                    registry_id = parts[uufi_idx + 2]
+                    device_id = parts[uufi_idx + 4]
+                    sub_type = parts[uufi_idx + 5]
+                    sub_folder = parts[uufi_idx + 6] if len(parts) > uufi_idx + 6 else None
+                elif branch in ["p", "c"]:
+                    sub_type = parts[uufi_idx + 3]
+                    sub_folder = parts[uufi_idx + 4] if len(parts) > uufi_idx + 4 else None
+                    device_id = None
+                else:
+                    self.on_raw_message(msg.topic, payload_str)
+                    return
 
-            udmi_payload = data.get("payload", {})
-            for k, v in data.items():
-                if k != "payload":
-                    udmi_payload[k] = v
-            
-            self._handle_received_message(msg.topic, device_id, sub_type, sub_folder, udmi_payload)
+                udmi_payload = data.get("payload", {})
+                for k, v in data.items():
+                    if k != "payload":
+                        udmi_payload[k] = v
+                
+                self._handle_received_message(msg.topic, device_id, sub_type, sub_folder, udmi_payload)
+            except json.JSONDecodeError:
+                self.on_raw_message(msg.topic, payload_str)
         except Exception:
             pass
+
+    def on_raw_message(self, topic, payload):
+        pass
 
     def connect(self):
         self.client.connect(self.host, self.port_or_topic, 60)

@@ -229,7 +229,7 @@ class ButlerOrchestrator:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("conn_spec", nargs="?", help="Connection specification (e.g. mqtt://localhost:1883)")
+    parser.add_argument("conn_spec", help="Connection specification (e.g. mqtt://localhost:1883)")
     parser.add_argument("-f", "--failure", action="store_true", help="Enable failure mode")
     parser.add_argument("-t", "--timeout", type=int, default=60, help="Pending state timeout (seconds)")
     args = parser.parse_args()

@@ -14,22 +14,18 @@ from butler.model_repo import ModelRepository
 from butler.common import get_default_conn_spec
 
 def main():
-    # Usage: bin/register [conn_spec] device_id
-    if len(sys.argv) < 2:
-        print("Usage: bin/register [conn_spec] device_id")
+    # Usage: bin/register registry_id device_id
+    if len(sys.argv) < 3:
+        print("Usage: bin/register registry_id device_id")
         sys.exit(1)
     
-    if len(sys.argv) == 2:
-        conn_spec = get_default_conn_spec()
-        device_id = sys.argv[1]
-    else:
-        conn_spec = sys.argv[1]
-        device_id = sys.argv[2]
+    registry_id = sys.argv[1]
+    device_id = sys.argv[2]
     
-    print(f"Registering device {device_id} (conn_spec: {conn_spec})...")
+    print(f"Registering device {device_id} in registry {registry_id}...")
     model_repo = ModelRepository()
     # Default make/model based on spec and existing blobs: vibrant/butler-v1/main
-    model_repo.set_device_info(device_id, "vibrant", "butler-v1", "main")
+    model_repo.set_device_info(device_id, "vibrant", "butler-v1", "main", registry_id=registry_id)
     print(f"Registered device {device_id} in model.")
 
 if __name__ == "__main__":

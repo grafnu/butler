@@ -7,9 +7,10 @@ from butler.common import ButlerBusFactory, get_default_conn_spec
 from butler.model_repo import ModelRepository
 
 class MocketDevice:
-    def __init__(self, device_id, conn_spec=None, failure_mode=False):
+    def __init__(self, registry_id, device_id, conn_spec=None, failure_mode=False):
         conn_spec = conn_spec or get_default_conn_spec()
         self.bus = ButlerBusFactory(source="mocket", conn_spec=conn_spec)
+        self.registry_id = registry_id
         self.device_id = device_id
         self.failure_mode = failure_mode
         self.current_version = "1.0"
@@ -23,6 +24,9 @@ class MocketDevice:
         self.connect = self.bus.connect
         self.loop_forever = self.bus.loop_forever
         self.start_handshake = self.bus.start_handshake
+        
+        # Ensure bus uses our registry_id
+        self.bus.registry_id = registry_id
         
         self.bus.on_connect = self.on_connect
         self.bus.on_message = self.on_message
@@ -177,12 +181,13 @@ class MocketDevice:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("conn_spec", nargs="?", help="Connection specification")
+    parser.add_argument("conn_spec", help="Connection specification")
+    parser.add_argument("registry_id")
     parser.add_argument("device_id")
     parser.add_argument("-f", "--failure", action="store_true", help="Enable failure mode")
     args = parser.parse_args()
     
-    device = MocketDevice(args.device_id, conn_spec=args.conn_spec, failure_mode=args.failure)
+    device = MocketDevice(args.registry_id, args.device_id, conn_spec=args.conn_spec, failure_mode=args.failure)
     device.connect()
     threading.Thread(target=device.loop_forever, daemon=True).start()
     

@@ -17,7 +17,7 @@ def check_mqtt_connectivity(host, port):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("conn_spec", nargs="?", help="Connection specification")
+    parser.add_argument("conn_spec", help="Connection specification")
     args = parser.parse_args()
 
     conn_spec = args.conn_spec or get_default_conn_spec()

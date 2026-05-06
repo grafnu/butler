@@ -109,7 +109,7 @@ def data_now():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("conn_spec", nargs="?", help="Connection specification")
+    parser.add_argument("conn_spec", help="Connection specification")
     args = parser.parse_args()
     
     verifier = ButlerVerifier(conn_spec=args.conn_spec)
