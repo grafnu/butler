@@ -34,10 +34,14 @@ def main():
     # Verify argument enforcement
     print("Verifying argument enforcement...")
     for cmd, cmd_args in [
-        ("bin/register", []), # missing device_id
-        ("bin/trigger", []), # missing device_id, blob_version, blob_path
-        ("bin/trigger", ["dev"]), # missing blob_version, blob_path
-        ("bin/trigger", ["dev", "1.0"]) # missing blob_path
+        ("bin/register", []), # missing registry_id, device_id
+        ("bin/register", ["reg"]), # missing device_id
+        ("bin/trigger", []), # missing registry_id, device_id, blob_version, blob_path
+        ("bin/trigger", ["reg", "dev"]), # missing blob_version, blob_path
+        ("bin/trigger", ["reg", "dev", "1.0"]), # missing blob_path
+        ("bin/mocket", []), # missing conn_spec, registry_id, device_id
+        ("bin/mocket", [conn_spec]), # missing registry_id, device_id
+        ("bin/mocket", [conn_spec, "reg"]) # missing device_id
     ]:
         res = subprocess.run([sys.executable, cmd] + cmd_args, capture_output=True)
         if res.returncode == 0:
@@ -48,16 +52,19 @@ def main():
     # Setup
     subprocess.run([sys.executable, "bin/setup", conn_spec], check=True)
     
+    registry_id = "smoke-reg"
+    device_id = "smoke-dev"
+
     # Prepare model and blob
     model_repo = ModelRepository(model_file)
-    model_repo.set_device_info("smoke-dev", "main", "vibrant", "butler-v1")
+    model_repo.set_device_info(device_id, "main", "vibrant", "butler-v1")
     
     blob_repo = BlobRepository(blobs_dir)
     blob_repo.store_blob("vibrant", "butler-v1", "main", "1.1.0", b"SMOKE_TEST_CONTENT")
     
     # Start components
     butler = subprocess.Popen([sys.executable, "bin/butler", conn_spec], env=env)
-    mocket = subprocess.Popen([sys.executable, "bin/mocket", conn_spec, "smoke-dev"], env=env)
+    mocket = subprocess.Popen([sys.executable, "bin/mocket", conn_spec, registry_id, device_id], env=env)
     
     try:
         time.sleep(5)
@@ -66,7 +73,7 @@ def main():
         print("Triggering update...")
         dummy_blob = os.path.join(test_dir, "dummy.bin")
         with open(dummy_blob, "wb") as f: f.write(b"NEW_VERSION_CONTENT")
-        subprocess.run([sys.executable, "bin/trigger", "smoke-dev", "1.1.0", dummy_blob], env=env, check=True)
+        subprocess.run([sys.executable, "bin/trigger", registry_id, device_id, "1.1.0", dummy_blob], env=env, check=True)
         
         # Wait and check
         timeout = 60
@@ -74,7 +81,7 @@ def main():
         passed = False
         while time.time() - start_time < timeout:
             model_repo.reload()
-            state = model_repo.get_device_state("smoke-dev", "main")
+            state = model_repo.get_device_state(device_id, "main")
             if state and state.get("current_version") == "1.1.0":
                 passed = True
                 break
@@ -92,12 +99,12 @@ def main():
         mocket.wait()
         
         # Start mocket in failure mode
-        mocket = subprocess.Popen([sys.executable, "bin/mocket", conn_spec, "smoke-dev", "-f"], env=env)
+        mocket = subprocess.Popen([sys.executable, "bin/mocket", conn_spec, registry_id, device_id, "-f"], env=env)
         
         # Trigger another update
         print("Triggering update (should fail)...")
         with open(dummy_blob, "wb") as f: f.write(b"FAILURE_TEST_CONTENT")
-        subprocess.run([sys.executable, "bin/trigger", "smoke-dev", "1.2.0", dummy_blob], env=env, check=True)
+        subprocess.run([sys.executable, "bin/trigger", registry_id, device_id, "1.2.0", dummy_blob], env=env, check=True)
         
         # Wait for rollback to 1.1.0
         timeout = 60

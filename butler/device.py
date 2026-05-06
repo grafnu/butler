@@ -10,31 +10,35 @@ from butler.conn_spec import parse_conn_spec
 from butler.transport import get_transport
 
 class MockDevice:
-    def __init__(self, conn_spec, device_id, fail_mode=False):
+    def __init__(self, conn_spec, registry_id, device_id, fail_mode=False):
         self.conn_spec = conn_spec
+        self.registry_id = registry_id
         self.device_id = device_id
         self.fail_mode = fail_mode
         self.current_version = "0.0.0" 
+        self.lkg_version = "0.0.0"
         self.state = "quiescent"
         self.transport = get_transport(conn_spec)
         self.subsystem = "main"
         self.seen_nonces = set()
         self.model_repo = ModelRepository()
-        self.registry_id = "butler-registry"
         
         # Initialize state from model repo if available
         dev_info = self.model_repo.get_device_state(self.device_id, self.subsystem)
         if dev_info:
             self.current_version = dev_info.get("current_version", "0.0.0")
-            print(f"[mocket] Initialized {self.device_id} current_version to {self.current_version}", flush=True)
+            self.lkg_version = dev_info.get("lkg_version", "0.0.0")
+            print(f"[mocket] Initialized {self.device_id} current_version to {self.current_version}, lkg to {self.lkg_version}", flush=True)
         else:
             self.current_version = "0.0.0"
+            self.lkg_version = "0.0.0"
 
     def on_message(self, env, payload, topic, raw=None):
         if not payload: return
         sub_type = env.get("subType")
         sub_folder = env.get("subFolder")
         device_id = env.get("deviceId")
+        registry_id = env.get("deviceRegistryId")
         principal = env.get("principal")
 
         # UUFI handshake state from clients
@@ -43,12 +47,12 @@ class MockDevice:
             return
 
         # Cloud ops
-        if device_id == self.registry_id and sub_folder == "cloud":
+        if registry_id == self.registry_id and device_id == self.registry_id and sub_folder == "cloud":
             self.handle_cloud_op(sub_type, payload)
             return
 
         # Update config
-        if device_id == self.device_id and sub_type == "config" and sub_folder == "update":
+        if registry_id == self.registry_id and device_id == self.device_id and sub_type == "config" and sub_folder == "update":
             nonce = env.get("nonce")
             if nonce in self.seen_nonces: return
             self.seen_nonces.add(nonce)
@@ -83,6 +87,7 @@ class MockDevice:
                 if actual_hash == sha256:
                     time.sleep(1)
                     self.current_version = version
+                    self.lkg_version = version
                     self.state = "success"
                     self.report_status()
                     self.state = "quiescent"
@@ -116,7 +121,7 @@ class MockDevice:
             sub_type="config",
             sub_folder="udmi",
             transaction_id=tid,
-            source="mockit"
+            source="mocket"
         )
         env["principal"] = principal
 
@@ -138,11 +143,13 @@ class MockDevice:
                     if not isinstance(info, dict): continue
                     target = info.get("target_version")
                     current = info.get("current_version")
+                    lkg = info.get("lkg_version")
 
                     if target is not None:
                         self.model_repo.set_target_version(dev_id, subsystem, target)
                     if current is not None:
-                        self.model_repo.update_current_version(dev_id, subsystem, current)
+                        # Don't automatically update LKG anymore, expect it in the message if needed
+                        self.model_repo.update_current_version(dev_id, subsystem, current, lkg_version=lkg)
             self.push_model()
 
     def push_model(self):
@@ -153,7 +160,7 @@ class MockDevice:
             device_id=self.registry_id,
             sub_type="config",
             sub_folder="cloud",
-            source="mockit"
+            source="mocket"
         )
         payload = create_payload("cloud", model_payload_data)
         self.transport.publish(env, payload)
@@ -161,6 +168,7 @@ class MockDevice:
     def report_status(self):
         update_data = {
             "current_version": self.current_version,
+            "lkg_version": self.lkg_version,
             "state": self.state,
             "subsystem": self.subsystem
         }
@@ -169,7 +177,7 @@ class MockDevice:
             device_id=self.device_id,
             sub_type="state",
             sub_folder="update",
-            source="mockit"
+            source="mocket"
         )
         payload = create_payload("update", update_data)
         self.transport.publish(env, payload)
@@ -201,20 +209,15 @@ class MockDevice:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("args", nargs="+", help="[conn_spec] device_id")
+    parser.add_argument("conn_spec", help="Connection spec URL")
+    parser.add_argument("registry_id", help="Registry ID")
+    parser.add_argument("device_id", help="Device ID")
     parser.add_argument("-f", action="store_true", help="Enable failure mode")
-    parsed_args = parser.parse_args()
+    args = parser.parse_args()
 
-    if len(parsed_args.args) == 1:
-        conn_str = None
-        device_id = parsed_args.args[0]
-    else:
-        conn_str = parsed_args.args[0]
-        device_id = parsed_args.args[1]
-
-    conn_spec = parse_conn_spec(conn_str, differentiator="mocket")
-    device = MockDevice(conn_spec, device_id, fail_mode=parsed_args.f)
-    print(f"Starting mock device {device_id} with {conn_spec}...")
+    conn_spec = parse_conn_spec(args.conn_spec, differentiator="mocket")
+    device = MockDevice(conn_spec, args.registry_id, args.device_id, fail_mode=args.f)
+    print(f"Starting mock device {args.device_id} in {args.registry_id} with {conn_spec}...")
     device.run()
 
 if __name__ == "__main__":

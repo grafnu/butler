@@ -15,6 +15,7 @@ class Orchestrator:
         self.fail_mode = fail_mode
         self.transport = get_transport(conn_spec)
         self.pending_updates = {} # device_id: {timestamp, target_version, subsystem}
+        self.settle_times = {} # (device_id, subsystem): timestamp
         self.seen_nonces = set()
         self.is_active = False
         self.handshake_tid = None
@@ -27,6 +28,7 @@ class Orchestrator:
         sub_type = env.get("subType")
         sub_folder = env.get("subFolder")
         device_id = env.get("deviceId")
+        registry_id = env.get("deviceRegistryId")
         
         # Handshake reply
         if sub_type == "config" and sub_folder == "udmi" and not device_id:
@@ -34,8 +36,10 @@ class Orchestrator:
             return
 
         # Cloud model update
-        if sub_folder == "cloud" and device_id == self.registry_id:
+        if sub_folder == "cloud" and device_id == registry_id:
             self.model = payload.get("cloud", payload)
+            if registry_id:
+                self.registry_id = registry_id
             print(f"[butler] Received model update from cloud", flush=True)
             return
 
@@ -50,11 +54,17 @@ class Orchestrator:
             subsystem = update.get("subsystem", "main")
             state = update.get("state")
             current_version = update.get("current_version")
+            lkg_version = update.get("lkg_version")
 
-            print(f"[butler] Status from {device_id}: {state} ({current_version})", flush=True)
+            if registry_id:
+                self.registry_id = registry_id
+
+            print(f"[butler] Status from {device_id}: {state} ({current_version}, lkg: {lkg_version})", flush=True)
+            
+            self.settle_times[(device_id, subsystem)] = time.time()
 
             if state == "success" or state == "quiescent":
-                self.update_cloud_model(device_id, subsystem, current_version=current_version)
+                self.update_cloud_model(device_id, subsystem, current_version=current_version, lkg_version=lkg_version)
                 if state == "success" and device_id in self.pending_updates:
                     del self.pending_updates[device_id]
             elif state == "failure":
@@ -83,10 +93,11 @@ class Orchestrator:
         payload = create_payload("cloud", {"operation": "READ"})
         self.transport.publish(env, payload)
 
-    def update_cloud_model(self, device_id, subsystem, target_version=None, current_version=None):
+    def update_cloud_model(self, device_id, subsystem, target_version=None, current_version=None, lkg_version=None):
         subsystem_data = {}
         if target_version: subsystem_data["target_version"] = target_version
         if current_version: subsystem_data["current_version"] = current_version
+        if lkg_version: subsystem_data["lkg_version"] = lkg_version
         
         payload_data = {
             "operation": "UPDATE",
@@ -121,10 +132,17 @@ class Orchestrator:
         if not isinstance(devices, dict):
             return
 
+        now = time.time()
         for device_id, subsystems in devices.items():
             if not isinstance(subsystems, dict): continue
             for subsystem, info in subsystems.items():
                 if not isinstance(info, dict): continue
+                
+                # Settling time check (5s)
+                last_action = self.settle_times.get((device_id, subsystem), 0)
+                if now - last_action < 5:
+                    continue
+
                 target = info.get("target_version")
                 current = info.get("current_version")
                 
@@ -157,6 +175,7 @@ class Orchestrator:
                             "target_version": target,
                             "subsystem": subsystem
                         }
+                        self.settle_times[(device_id, subsystem)] = time.time()
 
     def check_timeouts(self):
         now = time.time()
@@ -201,7 +220,7 @@ class Orchestrator:
         if self.conn_spec.protocol == "mqtt":
             self.transport.subscribe(f"/uufi/{self.conn_spec.prefix + '/' if self.conn_spec.prefix else ''}p/{self.principal}/config/udmi", self.on_message)
             self.transport.subscribe(f"/uufi/{self.conn_spec.prefix + '/' if self.conn_spec.prefix else ''}r/+/d/+/state/update", self.on_message)
-            self.transport.subscribe(f"/uufi/{self.conn_spec.prefix + '/' if self.conn_spec.prefix else ''}r/{self.registry_id}/d/{self.registry_id}/config/cloud", self.on_message)
+            self.transport.subscribe(f"/uufi/{self.conn_spec.prefix + '/' if self.conn_spec.prefix else ''}r/+/d/+/config/cloud", self.on_message)
         else:
             self.transport.subscribe(self.on_message)
 

@@ -49,10 +49,11 @@ class ModelRepository:
             self.data["devices"][device_id][subsystem]["target_version"] = version
             self._save()
 
-    def update_current_version(self, device_id, subsystem, version):
+    def update_current_version(self, device_id, subsystem, version, lkg_version=None):
         if device_id in self.data.get("devices", {}) and subsystem in self.data["devices"][device_id]:
             self.data["devices"][device_id][subsystem]["current_version"] = version
-            self.data["devices"][device_id][subsystem]["lkg_version"] = version
+            if lkg_version is not None:
+                self.data["devices"][device_id][subsystem]["lkg_version"] = lkg_version
             self._save()
 
     def get_device_state(self, device_id, subsystem):

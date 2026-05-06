@@ -12,9 +12,9 @@ class Verifier:
     def __init__(self, conn_spec):
         self.conn_spec = conn_spec
         self.transport = get_transport(conn_spec)
-        self.device_states = {} # device_id: last_state
+        self.device_states = {} # (device_id, subsystem): last_state
         self.handshakes = {} # principal: {tid, active}
-        self.timestamp_regex = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$')
+        self.timestamp_regex = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$')
         self.registry_id = "butler-registry"
 
     def on_message(self, env, payload, topic, raw=None):
@@ -34,7 +34,7 @@ class Verifier:
         device_id = env.get("deviceId")
         principal = env.get("principal")
 
-        # Monitor Handshake
+        # Monitor Handshake on /uufi/p/
         if sub_folder == "udmi" and not device_id:
             if sub_type == "state":
                 udmi = payload.get("udmi", payload)
@@ -51,22 +51,24 @@ class Verifier:
                     self.handshakes[principal]["active"] = True
                     self.log_verification(f"Handshake complete for {principal} (tid: {tid})")
 
-        # Monitor Updates
-        elif sub_type == "state" and sub_folder == "update":
+        # Monitor Updates on /uufi/r/
+        elif sub_type == "state" and sub_folder == "update" and device_id:
             update = payload.get("update", {})
+            subsystem = update.get("subsystem", "main")
             state = update.get("state")
             current_version = update.get("current_version")
             
-            prev_state = self.device_states.get(device_id)
-            self.device_states[device_id] = state
+            key = (device_id, subsystem)
+            prev_state = self.device_states.get(key)
+            self.device_states[key] = state
             
-            self.log_verification(f"Device {device_id} state transition: {prev_state} -> {state} ({current_version})")
+            self.log_verification(f"Device {device_id}/{subsystem} state transition: {prev_state} -> {state} ({current_version})")
             
             # Check for invalid transitions
             if prev_state == "quiescent" and state not in ["pending", "quiescent"]:
-                self.log_verification(f"INVALID TRANSITION: {device_id} went from quiescent to {state}", level="FAIL")
+                self.log_verification(f"INVALID TRANSITION: {device_id}/{subsystem} went from quiescent to {state}", level="FAIL")
             elif prev_state == "pending" and state not in ["success", "failure", "pending"]:
-                self.log_verification(f"INVALID TRANSITION: {device_id} went from pending to {state}", level="FAIL")
+                self.log_verification(f"INVALID TRANSITION: {device_id}/{subsystem} went from pending to {state}", level="FAIL")
 
     def log_verification(self, text, level="PASS"):
         print(f"[verifier] {level}: {text}", flush=True)
@@ -77,12 +79,12 @@ class Verifier:
         }
         env = create_envelope(
             registry_id=self.registry_id,
-            device_id="butler",
+            device_id="_validator",
             sub_type="events",
-            sub_folder="verify",
+            sub_folder="validation",
             source="verifier"
         )
-        payload = create_payload("verify", payload_data)
+        payload = create_payload("validation", payload_data)
         self.transport.publish(env, payload)
 
     def run(self):
@@ -92,6 +94,7 @@ class Verifier:
         else:
             self.transport.subscribe(self.on_message)
         
+        self.transport.loop_start()
         try:
             while True:
                 time.sleep(1)

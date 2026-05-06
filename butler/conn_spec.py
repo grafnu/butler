@@ -14,23 +14,33 @@ class ConnSpec:
         self.host = parsed.hostname or "localhost"
         self.port = parsed.port
         
+        if username and "." in username:
+             raise ValueError("Manual differentiator (dot) not allowed in username")
+
         if self.protocol == "pubsub":
             if self.port:
                 raise ValueError("Port component not allowed for pubsub:// URLs")
-            if username and "." in username:
-                raise ValueError("Manual differentiator (dot) not allowed in username for pubsub:// URLs")
             
-            if differentiator:
+            # For protocols that need a differentiation for a "singular" receiver (like PubSub)
+            if differentiator and differentiator != "butler":
                 suffix = f".{differentiator}"
                 username = (username or "unknown") + suffix
+            elif not username:
+                username = "unknown"
             
             self.username = username
             self.project_id = self.host
             path = parsed.path.lstrip('/')
             self.root_topic = path if path else "udmi_uufi"
-            self.principal = f"{self.username}@" if self.username else None
-            self.subscription = f"{self.root_topic}+{self.username}" if self.username else self.root_topic
+            self.principal = f"{self.username}@"
+            self.subscription = f"{self.root_topic}+{self.username}"
         else:
+            if not username:
+                username = "unknown"
+            
+            if differentiator and differentiator != "butler":
+                 username = f"{username}.{differentiator}"
+
             self.username = username
             self.project_id = None
             self.root_topic = None
