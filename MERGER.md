@@ -8,7 +8,8 @@ The branches to test are:
 * controller
 * jules
 
-The subdirectories should be a literal `git clone` of this repository, switched to the relevant branch.
+The subdirectories should be a literal `git clone` of this repository, switched to the relevant branch,
+using a origin remote that's the same as the current local repo has.
 Those branches hold the different implementations that should be tested. The clones should go in `opt_{branch}`.
 
 The `venv` based off of `requirements.txt` needs to be setup for each subdirectory independently.
