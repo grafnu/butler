@@ -110,7 +110,7 @@ Because the initial handshake is generic and occurs before the Client is associa
 - **MQTT:** The topic MUST use the prefix `/uufi/p/{principal}/` where `{principal}` is the Client's unique identifier.
   - The resulting topic structure is `/uufi/p/{principal}/{subType}/{subFolder}`.
 
-**Important:** Standard registry-based addressing (`/uufi/r/...`) MUST NOT be used for handshake messages.
+**Important:** Handshake messages MUST be addressed using this principal-based scheme instead of the standard registry-based addressing (`/uufi/r/...`).
 
 ### Timeouts and Retries
 Clients SHOULD implement a handshake timeout (default 30s). If no matching configuration reply is received within this window, the Client SHOULD retry the handshake with an exponential backoff, utilizing a new `transaction_id` for each attempt.
@@ -143,11 +143,12 @@ The following fields are available in the envelope to provide context for the me
 | **MQTT** | Topic Structure & Payload | Payload `payload` field |
 
 #### MQTT Topic Structure
-For the MQTT transport, the envelope fields are encoded in the topic path:
-`/uufi/r/{registryId}/d/{deviceId}/{subType}/{subFolder}`
+There are two primary topic structures supported for MQTT:
+1. **Registry-based:** `/uufi/r/{registryId}/d/{deviceId}/{subType}/{subFolder}`
+2. **Principal-based:** `/uufi/p/{principal}/{subType}/{subFolder}`
 
 #### MQTT Message Wrap
-Since MQTT 3.1.1 does not support separate attributes, the envelope fields are included in the JSON payload alongside the actual UDMI message. **Crucially, the top-level JSON envelope MUST NOT include fields that are already encoded in the MQTT topic structure (e.g., `projectId`, `deviceId`, etc.).**
+Since MQTT 3.1.1 does not support separate attributes, the envelope fields are included in the JSON payload alongside the actual UDMI message. **Crucially, the top-level JSON envelope fields MUST only include data NOT already encoded in the MQTT topic structure (e.g., omitting projectId, deviceId, etc.).**
 
 ```json
 {
@@ -419,17 +420,19 @@ Integration testing between different implementations has identified common area
 ### 9.1. Mandatory Payload Fields
 Every message's inner `payload` object MUST contain `timestamp` and `version` fields.
 - **Payload Structure:** The `payload` object MUST contain exactly one top-level key matching the `subFolder` name (e.g., `system`, `pointset`, `update`, `cloud`), which contains the UDMI data, in addition to the mandatory `timestamp` and `version` fields at the same level.
-- **Pitfall:** Putting `publishTime` only in the envelope. The System and Verifiers often rely on the internal `timestamp` for UDMI compliance.
-- **Pitfall:** Omitting `version` from the payload.
-- **Pitfall:** Placing UDMI fields directly in the `payload` without the subfolder wrapper.
+- **Field Consistency:**
+    - **Current Version:** Devices MUST report their active firmware version using the `current_version` field within the inner `state` data.
+    - **Operation Status:** Devices MUST report their operational state (e.g., `quiescent`, `pending`, `success`, `failure`) using the `status` field.
+- **Guidance:** Ensure `publishTime` is in the envelope and `timestamp` is in the inner payload. Ensure `version` is present in the payload. Use the subfolder wrapper for all UDMI fields.
 
 ### 9.2. Handshake Addressing
 The `/uufi/p/{principal}/` topic prefix MUST be used for the initial handshake.
-- **Pitfall:** Using the registry-based `/uufi/r/` prefix for handshakes. The System may not have the registry context yet, or may reject registry-addressed messages from unauthenticated clients.
+- **Strict Prefix:** The handshake topic MUST exactly match the `/uufi/p/{principal}/` pattern to ensure early-session identification.
+- **Guidance:** Reserve `/uufi/r/` for post-handshake, registry-associated traffic.
 
 ### 9.3. Envelope Redundancy
-Top-level envelope fields MUST NOT include data already encoded in the MQTT topic (e.g., `deviceId`, `subType`).
-- **Pitfall:** "Envelope Nesting" where envelope fields are merged into the inner payload during relay. When a component (like a proxy or relay) wraps a message, it should ensure the inner payload remains a clean UDMI message.
+Top-level envelope fields MUST only include data NOT already encoded in the MQTT topic structure.
+- **Guidance:** Maintain a clean inner UDMI message by omitting redundant fields like `deviceId` or `subType` from the outer JSON wrap.
 
 ### 9.4. Timestamp Format
 All timestamps MUST follow RFC 3339 (e.g., `2026-05-01T22:32:17Z`). Implementations should use UTC to avoid ambiguity.
