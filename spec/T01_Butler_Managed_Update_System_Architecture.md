@@ -61,9 +61,10 @@ Responsible for tracking the "source of truth" for the fleet. The internal struc
 - **State Tracking:** Must maintain `target_version` and `current_version` for every device subsystem.
 - **History:** Must track the `last_known_good` (LKG) version for each subsystem to support recovery.
 - **Reconciliation:** Any change to a `target_version` should act as a trigger for the Butler Orchestrator.
+- **Subsystem Default:** The default subsystem identifier MUST be `main`. Use `main` for all standard device operations.
 - **Environment Isolation:** The repository MUST support an environment variable `BUTLER_MODEL_FILE` to override the default model storage path. This is critical for parallel testing and isolating demo environments from developer state.
 - **Atomicity:** All updates to the model file MUST be atomic (e.g., write to a temporary file and rename) to prevent corruption during system crashes.
-- **Access:** Direct access is restricted to `mocket`, `register`, and `trigger`. The `butler` component MUST NOT access the model file directly and instead must interact with it indirectly through `mocket` via the communication substrate.
+- **Access:** Direct access is restricted to `mocket`, `register`, and `trigger`. The `butler` component MUST interact with the model file exclusively through `mocket` via the communication substrate.
 - **MQTT Representation:** While internal storage is an implementation detail, the representation of the model on the communication substrate (via UUFI `cloud` messages) MUST be strictly standardized to ensure interoperability. When replying to a model query, the `cloud` payload MUST follow the nested structure: `{"devices": { "device_id": { "subsystem": { "target_version": "...", "current_version": "...", "lkg_version": "..." } } } }` (wrapped in the mandatory UUFI `cloud` subfolder).
 
 ### 3.3 Butler Orchestrator (Control Logic)
@@ -71,6 +72,7 @@ The central engine that manages the update lifecycle state machine:
 - **Quiescent State:** Device is compliant (Current == Target).
 - **Active State:** Triggered when Target != Current (as observed via `mocket` status reports). The Orchestrator pushes an `update_payload` containing the URL and SHA256.
 - **Error State:** Triggered by device-reported failure or timeout.
+- **Loop Prevention (Settling Time):** The Orchestrator MUST implement a "Settling Time" (minimum 5s) after issuing an update command or detecting a state change before re-evaluating reconciliation for that specific device subsystem. This prevents aggressive re-triggering loops caused by message propagation latency.
 - **Rollback Logic:** On critical failure, the Orchestrator MUST automatically revert the `target_version` in the Model Repository (via `mocket`) to the LKG version.
 - **LKG Update:** The `last_known_good` (LKG) version is updated to the `current_version` only upon the successful completion and verification of an update sequence.
 - **Trigger Detect:** Butler should automatically detect changes in the site model (reported by `mocket`) for the target or expected version.
@@ -177,7 +179,7 @@ To ensure the reliability and transparency of the system, all monitoring and dia
 1.  **Protocol Decoupling:** Monitoring tools SHOULD NOT share stateful protocol logic (such as nonce tracking, idempotency checks, or handshake state) with the core `butler` or `mocket` components. They must operate as "transparent taps" to avoid masking underlying network or protocol issues.
 2.  **Graceful Degradation:** Tools MUST handle malformed, non-JSON, or non-compliant messages gracefully. If a message cannot be parsed according to the UUFI schema, it MUST be displayed in its raw format rather than being suppressed.
 3.  **Real-time Transparency:** Tools designed for real-time monitoring MUST use unbuffered output (e.g., explicit flushing of `stdout`) to ensure that messages are visible to the operator immediately upon arrival, especially when piped or redirected.
-4.  **Schema Agnosticism:** While tools should "pretty-print" known schemas, they MUST NOT use strict topic-parsing logic that drops messages that do not match the expected `/uufi/{r,p}/...` structure.
+4.  **Schema Agnosticism:** While tools should "pretty-print" known schemas, they MUST process all messages regardless of whether they match the expected `/uufi/{r,p}/...` structure.
 
 ### 6.1 Tooling List
 All commands should be restartable without any problems if they are in a quiescent state. If the are restarted
