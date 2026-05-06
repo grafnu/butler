@@ -11,10 +11,11 @@ the specification, where `<branchname>` is the current git branch (defaulting to
 * For `pubsub` connections, it can be assumed that the necessary authentication and cloud resources will already be setup.
   * The tools should perform a connectivity check but not try to change anything in the cloud.
 
-The top-level files should not be removed or altered.
+These top-level files should not be removed or altered:
 * AGENTS.md
 * REBUILD.md
 * MERGER.md
+* UPDATING.md
 * .wincolor
 * .gitignore
 
@@ -23,4 +24,3 @@ The result of all work should be contained within the following files/directorie
 * bin/ -- user executables
 * butler/ -- core python code
 * README.md -- overview
-
