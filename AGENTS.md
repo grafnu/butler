@@ -12,14 +12,15 @@ the specification, where `<branchname>` is the current git branch (defaulting to
   * The tools should perform a connectivity check but not try to change anything in the cloud.
 
 The top-level files should not be removed or altered.
-* README.md
 * AGENTS.md
 * REBUILD.md
 * MERGER.md
 * .wincolor
 * .gitignore
 
-The result of all work should be contained within the following directories:
+The result of all work should be contained within the following files/directories:
 
-* bin/
-* butler/
+* bin/ -- user executables
+* butler/ -- core python code
+* README.md -- overview
+
