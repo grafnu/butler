@@ -16,6 +16,7 @@ These top-level files should not be removed or altered:
 * REBUILD.md
 * MERGER.md
 * WORKFLOW.md
+* UPDATE.md
 * .wincolor
 * .gitignore
 
