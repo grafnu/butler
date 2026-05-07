@@ -3,21 +3,17 @@
 The goal is to test mulitple different implementations of the `butler` spec, as defined in `spec/`. There are (should be)
 multiple working subdirectories, each one containing a different version of an implementation.
 
-The branches to test are:
-* verifier
-* controller
-* jules
+Each zip file in `impl/` constitutes a different implementation version. Those files should be extracted and then used for
+testing.
 
-The subdirectories should be a literal `git clone` of this repository, switched to the relevant branch,
-using a origin remote that's the same as the current local repo has.
-Those branches hold the different implementations that should be tested. The clones should go in `opt_{branch}`.
+* `cd impl; unzip {ID}.zip` should expand to the directory `impl/{ID}/`
 
 The `venv` based off of `requirements.txt` needs to be setup for each subdirectory independently.
 
-Execute the functional equivalent of `smokeit` except use the appropriate tools from the different subdirectories.
+Execute the functional equivalent of `smokeit` except use the appropriate tools from different subdirectories. Two
+versions are tested at a time, one primarily for `verifier` the other for `butler`.
 
-Run `observe` twice, once from each branch, and capture the output to separate log files `opt_{branch}.log` at the
-top level (so as a peer to `opt_{branch}`).
+Run `observe` twice, once from each  and capture the output to separate log files `impl/{ID}.log`.
 
 If the smoke test fails, indicating that there is an incompatibility in the implementations, diagnose and analyse to
 determine what the problem is, and recommend a change to the specs (in `spec/`) to remediate.
@@ -33,3 +29,7 @@ execution. At the end of the testing, there should not be any artifacts left tha
 Run the setup and tests multiple times, exactly just enough iterations to satisfy the following constraints:
 * Every branch is run at least twice, once as `butler` and the other as `observe`.
 * The graph of connected components should be a connected graph.
+
+The resulting impl/${ID}.log files should be commited to the repo and pushed as the results.
+
+A summary the resuls should be put in `summary.txt` and committed to the repo.
