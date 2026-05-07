@@ -79,8 +79,20 @@ class Orchestrator:
         if reply_tid == self.handshake_tid:
             print(f"[butler] UUFI Handshake complete (tid: {reply_tid}). Orchestrator is ACTIVE.", flush=True)
             self.is_active = True
-            # We don't have a registry_id yet, but we'll discover them
-            # or we can query a default if known. For now, rely on discovery.
+            # Proactively query for registries
+            self.query_all_registries()
+
+    def query_all_registries(self):
+        # Query using the dedicated discovery topic
+        env = create_envelope(
+            registry_id="discovery",
+            device_id="discovery",
+            sub_type="query",
+            sub_folder="cloud",
+            source="butler"
+        )
+        payload = create_payload("cloud", {"operation": "READ"})
+        self.transport.publish(env, payload)
 
     def update_cloud_model(self, registry_id, device_id, subsystem, target_version=None, current_version=None, lkg_version=None):
         subsystem_data = {}

@@ -15,7 +15,9 @@ class Verifier:
         self.device_states = {} # (registry_id, device_id, subsystem): last_state
         self.handshakes = {} # principal: {tid, active}
         # Strict minimal precision format: 2026-05-01T22:32:17Z
-        self.timestamp_regex = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$')
+        self.strict_ts_regex = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$')
+        # Graceful format (permissive RFC 3339)
+        self.graceful_ts_regex = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$')
         self.default_registry_id = "butler-registry"
 
     def on_message(self, env, payload, topic, raw=None):
@@ -26,6 +28,7 @@ class Verifier:
         device_id = env.get("deviceId")
         registry_id = env.get("deviceRegistryId") or self.default_registry_id
         principal = env.get("principal")
+        source = env.get("source")
 
         # Mandatory field validation
         if "timestamp" not in payload or "version" not in payload:
@@ -33,9 +36,15 @@ class Verifier:
             return
         
         timestamp = payload.get("timestamp")
-        if not self.timestamp_regex.match(timestamp):
-            self.log_verification(registry_id, f"Invalid timestamp format (must be minimal precision): {timestamp}", level="FAIL")
-            return
+        # Strict for butler, graceful for everyone else
+        if source == "butler":
+            if not self.strict_ts_regex.match(timestamp):
+                self.log_verification(registry_id, f"Butler emitted non-strict timestamp: {timestamp}", level="FAIL")
+                return
+        else:
+            if not self.graceful_ts_regex.match(timestamp):
+                self.log_verification(registry_id, f"Invalid timestamp format from {source}: {timestamp}", level="FAIL")
+                return
 
         # Monitor Handshake on /uufi/p/
         if sub_folder == "udmi" and not device_id:

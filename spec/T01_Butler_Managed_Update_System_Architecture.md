@@ -72,12 +72,12 @@ The central engine that manages the update lifecycle state machine:
 - **Error State:** Triggered by device-reported failure or timeout.
 - **Loop Prevention (Settling Time):** The Orchestrator MUST implement a "Settling Time" (minimum 5s) after issuing an update command or detecting a state change before re-evaluating reconciliation for that specific device subsystem. This prevents aggressive re-triggering loops caused by message propagation latency.
 - **Rollback Logic:** On critical failure, the Orchestrator MUST automatically revert the `target_version` in the Model Repository (via `mocket`) to the LKG version.
-- **LKG Update:** The `last_known_good` (LKG) version in the Model Repository is updated by the Orchestrator whenever it is reported by the device in its `status` message.
+- **LKG Update:** The `last_known_good` (LKG) version in the Model Repository is updated by the Orchestrator whenever it is reported by the device in its `status` message. Butler SHOULD always trust and persist the LKG version reported by the device.
 - **Trigger Detect:** Butler should automatically detect changes in the site model (reported by `mocket`) for the target or expected version.
-- **Timeout Management:** The Orchestrator MUST implement a configurable timeout (default 60s) for each device subsystem in the `pending` state. If a device fails to report `success` or `failure` within this window, it must be treated as a failure and potentially trigger a rollback.
+- **Timeout Management:** The Orchestrator MUST implement a configurable timeout (default 60s) for each device subsystem in the `pending` state. This timeout is a **hard limit** starting from the first time the subsystem entered the `pending` state; subsequent `pending` status messages from the device do not reset this timer. If a device fails to report `success` or `failure` within this window, it must be treated as a failure and potentially trigger a rollback.
 - **Handshake:** Should implement the UUFI startup handshake.
 - **Model Interaction:** All requests to read or update the model MUST be sent to `mocket` over the communication substrate. Butler maintains no direct connection to the model storage.
-- **Dynamic Registry Discovery:** The Orchestrator MUST dynamically discover registries and devices by monitoring the communication substrate using wildcards (e.g., `/uufi/r/+/d/+/...`). It identifies the relevant `registry_id` from the message envelope or topic structure and initializes its internal state for any newly observed device subsystems.
+- **Dynamic Registry Discovery:** The Orchestrator MUST dynamically discover registries and devices by monitoring the communication substrate using wildcards (e.g., `/uufi/r/+/d/+/...`). Upon startup, the Orchestrator SHOULD proactively perform a wildcard query to the model service (mocket) to discover all currently managed registries and their devices.
 
 ### 3.4 Device Conduit (Client-side)
 The implementation on the device must adhere to this state flow:

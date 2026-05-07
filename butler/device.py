@@ -47,7 +47,10 @@ class MockDevice:
             return
 
         # Cloud ops
-        if registry_id == self.registry_id and device_id == self.registry_id and sub_folder == "cloud":
+        if sub_folder == "cloud" and (
+            (registry_id == self.registry_id and device_id == self.registry_id) or
+            (registry_id == "discovery" and device_id == "discovery")
+        ):
             self.handle_cloud_op(sub_type, payload)
             return
 
@@ -186,10 +189,12 @@ class MockDevice:
         self.transport.connect()
         
         if self.conn_spec.protocol == "mqtt":
-            self.transport.subscribe(f"/uufi/{self.conn_spec.prefix + '/' if self.conn_spec.prefix else ''}r/{self.registry_id}/d/{self.device_id}/config/update", self.on_message)
-            self.transport.subscribe(f"/uufi/{self.conn_spec.prefix + '/' if self.conn_spec.prefix else ''}p/+/state/udmi", self.on_message)
-            self.transport.subscribe(f"/uufi/{self.conn_spec.prefix + '/' if self.conn_spec.prefix else ''}r/{self.registry_id}/d/{self.registry_id}/query/cloud", self.on_message)
-            self.transport.subscribe(f"/uufi/{self.conn_spec.prefix + '/' if self.conn_spec.prefix else ''}r/{self.registry_id}/d/{self.registry_id}/model/cloud", self.on_message)
+            prefix = self.conn_spec.prefix + '/' if self.conn_spec.prefix else ''
+            self.transport.subscribe(f"/uufi/{prefix}r/{self.registry_id}/d/{self.device_id}/config/update", self.on_message)
+            self.transport.subscribe(f"/uufi/{prefix}p/+/state/udmi", self.on_message)
+            self.transport.subscribe(f"/uufi/{prefix}r/{self.registry_id}/d/{self.registry_id}/query/cloud", self.on_message)
+            self.transport.subscribe(f"/uufi/{prefix}r/{self.registry_id}/d/{self.registry_id}/model/cloud", self.on_message)
+            self.transport.subscribe(f"/uufi/{prefix}r/discovery/d/discovery/query/cloud", self.on_message)
         else:
             self.transport.subscribe(self.on_message)
             

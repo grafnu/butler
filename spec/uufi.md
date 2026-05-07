@@ -62,13 +62,13 @@ not all receive every message.
 Not all received messages will have a `principal` attribute as some are generic (e.g. telemetry received from a building). Only
 messages that are explicitly intended for the recipient (e.g. message acks) will have this attribute present. The subscription
 should be filtered to only include messages that have this (matching) attribute or the attribute missing. Received UUFI
-will have the principle of _butler_, not of the sending entity. The principal in a received message indicates the intended principal
-of the receiver, not the sender. All messages in/out from one entity (e.g. `butler`) will have the same `principal` attribute value.
+will have the principle of _butler_, not of the sending entity. The principal in a received message indicates the **Session Owner** (the identity of the entity managing that specific communication channel), rather than strictly the sender or receiver. All messages in/out from one entity (e.g. `butler`) will have the same `principal` attribute value.
 
 **MQTT (`mqtt://`)**
 *   The base `host` and `:port` map as expected (network address).
 *   The `user@` prefix maps to a `username` property that's added to the MQTT topic path (e.g., as the `{principal}` identifier in `/uufi/p/{principal}/...`).
   * Clients need to subscribe to two topics (with and without the principal) to also receive generic broadcast messages.
+*   **Discovery Topic:** For proactive discovery in MQTT, clients SHOULD publish a `query/cloud` message to the dedicated topic `/uufi/r/discovery/d/discovery/query/cloud`. All model-hosting components (Systems/Mockets) MUST subscribe to this topic and respond by pushing their current model to their respective registry topics.
 *   The first URL path part, if present, maps to an optional topic prefix (else empty)
 *   *Example:* `mqtt://the-user@localhost:1883/a-prefix` maps to:
   * The MQTT broker at `localhost:1883`
@@ -109,6 +109,7 @@ Because the initial handshake is generic and occurs before the Client is associa
 - **PubSub:** The `deviceRegistryId` and `deviceId` message attributes MUST be empty strings (`""`).
 - **MQTT:** The topic MUST use the prefix `/uufi/p/{principal}/` where `{principal}` is the Client's unique identifier.
   - The resulting topic structure is `/uufi/p/{principal}/{subType}/{subFolder}`.
+  - **Handshake Context:** Any message published or received under the `/uufi/p/{principal}/` prefix is considered part of the handshake and early-session context.
 
 **Important:** Handshake messages MUST be addressed using this principal-based scheme instead of the standard registry-based addressing (`/uufi/r/...`).
 
@@ -435,4 +436,8 @@ Top-level envelope fields MUST only include data NOT already encoded in the MQTT
 - **Guidance:** Maintain a clean inner UDMI message by omitting redundant fields like `deviceId` or `subType` from the outer JSON wrap.
 
 ### 9.4. Timestamp Format
-All timestamps MUST follow RFC 3339 in the **minimal precision format** (e.g., `2026-05-01T22:32:17Z`). Implementations should use UTC to avoid ambiguity. Microseconds or numeric time zone offsets MUST NOT be used when generating messages, although receiving components SHOULD handle them gracefully for compatibility.
+All timestamps MUST follow RFC 3339 in the **minimal precision format** (e.g., `2026-05-01T22:32:17Z`). Implementations should use UTC to avoid ambiguity. Microseconds or numeric time zone offsets MUST NOT be used when generating messages. 
+
+**Permissiveness Rule:**
+- **Butler/Mocket:** These components MUST be strict in what they send (minimal precision only) but SHOULD be permissive in what they receive (handling microseconds or offsets gracefully).
+- **Verifier:** The Verifier MUST strictly enforce the minimal precision format for all messages originating *from* the Butler orchestrator. It SHOULD be graceful for messages originating from other sources (e.g., devices) to ensure interoperability while still validating core system behavior.
