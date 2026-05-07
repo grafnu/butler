@@ -16,9 +16,11 @@ class ModelRepository:
         try:
             with open(self.model_file, 'r') as f:
                 data = json.load(f)
-                # Migration check: if the first value is not a dict of subsystems, it might be old flat format
-                if data and not all(isinstance(v, dict) for v in data.values()):
-                    return {} # Clear old format to avoid confusion
+                # Migration check
+                if data:
+                    first_val = next(iter(data.values()))
+                    if not isinstance(first_val, dict) or "devices" not in first_val:
+                        return {}
                 return data
         except (json.JSONDecodeError, FileNotFoundError):
             return {}
@@ -38,15 +40,21 @@ class ModelRepository:
                 os.remove(temp_path)
             raise e
 
-    def get_device_subsystems(self, device_id):
+    def get_registry(self, registry_id):
         model = self.load_model()
-        return model.get(device_id, {})
+        return model.get(registry_id, {}).get("devices", {})
 
-    def get_subsystem(self, device_id, subsystem_id="main"):
-        subsystems = self.get_device_subsystems(device_id)
+    def get_device_subsystems(self, registry_id, device_id):
+        reg = self.get_registry(registry_id)
+        return reg.get(device_id, {})
+
+    def get_subsystem(self, registry_id, device_id, subsystem_id="main"):
+        subsystems = self.get_device_subsystems(registry_id, device_id)
         state = subsystems.get(subsystem_id)
         if not state:
             return {
+                "registry_id": registry_id,
+                "device_id": device_id,
                 "target_version": "1.0",
                 "current_version": "1.0",
                 "last_known_good": "1.0",
@@ -57,27 +65,29 @@ class ModelRepository:
             }
         return state
 
-    def save_subsystem(self, device_id, subsystem_id, data):
+    def save_subsystem(self, registry_id, device_id, subsystem_id, data):
         model = self.load_model()
-        if device_id not in model:
-            model[device_id] = {}
-        model[device_id][subsystem_id] = data
+        if registry_id not in model:
+            model[registry_id] = {"devices": {}}
+        if "devices" not in model[registry_id]:
+            model[registry_id]["devices"] = {}
+        if device_id not in model[registry_id]["devices"]:
+            model[registry_id]["devices"][device_id] = {}
+        model[registry_id]["devices"][device_id][subsystem_id] = data
         self.save_model(model)
         return data
 
-    def update_subsystem(self, device_id, subsystem_id, **kwargs):
-        state = self.get_subsystem(device_id, subsystem_id)
+    def update_subsystem(self, registry_id, device_id, subsystem_id, **kwargs):
+        state = self.get_subsystem(registry_id, device_id, subsystem_id)
         state.update(kwargs)
-        return self.save_subsystem(device_id, subsystem_id, state)
+        return self.save_subsystem(registry_id, device_id, subsystem_id, state)
 
-    def set_device_info(self, device_id, make, model, subsystem, registry_id=None):
+    def set_device_info(self, registry_id, device_id, make, model, subsystem):
         kwargs = {"make": make, "model": model, "subsystem": subsystem}
-        if registry_id:
-            kwargs["registry_id"] = registry_id
-        return self.update_subsystem(device_id, subsystem, **kwargs)
+        return self.update_subsystem(registry_id, device_id, subsystem, **kwargs)
 
-    def set_target_version(self, device_id, version, subsystem="main"):
-        return self.update_subsystem(device_id, subsystem, target_version=version)
+    def set_target_version(self, registry_id, device_id, version, subsystem="main"):
+        return self.update_subsystem(registry_id, device_id, subsystem, target_version=version)
 
-    def register_device(self, device_id, subsystem="main"):
-        return self.update_subsystem(device_id, subsystem)
+    def register_device(self, registry_id, device_id, subsystem="main"):
+        return self.update_subsystem(registry_id, device_id, subsystem)

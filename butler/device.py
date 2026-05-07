@@ -35,7 +35,7 @@ class MocketDevice:
 
     def on_connect(self):
         print(f"[mocket] System/Device connected: {self.device_id}")
-        # Subscribe to all config/state messages to handle handshakes and cloud ops
+        # Subscribe to all traffic to handle device handshakes and states
         self.subscribe_uufi()
 
     def on_message(self, topic, device_id, sub_type, sub_folder, data):
@@ -80,8 +80,8 @@ class MocketDevice:
                 "msg_source": source
             }
         }
-        # Reply to the principal's p-branch
-        self.publish_uufi(None, "config", response_payload, "udmi", direction="reply", target_principal=principal, transaction_id=transaction_id)
+        # Handshake reply MUST go to /uufi/c/config/udmi (registry-less)
+        self.publish_uufi(None, "config", response_payload, "udmi", transaction_id=transaction_id)
 
     def handle_cloud_message(self, data):
         # Cloud data is wrapped in 'cloud' key
@@ -94,29 +94,35 @@ class MocketDevice:
         print(f"[mocket] Handling cloud {operation} for {target_device} from {source}")
         
         if operation == "READ":
-            model = self.model_repo.load_model()
+            # New structure: {"registries": { "registry_id": { "devices": { "device_id": { ... } } } } }
             if target_device and target_device != "all":
-                raw_devices = {target_device: self.model_repo.get_device_subsystems(target_device)}
+                registry_id = data.get("deviceRegistryId", self.registry_id)
+                devices = {target_device: self.model_repo.get_device_subsystems(registry_id, target_device)}
+                registries = {registry_id: {"devices": devices}}
             else:
-                raw_devices = model
+                model = self.model_repo.load_model()
+                # model is already {registry_id: {device_id: subsystems}}
+                registries = model
             
             payload = {
-                "devices": raw_devices
+                "registries": registries
             }
-            self.publish_uufi(target_device, "config", payload, "cloud", target_principal=source, transaction_id=transaction_id)
+            self.publish_uufi(target_device, "config", payload, "cloud", transaction_id=transaction_id)
             
         elif operation in ["UPDATE", "CREATE"]:
             # Perform update in ModelRepository
-            # Structure: {"devices": { "device_id": { "subsystem": { ... } } } }
-            devices = cloud_data.get("devices", {})
-            for dev_id, subsystems in devices.items():
-                for subsystem_id, detail in subsystems.items():
-                    print(f"[mocket] Replacing {dev_id}/{subsystem_id} with {detail}")
-                    self.model_repo.save_subsystem(dev_id, subsystem_id, detail)
+            # Structure: {"registries": { "registry_id": { "devices": { "device_id": { "subsystem": { ... } } } } } }
+            registries = cloud_data.get("registries", {})
+            for reg_id, reg_data in registries.items():
+                devices = reg_data.get("devices", {})
+                for dev_id, subsystems in devices.items():
+                    for subsystem_id, detail in subsystems.items():
+                        print(f"[mocket] Replacing {reg_id}/{dev_id}/{subsystem_id} with {detail}")
+                        self.model_repo.save_subsystem(reg_id, dev_id, subsystem_id, detail)
             
             # Confirm change
             payload = { "status": "success", "operation": operation }
-            self.publish_uufi(target_device, "config", payload, "cloud", target_principal=source, transaction_id=transaction_id)
+            self.publish_uufi(target_device, "config", payload, "cloud", transaction_id=transaction_id)
 
     def handle_update_config(self, data):
         if self.status == "pending":
@@ -169,14 +175,6 @@ class MocketDevice:
                 self.status = "failure"
         
         self.report_state()
-        # After success/failure, we also update the model via self.model_repo
-        # but the spec says Butler should request the update.
-        # However, Mocket IS the model repo manager, so it should probably 
-        # just handle its own status reports and sync them if needed.
-        # Actually, 4.1 Step 6 says: "Orchestrator sends a model update request to mocket"
-        # So mocket just reports status on the bus, butler sees it, and then butler
-        # sends a 'cloud' message back to mocket to update the persistent model.
-        
         time.sleep(1)
         self.status = "quiescent"
         self.report_state()
@@ -187,7 +185,7 @@ class MocketDevice:
             "lkg_version": self.lkg_version,
             "status": self.status
         }
-        self.publish_uufi(self.device_id, "state", payload, "update", direction="reflect")
+        self.publish_uufi(self.device_id, "state", payload, "update", registry_id=self.registry_id)
 
     def heartbeat(self):
         while True:

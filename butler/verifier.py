@@ -28,15 +28,17 @@ class ButlerVerifier:
         # Verifier just listens to all UUFI traffic
         self.subscribe_uufi()
 
-    def validate_message(self, data):
+    def validate_message(self, data, is_strict=False):
         # Validation Schema: mandatory UDMI payload fields
-        # Note: data is already the merged envelope + payload
         errors = []
         
-        if "timestamp" not in data:
+        timestamp = data.get("timestamp")
+        if not timestamp:
             errors.append("Missing mandatory 'timestamp' in payload")
-        elif not self.rfc3339_regex.match(data["timestamp"]):
-            errors.append(f"Invalid timestamp format: {data['timestamp']} (expected RFC 3339)")
+        elif is_strict:
+            if not self.rfc3339_regex.match(timestamp):
+                errors.append(f"Invalid timestamp format (STRICT): {timestamp} (expected minimal precision RFC 3339)")
+        # Otherwise be permissive (if not strict) - we already checked presence
             
         if "version" not in data:
             errors.append("Missing mandatory 'version' in payload")
@@ -45,64 +47,62 @@ class ButlerVerifier:
 
     def on_message(self, topic, device_id, sub_type, sub_folder, data):
         source = data.get("source")
+        registry_id = data.get("deviceRegistryId") or "unknown"
         
-        # Validation
-        val_errors = self.validate_message(data)
+        # Validation strictness: Butler is strict, others are permissive
+        is_strict = (source == "butler")
+        val_errors = self.validate_message(data, is_strict=is_strict)
         if val_errors:
             for err in val_errors:
-                self.report_verification(device_id or "unknown", f"VALIDATION ERROR: {err}", level="ERROR")
+                self.report_verification(registry_id, device_id or "unknown", f"VALIDATION ERROR: {err}", level="ERROR")
 
-        # Handshake Awareness
-        # Pattern: /uufi/p/{principal}/{subType}/{subFolder}
-        is_handshake_topic = "/uufi/p/" in topic
-        if is_handshake_topic and sub_type == "state" and sub_folder == "udmi":
-            self.report_verification(device_id or source, f"Handshake started by {source}")
-        
-        if sub_type == "config" and sub_folder == "udmi":
-            # Handshake reply is in 'udmi' subfolder
-            udmi = data.get("udmi", {})
-            if "reply" in udmi:
-                client = udmi["reply"].get("msg_source")
-                if client:
-                    self.active_clients.add(client)
-                    self.report_verification(device_id or client, f"Handshake completed for {client}")
+        # Handshake Awareness: /uufi/c/ (registry-less)
+        # In unified structure, handshake is just registry_id=None
+        if not registry_id or registry_id == "unknown":
+            if sub_type == "state" and sub_folder == "udmi":
+                self.report_verification(registry_id, device_id or source, f"Handshake started by {source}")
+            
+            if sub_type == "config" and sub_folder == "udmi":
+                udmi = data.get("udmi", {})
+                if "reply" in udmi:
+                    client = udmi["reply"].get("msg_source")
+                    if client:
+                        self.active_clients.add(client)
+                        self.report_verification(registry_id, device_id or client, f"Handshake completed for {client}")
 
         # State Transition Monitoring
         if sub_type == "state" and sub_folder == "update":
-            # Device state is in 'update' subfolder
             update_state = data.get("update", {})
             status = update_state.get("status", "quiescent")
             old_status = self.device_states.get(device_id, "quiescent")
             
             if old_status != status:
-                self.report_verification(device_id, f"State transition: {old_status} -> {status}")
+                self.report_verification(registry_id, device_id, f"State transition: {old_status} -> {status}")
                 
                 # Validate transitions
                 if old_status == "quiescent" and status not in ["pending", "quiescent"]:
-                    self.report_verification(device_id, f"INVALID TRANSITION: {old_status} -> {status}", level="ERROR")
+                    self.report_verification(registry_id, device_id, f"INVALID TRANSITION: {old_status} -> {status}", level="ERROR")
                 
                 self.device_states[device_id] = status
             
         elif sub_type == "config" and sub_folder == "update":
-            self.report_verification(device_id, f"Update config sent to {device_id}")
+            self.report_verification(registry_id, device_id, f"Update config sent to {device_id}")
             
         elif sub_type == "model" and sub_folder == "cloud":
-            # Cloud model data is in 'cloud' subfolder
-            cloud_data = data.get("cloud", {})
-            operation = cloud_data.get("operation")
-            self.report_verification(device_id, f"Cloud model updated for {device_id}: {operation}")
+            operation = data.get("cloud", {}).get("operation")
+            self.report_verification(registry_id, device_id, f"Cloud model updated for {device_id}: {operation}")
 
-    def report_verification(self, device_id, message, level="INFO"):
+    def report_verification(self, registry_id, device_id, message, level="INFO"):
         print(f"VERIFIER [{level}]: {message}")
-        import datetime
-        timestamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         payload = {
             "message": message,
             "level": level,
             "device_id": device_id,
-            "timestamp": timestamp
+            "timestamp": data_now(),
+            "version": "1.5.2"
         }
-        self.bus.publish("butler/verify", json.dumps(payload))
+        # Publish to /uufi/r/{registry_id}/d/{device_id}/c/validation
+        self.bus.publish_uufi(device_id, "validation", payload, "validation", registry_id=registry_id)
 
 def data_now():
     import datetime

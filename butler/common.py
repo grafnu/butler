@@ -52,8 +52,6 @@ class ButlerBusBase:
         scheme, user, host, port_or_topic, prefix = parse_conn_spec(self.conn_spec)
 
         # 2. Protocol Mapping & Debug differentiation
-        # Singular protocols like PubSub need differentiator. 
-        # But UUFI spec says "system should use the following username . (dot) differentiator"
         if user and "." in user:
              # Tool MUST throw an error if a manual differentiator is detected.
              raise ValueError(f"Manual differentiator detected in user component: {user}")
@@ -77,10 +75,9 @@ class ButlerBusBase:
         self.project_id = os.environ.get("BUTLER_PROJECT_ID", "vibrant")
         self.registry_id = os.environ.get("BUTLER_REGISTRY_ID", "controller")
         self.track_nonces = track_nonces
-        self.seen_nonces = set()
-        self.max_seen_nonces = 1000
+        self.seen_nonces = {} # nonce -> timestamp
+        self.nonce_window = 300 # 5 minutes
         self.filter_principal = source not in ["butler", "verifier", "observe"]
-
 
     def generate_nonce(self):
         return secrets.token_hex(4) # 8-digit hex
@@ -93,11 +90,12 @@ class ButlerBusBase:
         if self.track_nonces:
             nonce = udmi_payload.get("nonce")
             if nonce:
+                now = time.time()
+                # Clean old nonces
+                self.seen_nonces = {n: t for n, t in self.seen_nonces.items() if now - t < self.nonce_window}
                 if nonce in self.seen_nonces:
                     return
-                self.seen_nonces.add(nonce)
-                if len(self.seen_nonces) > self.max_seen_nonces:
-                    self.seen_nonces.remove(next(iter(self.seen_nonces)))
+                self.seen_nonces[nonce] = now
 
         # Handshake check (look inside 'udmi' subfolder)
         if sub_type == "config" and sub_folder == "udmi":
@@ -184,36 +182,42 @@ class ButlerMQTTBase(ButlerBusBase):
                     self.on_raw_message(msg.topic, payload_str)
                     return
 
-                if len(parts) < uufi_idx + 3:
+                # Unified Structure: /uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}
+                remaining = parts[uufi_idx + 1:]
+                registry_id = None
+                device_id = None
+                
+                if not remaining:
                     self.on_raw_message(msg.topic, payload_str)
                     return
 
-                branch = parts[uufi_idx + 1]
-                if branch == "r":
-                    registry_id = parts[uufi_idx + 2]
-                    device_id = parts[uufi_idx + 4]
-                    sub_type = parts[uufi_idx + 5]
-                    sub_folder = parts[uufi_idx + 6] if len(parts) > uufi_idx + 6 else None
-                elif branch == "p":
-                    sub_type = parts[uufi_idx + 3]
-                    sub_folder = parts[uufi_idx + 4] if len(parts) > uufi_idx + 4 else None
-                    device_id = None
-                    registry_id = None
-                else:
+                curr = 0
+                if remaining[curr] == "r":
+                    registry_id = remaining[curr+1]
+                    curr += 2
+                    if remaining[curr] == "d":
+                        device_id = remaining[curr+1]
+                        curr += 2
+                
+                if remaining[curr] != "c":
                     self.on_raw_message(msg.topic, payload_str)
                     return
+                
+                sub_type = remaining[curr+1]
+                sub_folder = remaining[curr+2] if len(remaining) > curr + 2 else None
 
                 udmi_payload = data.get("payload", {})
                 for k, v in data.items():
                     if k != "payload":
                         udmi_payload[k] = v
                 
-                # Add registry_id to payload for dynamic discovery
                 if registry_id:
                     udmi_payload["deviceRegistryId"] = registry_id
+                if device_id:
+                    udmi_payload["deviceId"] = device_id
 
                 self._handle_received_message(msg.topic, device_id, sub_type, sub_folder, udmi_payload)
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, IndexError):
                 self.on_raw_message(msg.topic, payload_str)
         except Exception:
             pass
@@ -233,8 +237,7 @@ class ButlerMQTTBase(ButlerBusBase):
     def publish_uufi(self, device_id, sub_type, payload_data, sub_folder=None, direction="reflect", target_principal=None, transaction_id=None, registry_id=None):
         publish_time = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         nonce = self.generate_nonce()
-        is_handshake = (sub_folder == "udmi")
-
+        
         timestamp = payload_data.get("timestamp", publish_time)
         version = payload_data.get("version", "1.5.2")
         
@@ -251,15 +254,20 @@ class ButlerMQTTBase(ButlerBusBase):
             "publishTime": publish_time,
             "source": self.source,
             "nonce": nonce,
-            "payload": wrapped_payload
+            "payload": wrapped_payload,
+            "principal": self.principal
         }
         
         topic_parts = [self.prefix] if self.prefix else []
         topic_parts.append("uufi")
-        if is_handshake:
-            topic_parts.extend(["p", target_principal or self.principal])
-        else:
-            topic_parts.extend(["r", registry_id or self.registry_id, "d", str(device_id) if device_id is not None else "all"])
+        
+        # Unified Structure: /uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}
+        if registry_id:
+            topic_parts.extend(["r", registry_id])
+            if device_id:
+                topic_parts.extend(["d", str(device_id)])
+        
+        topic_parts.append("c")
         topic_parts.append(sub_type)
         if sub_folder:
             topic_parts.append(sub_folder)
