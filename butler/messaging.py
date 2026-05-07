@@ -5,9 +5,10 @@ import os
 
 def create_payload(sub_folder, payload_data):
     """Creates the inner UDMI payload."""
+    now = datetime.datetime.now(datetime.timezone.utc)
     return {
         "version": "1.5.2",
-        "timestamp": datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+        "timestamp": now.strftime('%Y-%m-%dT%H:%M:%SZ'),
         sub_folder: payload_data
     }
 
@@ -19,10 +20,11 @@ def create_envelope(transaction_id=None, nonce=None, source=None, project_id=Non
     if nonce is None:
         nonce = secrets.token_hex(4)
     
+    now = datetime.datetime.now(datetime.timezone.utc)
     envelope = {
         "transactionId": transaction_id,
         "nonce": nonce,
-        "publishTime": datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+        "publishTime": now.strftime('%Y-%m-%dT%H:%M:%SZ'),
     }
     
     if source: envelope["source"] = source

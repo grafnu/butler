@@ -12,27 +12,30 @@ class Verifier:
     def __init__(self, conn_spec):
         self.conn_spec = conn_spec
         self.transport = get_transport(conn_spec)
-        self.device_states = {} # (device_id, subsystem): last_state
+        self.device_states = {} # (registry_id, device_id, subsystem): last_state
         self.handshakes = {} # principal: {tid, active}
-        self.timestamp_regex = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$')
-        self.registry_id = "butler-registry"
+        # Strict minimal precision format: 2026-05-01T22:32:17Z
+        self.timestamp_regex = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$')
+        self.default_registry_id = "butler-registry"
 
     def on_message(self, env, payload, topic, raw=None):
         if not payload: return
+        
+        sub_type = env.get("subType")
+        sub_folder = env.get("subFolder")
+        device_id = env.get("deviceId")
+        registry_id = env.get("deviceRegistryId") or self.default_registry_id
+        principal = env.get("principal")
+
         # Mandatory field validation
         if "timestamp" not in payload or "version" not in payload:
-            self.log_verification("Missing mandatory UDMI fields (timestamp or version)", level="FAIL")
+            self.log_verification(registry_id, "Missing mandatory UDMI fields (timestamp or version)", level="FAIL")
             return
         
         timestamp = payload.get("timestamp")
         if not self.timestamp_regex.match(timestamp):
-            self.log_verification(f"Invalid timestamp format: {timestamp}", level="FAIL")
+            self.log_verification(registry_id, f"Invalid timestamp format (must be minimal precision): {timestamp}", level="FAIL")
             return
-
-        sub_type = env.get("subType")
-        sub_folder = env.get("subFolder")
-        device_id = env.get("deviceId")
-        principal = env.get("principal")
 
         # Monitor Handshake on /uufi/p/
         if sub_folder == "udmi" and not device_id:
@@ -41,7 +44,7 @@ class Verifier:
                 setup = udmi.get("setup", {})
                 tid = setup.get("transaction_id")
                 self.handshakes[principal] = {"tid": tid, "active": False}
-                self.log_verification(f"Handshake started for {principal} (tid: {tid})")
+                self.log_verification(registry_id, f"Handshake started for {principal} (tid: {tid})")
             
             elif sub_type == "config":
                 udmi = payload.get("udmi", payload)
@@ -49,7 +52,7 @@ class Verifier:
                 tid = reply.get("transaction_id")
                 if principal in self.handshakes and self.handshakes[principal]["tid"] == tid:
                     self.handshakes[principal]["active"] = True
-                    self.log_verification(f"Handshake complete for {principal} (tid: {tid})")
+                    self.log_verification(registry_id, f"Handshake complete for {principal} (tid: {tid})")
 
         # Monitor Updates on /uufi/r/
         elif sub_type == "state" and sub_folder == "update" and device_id:
@@ -58,27 +61,27 @@ class Verifier:
             state = update.get("state")
             current_version = update.get("current_version")
             
-            key = (device_id, subsystem)
+            key = (registry_id, device_id, subsystem)
             prev_state = self.device_states.get(key)
             self.device_states[key] = state
             
-            self.log_verification(f"Device {device_id}/{subsystem} state transition: {prev_state} -> {state} ({current_version})")
+            self.log_verification(registry_id, f"Device {registry_id}/{device_id}/{subsystem} state transition: {prev_state} -> {state} ({current_version})")
             
             # Check for invalid transitions
             if prev_state == "quiescent" and state not in ["pending", "quiescent"]:
-                self.log_verification(f"INVALID TRANSITION: {device_id}/{subsystem} went from quiescent to {state}", level="FAIL")
+                self.log_verification(registry_id, f"INVALID TRANSITION: {registry_id}/{device_id}/{subsystem} went from quiescent to {state}", level="FAIL")
             elif prev_state == "pending" and state not in ["success", "failure", "pending"]:
-                self.log_verification(f"INVALID TRANSITION: {device_id}/{subsystem} went from pending to {state}", level="FAIL")
+                self.log_verification(registry_id, f"INVALID TRANSITION: {registry_id}/{device_id}/{subsystem} went from pending to {state}", level="FAIL")
 
-    def log_verification(self, text, level="PASS"):
+    def log_verification(self, registry_id, text, level="PASS"):
         print(f"[verifier] {level}: {text}", flush=True)
         payload_data = {
             "result": level,
             "message": text,
-            "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         }
         env = create_envelope(
-            registry_id=self.registry_id,
+            registry_id=registry_id,
             device_id="_validator",
             sub_type="events",
             sub_folder="validation",

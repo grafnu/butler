@@ -14,13 +14,12 @@ class Orchestrator:
         self.blob_repo = BlobRepository()
         self.fail_mode = fail_mode
         self.transport = get_transport(conn_spec)
-        self.pending_updates = {} # device_id: {timestamp, target_version, subsystem}
-        self.settle_times = {} # (device_id, subsystem): timestamp
+        self.pending_updates = {} # (registry_id, device_id, subsystem): {timestamp, target_version}
+        self.settle_times = {} # (registry_id, device_id, subsystem): timestamp
         self.seen_nonces = set()
         self.is_active = False
         self.handshake_tid = None
-        self.registry_id = "butler-registry"
-        self.model = {}
+        self.models = {} # registry_id: model
         self.principal = self.conn_spec.principal or "butler"
 
     def on_message(self, env, payload, topic, raw=None):
@@ -37,10 +36,8 @@ class Orchestrator:
 
         # Cloud model update
         if sub_folder == "cloud" and device_id == registry_id:
-            self.model = payload.get("cloud", payload)
-            if registry_id:
-                self.registry_id = registry_id
-            print(f"[butler] Received model update from cloud", flush=True)
+            self.models[registry_id] = payload.get("cloud", payload)
+            print(f"[butler] Received model update for registry {registry_id}", flush=True)
             return
 
         # Device state update
@@ -56,22 +53,24 @@ class Orchestrator:
             current_version = update.get("current_version")
             lkg_version = update.get("lkg_version")
 
-            if registry_id:
-                self.registry_id = registry_id
+            if not registry_id or not device_id: return
 
-            print(f"[butler] Status from {device_id}: {state} ({current_version}, lkg: {lkg_version})", flush=True)
+            print(f"[butler] Status from {registry_id}/{device_id}: {state} ({current_version}, lkg: {lkg_version})", flush=True)
             
-            self.settle_times[(device_id, subsystem)] = time.time()
+            key = (registry_id, device_id, subsystem)
+            self.settle_times[key] = time.time()
 
-            if state == "success" or state == "quiescent":
-                self.update_cloud_model(device_id, subsystem, current_version=current_version, lkg_version=lkg_version)
-                if state == "success" and device_id in self.pending_updates:
-                    del self.pending_updates[device_id]
+            # Always update LKG if reported, and update current_version
+            self.update_cloud_model(registry_id, device_id, subsystem, current_version=current_version, lkg_version=lkg_version)
+            
+            if state == "success":
+                if key in self.pending_updates:
+                    del self.pending_updates[key]
             elif state == "failure":
-                print(f"[butler] Device {device_id} reported FAILURE. Rolling back...", flush=True)
-                self.rollback_cloud_model(device_id, subsystem)
-                if device_id in self.pending_updates:
-                    del self.pending_updates[device_id]
+                print(f"[butler] Device {registry_id}/{device_id} reported FAILURE. Rolling back...", flush=True)
+                self.rollback_cloud_model(registry_id, device_id, subsystem)
+                if key in self.pending_updates:
+                    del self.pending_updates[key]
 
     def handle_handshake_reply(self, payload, tid):
         udmi = payload.get("udmi", payload)
@@ -80,20 +79,10 @@ class Orchestrator:
         if reply_tid == self.handshake_tid:
             print(f"[butler] UUFI Handshake complete (tid: {reply_tid}). Orchestrator is ACTIVE.", flush=True)
             self.is_active = True
-            self.query_cloud_model()
+            # We don't have a registry_id yet, but we'll discover them
+            # or we can query a default if known. For now, rely on discovery.
 
-    def query_cloud_model(self):
-        env = create_envelope(
-            registry_id=self.registry_id,
-            device_id=self.registry_id,
-            sub_type="query",
-            sub_folder="cloud",
-            source="butler"
-        )
-        payload = create_payload("cloud", {"operation": "READ"})
-        self.transport.publish(env, payload)
-
-    def update_cloud_model(self, device_id, subsystem, target_version=None, current_version=None, lkg_version=None):
+    def update_cloud_model(self, registry_id, device_id, subsystem, target_version=None, current_version=None, lkg_version=None):
         subsystem_data = {}
         if target_version: subsystem_data["target_version"] = target_version
         if current_version: subsystem_data["current_version"] = current_version
@@ -109,8 +98,8 @@ class Orchestrator:
         }
         
         env = create_envelope(
-            registry_id=self.registry_id,
-            device_id=self.registry_id,
+            registry_id=registry_id,
+            device_id=registry_id,
             sub_type="model",
             sub_folder="cloud",
             source="butler"
@@ -118,77 +107,80 @@ class Orchestrator:
         payload = create_payload("cloud", payload_data)
         self.transport.publish(env, payload)
 
-    def rollback_cloud_model(self, device_id, subsystem):
-        devices = self.model.get("devices", self.model)
+    def rollback_cloud_model(self, registry_id, device_id, subsystem):
+        model = self.models.get(registry_id, {})
+        devices = model.get("devices", model)
         dev_info = devices.get(device_id, {}).get(subsystem, {})
         lkg = dev_info.get("lkg_version", "0.0.0")
-        self.update_cloud_model(device_id, subsystem, target_version=lkg)
+        self.update_cloud_model(registry_id, device_id, subsystem, target_version=lkg)
 
     def check_reconciliation(self):
-        if not self.is_active or not isinstance(self.model, dict):
+        if not self.is_active:
             return
         
-        devices = self.model.get("devices", self.model)
-        if not isinstance(devices, dict):
-            return
-
         now = time.time()
-        for device_id, subsystems in devices.items():
-            if not isinstance(subsystems, dict): continue
-            for subsystem, info in subsystems.items():
-                if not isinstance(info, dict): continue
-                
-                # Settling time check (5s)
-                last_action = self.settle_times.get((device_id, subsystem), 0)
-                if now - last_action < 5:
-                    continue
+        for registry_id, model in self.models.items():
+            devices = model.get("devices", model)
+            if not isinstance(devices, dict): continue
 
-                target = info.get("target_version")
-                current = info.get("current_version")
-                
-                if target != current and device_id not in self.pending_updates:
-                    print(f"[butler] Reconciliation triggered for {device_id}: {current} -> {target}", flush=True)
+            for device_id, subsystems in devices.items():
+                if not isinstance(subsystems, dict): continue
+                for subsystem, info in subsystems.items():
+                    if not isinstance(info, dict): continue
                     
-                    if self.fail_mode: continue
+                    key = (registry_id, device_id, subsystem)
+                    
+                    # Settling time check (5s)
+                    last_action = self.settle_times.get(key, 0)
+                    if now - last_action < 5:
+                        continue
 
-                    metadata = self.blob_repo.get_blob_metadata(
-                        info.get("make"), info.get("model"), subsystem, target
-                    )
+                    target = info.get("target_version")
+                    current = info.get("current_version")
                     
-                    if metadata:
-                        update_data = {
-                            "version": target,
-                            "url": metadata["url"],
-                            "sha256": metadata["sha256"]
-                        }
-                        env = create_envelope(
-                            registry_id=self.registry_id,
-                            device_id=device_id,
-                            sub_type="config",
-                            sub_folder="update",
-                            source="butler"
+                    if target != current and key not in self.pending_updates:
+                        print(f"[butler] Reconciliation triggered for {registry_id}/{device_id}: {current} -> {target}", flush=True)
+                        
+                        if self.fail_mode: continue
+
+                        metadata = self.blob_repo.get_blob_metadata(
+                            info.get("make"), info.get("model"), subsystem, target
                         )
-                        payload = create_payload("update", update_data)
-                        self.transport.publish(env, payload)
-                        self.pending_updates[device_id] = {
-                            "timestamp": time.time(),
-                            "target_version": target,
-                            "subsystem": subsystem
-                        }
-                        self.settle_times[(device_id, subsystem)] = time.time()
+                        
+                        if metadata:
+                            update_data = {
+                                "version": target,
+                                "url": metadata["url"],
+                                "sha256": metadata["sha256"]
+                            }
+                            env = create_envelope(
+                                registry_id=registry_id,
+                                device_id=device_id,
+                                sub_type="config",
+                                sub_folder="update",
+                                source="butler"
+                            )
+                            payload = create_payload("update", update_data)
+                            self.transport.publish(env, payload)
+                            self.pending_updates[key] = {
+                                "timestamp": time.time(),
+                                "target_version": target
+                            }
+                            self.settle_times[key] = time.time()
 
     def check_timeouts(self):
         now = time.time()
         timeout = int(os.environ.get("BUTLER_TIMEOUT", 60))
         to_remove = []
-        for device_id, info in self.pending_updates.items():
+        for key, info in self.pending_updates.items():
             if now - info["timestamp"] > timeout:
-                print(f"[butler] Timeout for {device_id}. Rolling back...", flush=True)
-                self.rollback_cloud_model(device_id, info["subsystem"])
-                to_remove.append(device_id)
+                registry_id, device_id, subsystem = key
+                print(f"[butler] Timeout for {registry_id}/{device_id}. Rolling back...", flush=True)
+                self.rollback_cloud_model(registry_id, device_id, subsystem)
+                to_remove.append(key)
         
-        for d in to_remove:
-            del self.pending_updates[d]
+        for k in to_remove:
+            del self.pending_updates[k]
 
     def send_handshake(self):
         self.handshake_tid = f"handshake-{int(time.time())}"
