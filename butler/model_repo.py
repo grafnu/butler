@@ -14,9 +14,16 @@ class ModelRepository:
                 try:
                     self.data = json.load(f)
                 except json.JSONDecodeError:
-                    self.data = {"devices": {}}
+                    self.data = {"registries": {}}
         else:
-            self.data = {"devices": {}}
+            self.data = {"registries": {}}
+        
+        if "registries" not in self.data:
+            # Migration: if old format, move to default registry
+            if "devices" in self.data:
+                self.data = {"registries": {"default": {"devices": self.data["devices"]}}}
+            else:
+                self.data = {"registries": {}}
 
     def reload(self):
         self._load()
@@ -27,43 +34,50 @@ class ModelRepository:
             json.dump(self.data, f, indent=4)
         os.rename(temp_file, self.file_path)
 
-    def set_device_info(self, device_id, subsystem, make, model):
-        if "devices" not in self.data:
-            self.data["devices"] = {}
-        if device_id not in self.data["devices"]:
-            self.data["devices"][device_id] = {}
-        if subsystem not in self.data["devices"][device_id]:
-            self.data["devices"][device_id][subsystem] = {
+    def _ensure_registry_device(self, registry_id, device_id, subsystem):
+        if "registries" not in self.data:
+            self.data["registries"] = {}
+        if registry_id not in self.data["registries"]:
+            self.data["registries"][registry_id] = {"devices": {}}
+        if "devices" not in self.data["registries"][registry_id]:
+            self.data["registries"][registry_id]["devices"] = {}
+        if device_id not in self.data["registries"][registry_id]["devices"]:
+            self.data["registries"][registry_id]["devices"][device_id] = {}
+        if subsystem not in self.data["registries"][registry_id]["devices"][device_id]:
+            self.data["registries"][registry_id]["devices"][device_id][subsystem] = {
                 "current_version": "0.0.0",
                 "target_version": "0.0.0",
                 "lkg_version": "0.0.0"
             }
-        self.data["devices"][device_id][subsystem].update({
+
+    def set_device_info(self, registry_id, device_id, subsystem, make, model):
+        self._ensure_registry_device(registry_id, device_id, subsystem)
+        self.data["registries"][registry_id]["devices"][device_id][subsystem].update({
             "make": make,
             "model": model
         })
         self._save()
 
-    def set_target_version(self, device_id, subsystem, version):
-        if device_id in self.data.get("devices", {}) and subsystem in self.data["devices"][device_id]:
-            self.data["devices"][device_id][subsystem]["target_version"] = version
-            self._save()
+    def set_target_version(self, registry_id, device_id, subsystem, version):
+        self._ensure_registry_device(registry_id, device_id, subsystem)
+        self.data["registries"][registry_id]["devices"][device_id][subsystem]["target_version"] = version
+        self._save()
 
-    def update_current_version(self, device_id, subsystem, version, lkg_version=None):
-        if device_id in self.data.get("devices", {}) and subsystem in self.data["devices"][device_id]:
-            self.data["devices"][device_id][subsystem]["current_version"] = version
-            if lkg_version is not None:
-                self.data["devices"][device_id][subsystem]["lkg_version"] = lkg_version
-            self._save()
+    def update_current_version(self, registry_id, device_id, subsystem, version, lkg_version=None):
+        self._ensure_registry_device(registry_id, device_id, subsystem)
+        self.data["registries"][registry_id]["devices"][device_id][subsystem]["current_version"] = version
+        if lkg_version is not None:
+            self.data["registries"][registry_id]["devices"][device_id][subsystem]["lkg_version"] = lkg_version
+        self._save()
 
-    def get_device_state(self, device_id, subsystem):
-        return self.data.get("devices", {}).get(device_id, {}).get(subsystem)
+    def get_device_state(self, registry_id, device_id, subsystem):
+        return self.data.get("registries", {}).get(registry_id, {}).get("devices", {}).get(device_id, {}).get(subsystem)
 
-    def get_all_devices(self):
-        return self.data.get("devices", {})
+    def get_all_registries(self):
+        return self.data.get("registries", {})
 
-    def rollback(self, device_id, subsystem):
-        if device_id in self.data.get("devices", {}) and subsystem in self.data["devices"][device_id]:
-            lkg = self.data["devices"][device_id][subsystem].get("lkg_version", "0.0.0")
-            self.data["devices"][device_id][subsystem]["target_version"] = lkg
-            self._save()
+    def rollback(self, registry_id, device_id, subsystem):
+        state = self.get_device_state(registry_id, device_id, subsystem)
+        if state:
+            lkg = state.get("lkg_version", "0.0.0")
+            self.set_target_version(registry_id, device_id, subsystem, lkg)

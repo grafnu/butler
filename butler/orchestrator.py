@@ -3,6 +3,7 @@ import time
 import sys
 import os
 import argparse
+import datetime
 from butler.blob_repo import BlobRepository
 from butler.messaging import create_payload, create_envelope
 from butler.conn_spec import parse_conn_spec
@@ -16,14 +17,27 @@ class Orchestrator:
         self.transport = get_transport(conn_spec)
         self.pending_updates = {} # (registry_id, device_id, subsystem): {timestamp, target_version}
         self.settle_times = {} # (registry_id, device_id, subsystem): timestamp
-        self.seen_nonces = set()
+        self.nonce_history = {} # nonce: timestamp
         self.is_active = False
         self.handshake_tid = None
-        self.models = {} # registry_id: model
+        self.handshake_start_time = None
+        self.models = {} # registry_id: model_data (the "devices" dict)
         self.principal = self.conn_spec.principal or "butler"
 
     def on_message(self, env, payload, topic, raw=None):
         if not payload: return
+        
+        # Nonce tracking (5 minutes)
+        nonce = env.get("nonce")
+        if nonce:
+            now = time.time()
+            if nonce in self.nonce_history:
+                return
+            self.nonce_history[nonce] = now
+            # Cleanup old nonces
+            to_del = [n for n, t in self.nonce_history.items() if now - t > 300]
+            for n in to_del: del self.nonce_history[n]
+
         sub_type = env.get("subType")
         sub_folder = env.get("subFolder")
         device_id = env.get("deviceId")
@@ -35,18 +49,16 @@ class Orchestrator:
             return
 
         # Cloud model update
-        if sub_folder == "cloud" and device_id == registry_id:
-            self.models[registry_id] = payload.get("cloud", payload)
-            print(f"[butler] Received model update for registry {registry_id}", flush=True)
+        if sub_folder == "cloud" and sub_type == "config":
+            cloud = payload.get("cloud", payload)
+            registries = cloud.get("registries", {})
+            for reg_id, reg_data in registries.items():
+                self.models[reg_id] = reg_data.get("devices", {})
+                print(f"[butler] Received model update for registry {reg_id}", flush=True)
             return
 
         # Device state update
         if sub_type == "state" and sub_folder == "update":
-            nonce = env.get("nonce")
-            if nonce in self.seen_nonces: return
-            self.seen_nonces.add(nonce)
-            if len(self.seen_nonces) > 1000: self.seen_nonces.clear()
-
             update = payload.get("update", {})
             subsystem = update.get("subsystem", "main")
             state = update.get("state")
@@ -63,14 +75,12 @@ class Orchestrator:
             # Always update LKG if reported, and update current_version
             self.update_cloud_model(registry_id, device_id, subsystem, current_version=current_version, lkg_version=lkg_version)
             
-            if state == "success":
+            if state in ["success", "failure"]:
                 if key in self.pending_updates:
                     del self.pending_updates[key]
-            elif state == "failure":
-                print(f"[butler] Device {registry_id}/{device_id} reported FAILURE. Rolling back...", flush=True)
-                self.rollback_cloud_model(registry_id, device_id, subsystem)
-                if key in self.pending_updates:
-                    del self.pending_updates[key]
+                if state == "failure":
+                    print(f"[butler] Device {registry_id}/{device_id} reported FAILURE. Rolling back...", flush=True)
+                    self.rollback_cloud_model(registry_id, device_id, subsystem)
 
     def handle_handshake_reply(self, payload, tid):
         udmi = payload.get("udmi", payload)
@@ -83,13 +93,11 @@ class Orchestrator:
             self.query_all_registries()
 
     def query_all_registries(self):
-        # Query using the dedicated discovery topic
+        # Query using the dedicated discovery topic /uufi/c/query/cloud
         env = create_envelope(
-            registry_id="discovery",
-            device_id="discovery",
             sub_type="query",
             sub_folder="cloud",
-            source="butler"
+            source=self.principal
         )
         payload = create_payload("cloud", {"operation": "READ"})
         self.transport.publish(env, payload)
@@ -102,26 +110,29 @@ class Orchestrator:
         
         payload_data = {
             "operation": "UPDATE",
-            "devices": {
-                device_id: {
-                    subsystem: subsystem_data
+            "registries": {
+                registry_id: {
+                    "devices": {
+                        device_id: {
+                            subsystem: subsystem_data
+                        }
+                    }
                 }
             }
         }
         
         env = create_envelope(
             registry_id=registry_id,
-            device_id=registry_id,
+            device_id=registry_id, # Target mocket handling the registry
             sub_type="model",
             sub_folder="cloud",
-            source="butler"
+            source=self.principal
         )
         payload = create_payload("cloud", payload_data)
         self.transport.publish(env, payload)
 
     def rollback_cloud_model(self, registry_id, device_id, subsystem):
-        model = self.models.get(registry_id, {})
-        devices = model.get("devices", model)
+        devices = self.models.get(registry_id, {})
         dev_info = devices.get(device_id, {}).get(subsystem, {})
         lkg = dev_info.get("lkg_version", "0.0.0")
         self.update_cloud_model(registry_id, device_id, subsystem, target_version=lkg)
@@ -131,10 +142,7 @@ class Orchestrator:
             return
         
         now = time.time()
-        for registry_id, model in self.models.items():
-            devices = model.get("devices", model)
-            if not isinstance(devices, dict): continue
-
+        for registry_id, devices in self.models.items():
             for device_id, subsystems in devices.items():
                 if not isinstance(subsystems, dict): continue
                 for subsystem, info in subsystems.items():
@@ -150,7 +158,16 @@ class Orchestrator:
                     target = info.get("target_version")
                     current = info.get("current_version")
                     
-                    if target != current and key not in self.pending_updates:
+                    retrigger = False
+                    if key in self.pending_updates:
+                        pending_target = self.pending_updates[key]["target_version"]
+                        if target != pending_target and target != current:
+                            print(f"[butler] Retriggering {key}: target {target} != pending {pending_target}", flush=True)
+                            retrigger = True
+                    elif target != current:
+                        retrigger = True
+
+                    if retrigger:
                         print(f"[butler] Reconciliation triggered for {registry_id}/{device_id}: {current} -> {target}", flush=True)
                         
                         if self.fail_mode: continue
@@ -163,14 +180,15 @@ class Orchestrator:
                             update_data = {
                                 "version": target,
                                 "url": metadata["url"],
-                                "sha256": metadata["sha256"]
+                                "sha256": metadata["sha256"],
+                                "subsystem": subsystem
                             }
                             env = create_envelope(
                                 registry_id=registry_id,
                                 device_id=device_id,
                                 sub_type="config",
                                 sub_folder="update",
-                                source="butler"
+                                source=self.principal
                             )
                             payload = create_payload("update", update_data)
                             self.transport.publish(env, payload)
@@ -196,6 +214,7 @@ class Orchestrator:
 
     def send_handshake(self):
         self.handshake_tid = f"handshake-{int(time.time())}"
+        self.handshake_start_time = time.time()
         udmi_payload = {
             "setup": {
                 "functions_ver": 9,
@@ -205,8 +224,6 @@ class Orchestrator:
             }
         }
         env = create_envelope(
-            registry_id="",
-            device_id="",
             sub_type="state",
             sub_folder="udmi",
             transaction_id=self.handshake_tid,
@@ -220,26 +237,29 @@ class Orchestrator:
     def run(self):
         self.transport.connect()
         
-        # Subscribe to handshake reply
+        # Subscribe to handshake reply and discovery
         if self.conn_spec.protocol == "mqtt":
-            self.transport.subscribe(f"/uufi/{self.conn_spec.prefix + '/' if self.conn_spec.prefix else ''}p/{self.principal}/config/udmi", self.on_message)
-            self.transport.subscribe(f"/uufi/{self.conn_spec.prefix + '/' if self.conn_spec.prefix else ''}r/+/d/+/state/update", self.on_message)
-            self.transport.subscribe(f"/uufi/{self.conn_spec.prefix + '/' if self.conn_spec.prefix else ''}r/+/d/+/config/cloud", self.on_message)
+            # New unified topics: /uufi/c/...
+            prefix = self.conn_spec.prefix + '/' if self.conn_spec.prefix else ''
+            self.transport.subscribe(f"/{prefix}uufi/c/config/udmi", self.on_message)
+            self.transport.subscribe(f"/{prefix}uufi/c/config/cloud", self.on_message)
+            self.transport.subscribe(f"/{prefix}uufi/r/+/d/+/c/state/update", self.on_message)
+            self.transport.subscribe(f"/{prefix}uufi/r/+/d/+/c/config/cloud", self.on_message)
         else:
             self.transport.subscribe(self.on_message)
 
         self.transport.loop_start()
         
-        last_handshake = 0
+        self.send_handshake()
+        
         try:
             while True:
+                now = time.time()
                 if not self.is_active:
-                    now = time.time()
-                    if now - last_handshake > 5:
-                        self.send_handshake()
-                        last_handshake = now
-                
-                if self.is_active:
+                    if now - self.handshake_start_time > 60:
+                        print("[butler] CRITICAL: Handshake timeout. Fail-fast.", flush=True)
+                        sys.exit(1)
+                else:
                     self.check_reconciliation()
                     self.check_timeouts()
                 time.sleep(2)

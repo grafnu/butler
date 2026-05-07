@@ -45,24 +45,30 @@ class MqttTransport(Transport):
         if data:
             payload = data.get("payload", data)
             # Envelope fields from JSON if present
-            for field in ["transactionId", "nonce", "publishTime", "source", "projectId"]:
+            for field in ["transactionId", "nonce", "publishTime", "source", "projectId", "principal"]:
                 if field in data: env[field] = data[field]
         
         # Parse topic to extract envelope
-        parts = msg.topic.split('/')
-        offset = 1 if self.conn_spec.prefix else 0
+        # Structure: /{prefix}/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}
+        parts = msg.topic.strip('/').split('/')
         
-        # Envelope fields from topic
-        if len(parts) >= 6 + offset and parts[1] == "uufi":
-            if parts[2+offset] == "p":
-                env["principal"] = parts[3+offset]
-                env["subType"] = parts[4+offset]
-                env["subFolder"] = parts[5+offset]
-            elif parts[2+offset] == "r" and len(parts) >= 8 + offset:
-                env["deviceRegistryId"] = parts[3+offset]
-                env["deviceId"] = parts[5+offset]
-                env["subType"] = parts[6+offset]
-                env["subFolder"] = parts[7+offset]
+        try:
+            uufi_idx = parts.index("uufi")
+        except ValueError:
+            return
+
+        rem = parts[uufi_idx + 1:]
+        
+        if "c" in rem:
+            c_idx = rem.index("c")
+            if c_idx >= 2 and rem[0] == "r":
+                env["deviceRegistryId"] = rem[1]
+                if c_idx >= 4 and rem[2] == "d":
+                    env["deviceId"] = rem[3]
+            
+            if len(rem) > c_idx + 2:
+                env["subType"] = rem[c_idx + 1]
+                env["subFolder"] = rem[c_idx + 2]
 
         self.callback(env, payload, msg.topic, raw_payload)
 
@@ -70,23 +76,26 @@ class MqttTransport(Transport):
         topic = self.get_topic(envelope)
         
         # Prepare wrapped payload for MQTT
-        # "Crucially, the top-level JSON envelope MUST NOT include fields that are already encoded in the MQTT topic structure"
+        # "Crucially, the top-level JSON envelope MUST only include data NOT already encoded in the MQTT topic structure"
         wrapped = {"payload": payload}
-        for field in ["transactionId", "nonce", "publishTime", "source", "projectId"]:
+        for field in ["transactionId", "nonce", "publishTime", "source", "projectId", "principal"]:
             if field in envelope: wrapped[field] = envelope[field]
             
         self.client.publish(topic, json.dumps(wrapped))
 
     def get_topic(self, env):
-        parts = ["uufi"]
+        parts = []
         if self.conn_spec.prefix:
             parts.append(self.conn_spec.prefix)
+        parts.append("uufi")
             
         if env.get("deviceRegistryId"):
-            parts.extend(["r", env["deviceRegistryId"], "d", env["deviceId"], env["subType"], env["subFolder"]])
-        else:
-            principal = env.get("principal") or self.conn_spec.username or "system"
-            parts.extend(["p", principal, env["subType"], env["subFolder"]])
+            parts.extend(["r", env["deviceRegistryId"]])
+            if env.get("deviceId"):
+                parts.extend(["d", env["deviceId"]])
+        
+        parts.append("c")
+        parts.extend([env.get("subType", "unknown"), env.get("subFolder", "unknown")])
             
         return "/" + "/".join(parts)
 

@@ -4,6 +4,7 @@ import time
 import sys
 import argparse
 import re
+import datetime
 from butler.messaging import create_payload, create_envelope
 from butler.conn_spec import parse_conn_spec
 from butler.transport import get_transport
@@ -18,7 +19,7 @@ class Verifier:
         self.strict_ts_regex = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$')
         # Graceful format (permissive RFC 3339)
         self.graceful_ts_regex = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$')
-        self.default_registry_id = "butler-registry"
+        self.default_registry_id = "default"
 
     def on_message(self, env, payload, topic, raw=None):
         if not payload: return
@@ -32,28 +33,29 @@ class Verifier:
 
         # Mandatory field validation
         if "timestamp" not in payload or "version" not in payload:
-            self.log_verification(registry_id, "Missing mandatory UDMI fields (timestamp or version)", level="FAIL")
+            self.log_verification(registry_id, device_id or "_validator", "Missing mandatory UDMI fields (timestamp or version)", level="FAIL")
             return
         
         timestamp = payload.get("timestamp")
         # Strict for butler, graceful for everyone else
         if source == "butler":
             if not self.strict_ts_regex.match(timestamp):
-                self.log_verification(registry_id, f"Butler emitted non-strict timestamp: {timestamp}", level="FAIL")
+                self.log_verification(registry_id, device_id or "_validator", f"Butler emitted non-strict timestamp: {timestamp}", level="FAIL")
                 return
         else:
             if not self.graceful_ts_regex.match(timestamp):
-                self.log_verification(registry_id, f"Invalid timestamp format from {source}: {timestamp}", level="FAIL")
+                self.log_verification(registry_id, device_id or "_validator", f"Invalid timestamp format from {source}: {timestamp}", level="FAIL")
                 return
 
-        # Monitor Handshake on /uufi/p/
+        # Monitor Handshake on /uufi/c/
         if sub_folder == "udmi" and not device_id:
             if sub_type == "state":
                 udmi = payload.get("udmi", payload)
                 setup = udmi.get("setup", {})
                 tid = setup.get("transaction_id")
-                self.handshakes[principal] = {"tid": tid, "active": False}
-                self.log_verification(registry_id, f"Handshake started for {principal} (tid: {tid})")
+                if principal:
+                    self.handshakes[principal] = {"tid": tid, "active": False}
+                    self.log_verification(registry_id, "_validator", f"Handshake started for {principal} (tid: {tid})")
             
             elif sub_type == "config":
                 udmi = payload.get("udmi", payload)
@@ -61,7 +63,7 @@ class Verifier:
                 tid = reply.get("transaction_id")
                 if principal in self.handshakes and self.handshakes[principal]["tid"] == tid:
                     self.handshakes[principal]["active"] = True
-                    self.log_verification(registry_id, f"Handshake complete for {principal} (tid: {tid})")
+                    self.log_verification(registry_id, "_validator", f"Handshake complete for {principal} (tid: {tid})")
 
         # Monitor Updates on /uufi/r/
         elif sub_type == "state" and sub_folder == "update" and device_id:
@@ -74,15 +76,15 @@ class Verifier:
             prev_state = self.device_states.get(key)
             self.device_states[key] = state
             
-            self.log_verification(registry_id, f"Device {registry_id}/{device_id}/{subsystem} state transition: {prev_state} -> {state} ({current_version})")
+            self.log_verification(registry_id, device_id, f"Device {registry_id}/{device_id}/{subsystem} state transition: {prev_state} -> {state} ({current_version})")
             
             # Check for invalid transitions
             if prev_state == "quiescent" and state not in ["pending", "quiescent"]:
-                self.log_verification(registry_id, f"INVALID TRANSITION: {registry_id}/{device_id}/{subsystem} went from quiescent to {state}", level="FAIL")
+                self.log_verification(registry_id, device_id, f"INVALID TRANSITION: {registry_id}/{device_id}/{subsystem} went from quiescent to {state}", level="FAIL")
             elif prev_state == "pending" and state not in ["success", "failure", "pending"]:
-                self.log_verification(registry_id, f"INVALID TRANSITION: {registry_id}/{device_id}/{subsystem} went from pending to {state}", level="FAIL")
+                self.log_verification(registry_id, device_id, f"INVALID TRANSITION: {registry_id}/{device_id}/{subsystem} went from pending to {state}", level="FAIL")
 
-    def log_verification(self, registry_id, text, level="PASS"):
+    def log_verification(self, registry_id, device_id, text, level="PASS"):
         print(f"[verifier] {level}: {text}", flush=True)
         payload_data = {
             "result": level,
@@ -91,7 +93,7 @@ class Verifier:
         }
         env = create_envelope(
             registry_id=registry_id,
-            device_id="_validator",
+            device_id=device_id,
             sub_type="events",
             sub_folder="validation",
             source="verifier"
@@ -102,7 +104,8 @@ class Verifier:
     def run(self):
         self.transport.connect()
         if self.conn_spec.protocol == "mqtt":
-            self.transport.subscribe("/uufi/#" if not self.conn_spec.prefix else f"/uufi/{self.conn_spec.prefix}/#", self.on_message)
+            prefix = self.conn_spec.prefix + '/' if self.conn_spec.prefix else ''
+            self.transport.subscribe(f"/{prefix}uufi/#", self.on_message)
         else:
             self.transport.subscribe(self.on_message)
         

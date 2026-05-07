@@ -4,6 +4,7 @@ import sys
 import os
 import hashlib
 import argparse
+import datetime
 from butler.messaging import create_payload, create_envelope
 from butler.model_repo import ModelRepository
 from butler.conn_spec import parse_conn_spec
@@ -20,11 +21,11 @@ class MockDevice:
         self.state = "quiescent"
         self.transport = get_transport(conn_spec)
         self.subsystem = "main"
-        self.seen_nonces = set()
+        self.nonce_history = {} # nonce: timestamp
         self.model_repo = ModelRepository()
         
         # Initialize state from model repo if available
-        dev_info = self.model_repo.get_device_state(self.device_id, self.subsystem)
+        dev_info = self.model_repo.get_device_state(self.registry_id, self.device_id, self.subsystem)
         if dev_info:
             self.current_version = dev_info.get("current_version", "0.0.0")
             self.lkg_version = dev_info.get("lkg_version", "0.0.0")
@@ -35,6 +36,18 @@ class MockDevice:
 
     def on_message(self, env, payload, topic, raw=None):
         if not payload: return
+        
+        # Nonce tracking (5 minutes)
+        nonce = env.get("nonce")
+        if nonce:
+            now = time.time()
+            if nonce in self.nonce_history:
+                return
+            self.nonce_history[nonce] = now
+            # Cleanup old nonces
+            to_del = [n for n, t in self.nonce_history.items() if now - t > 300]
+            for n in to_del: del self.nonce_history[n]
+
         sub_type = env.get("subType")
         sub_folder = env.get("subFolder")
         device_id = env.get("deviceId")
@@ -42,29 +55,25 @@ class MockDevice:
         principal = env.get("principal")
 
         # UUFI handshake state from clients
-        if sub_type == "state" and sub_folder == "udmi" and principal:
+        if sub_type == "state" and sub_folder == "udmi" and not device_id:
             self.handle_handshake(principal, payload, env.get("transactionId"))
             return
 
         # Cloud ops
         if sub_folder == "cloud" and (
             (registry_id == self.registry_id and device_id == self.registry_id) or
-            (registry_id == "discovery" and device_id == "discovery")
+            (not registry_id and not device_id) # Discovery query
         ):
             self.handle_cloud_op(sub_type, payload)
             return
 
         # Update config
         if registry_id == self.registry_id and device_id == self.device_id and sub_type == "config" and sub_folder == "update":
-            nonce = env.get("nonce")
-            if nonce in self.seen_nonces: return
-            self.seen_nonces.add(nonce)
-            if len(self.seen_nonces) > 1000: self.seen_nonces.clear()
-
             update = payload.get("update", {})
             url = update.get("url")
             sha256 = update.get("sha256")
             version = update.get("version")
+            subsystem = update.get("subsystem", "main")
 
             if not version: return
 
@@ -119,8 +128,6 @@ class MockDevice:
         }
 
         env = create_envelope(
-            registry_id="",
-            device_id="",
             sub_type="config",
             sub_folder="udmi",
             transaction_id=tid,
@@ -139,33 +146,33 @@ class MockDevice:
         if sub_type == "query" and operation == "READ":
             self.push_model()
         elif sub_type == "model" and operation == "UPDATE":
-            devices = cloud.get("devices", {})
-            for dev_id, subsystems in devices.items():
-                if not isinstance(subsystems, dict): continue
-                for subsystem, info in subsystems.items():
-                    if not isinstance(info, dict): continue
-                    target = info.get("target_version")
-                    current = info.get("current_version")
-                    lkg = info.get("lkg_version")
+            registries = cloud.get("registries", {})
+            for reg_id, reg_data in registries.items():
+                devices = reg_data.get("devices", {})
+                for dev_id, subsystems in devices.items():
+                    if not isinstance(subsystems, dict): continue
+                    for subsystem, info in subsystems.items():
+                        if not isinstance(info, dict): continue
+                        target = info.get("target_version")
+                        current = info.get("current_version")
+                        lkg = info.get("lkg_version")
 
-                    if target is not None:
-                        self.model_repo.set_target_version(dev_id, subsystem, target)
-                    if current is not None:
-                        # Don't automatically update LKG anymore, expect it in the message if needed
-                        self.model_repo.update_current_version(dev_id, subsystem, current, lkg_version=lkg)
+                        if target is not None:
+                            self.model_repo.set_target_version(reg_id, dev_id, subsystem, target)
+                        if current is not None:
+                            self.model_repo.update_current_version(reg_id, dev_id, subsystem, current, lkg_version=lkg)
             self.push_model()
 
     def push_model(self):
         self.model_repo.reload()
-        model_payload_data = self.model_repo.data # This contains {"devices": {...}}
+        # Ensure data is wrapped in registries map
+        model_data = self.model_repo.data
         env = create_envelope(
-            registry_id=self.registry_id,
-            device_id=self.registry_id,
             sub_type="config",
             sub_folder="cloud",
             source="mocket"
         )
-        payload = create_payload("cloud", model_payload_data)
+        payload = create_payload("cloud", model_data)
         self.transport.publish(env, payload)
 
     def report_status(self):
@@ -190,25 +197,31 @@ class MockDevice:
         
         if self.conn_spec.protocol == "mqtt":
             prefix = self.conn_spec.prefix + '/' if self.conn_spec.prefix else ''
-            self.transport.subscribe(f"/uufi/{prefix}r/{self.registry_id}/d/{self.device_id}/config/update", self.on_message)
-            self.transport.subscribe(f"/uufi/{prefix}p/+/state/udmi", self.on_message)
-            self.transport.subscribe(f"/uufi/{prefix}r/{self.registry_id}/d/{self.registry_id}/query/cloud", self.on_message)
-            self.transport.subscribe(f"/uufi/{prefix}r/{self.registry_id}/d/{self.registry_id}/model/cloud", self.on_message)
-            self.transport.subscribe(f"/uufi/{prefix}r/discovery/d/discovery/query/cloud", self.on_message)
+            # Generic UUFI channel for handshakes and discovery
+            self.transport.subscribe(f"/{prefix}uufi/c/+/+", self.on_message)
+            # Registry-specific channel
+            self.transport.subscribe(f"/{prefix}uufi/r/{self.registry_id}/d/{self.device_id}/c/+/+", self.on_message)
+            # Registry-level cloud ops
+            self.transport.subscribe(f"/{prefix}uufi/r/{self.registry_id}/d/{self.registry_id}/c/+/+", self.on_message)
         else:
             self.transport.subscribe(self.on_message)
             
         self.transport.loop_start()
         
         last_push = 0
+        last_status = 0
         try:
             while True:
                 now = time.time()
                 if now - last_push > 5:
                     self.push_model()
                     last_push = now
-                self.report_status()
-                time.sleep(10)
+                
+                if now - last_status > 15:
+                    self.report_status()
+                    last_status = now
+                
+                time.sleep(1)
         except KeyboardInterrupt:
             self.transport.loop_stop()
 

@@ -10,7 +10,7 @@ def main():
     args = parser.parse_args()
 
     print(f"Registering device {args.device_id} in registry {args.registry_id}")
-    ModelRepository().set_device_info(args.device_id, "main", "vibrant", "butler-v1")
+    ModelRepository().set_device_info(args.registry_id, args.device_id, "main", "vibrant", "butler-v1")
 
 if __name__ == "__main__":
     main()

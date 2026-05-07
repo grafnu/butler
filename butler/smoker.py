@@ -57,7 +57,7 @@ def main():
 
     # Prepare model and blob
     model_repo = ModelRepository(model_file)
-    model_repo.set_device_info(device_id, "main", "vibrant", "butler-v1")
+    model_repo.set_device_info(registry_id, device_id, "main", "vibrant", "butler-v1")
     
     blob_repo = BlobRepository(blobs_dir)
     blob_repo.store_blob("vibrant", "butler-v1", "main", "1.1.0", b"SMOKE_TEST_CONTENT")
@@ -67,7 +67,7 @@ def main():
     mocket = subprocess.Popen([sys.executable, "bin/mocket", conn_spec, registry_id, device_id], env=env)
     
     try:
-        time.sleep(5)
+        time.sleep(10) # Wait for handshake and activation
         
         # Trigger update
         print("Triggering update...")
@@ -81,7 +81,7 @@ def main():
         passed = False
         while time.time() - start_time < timeout:
             model_repo.reload()
-            state = model_repo.get_device_state(device_id, "main")
+            state = model_repo.get_device_state(registry_id, device_id, "main")
             if state and state.get("current_version") == "1.1.0":
                 passed = True
                 break
@@ -112,7 +112,7 @@ def main():
         rolled_back = False
         while time.time() - start_time < timeout:
             model_repo.reload()
-            state = model_repo.get_device_state("smoke-dev", "main")
+            state = model_repo.get_device_state(registry_id, device_id, "main")
             if state and state.get("target_version") == "1.1.0":
                 rolled_back = True
                 break
