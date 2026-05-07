@@ -18,8 +18,9 @@ class ButlerVerifier:
         
         self.device_states = {}
         self.active_clients = set()
+        # Minimal precision format: YYYY-MM-DDTHH:MM:SSZ
         self.rfc3339_regex = re.compile(
-            r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$'
+            r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$'
         )
 
     def on_connect(self):

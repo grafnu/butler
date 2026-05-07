@@ -14,6 +14,7 @@ class MocketDevice:
         self.device_id = device_id
         self.failure_mode = failure_mode
         self.current_version = "1.0"
+        self.lkg_version = "1.0"
         self.status = "quiescent"
         self.model_repo = ModelRepository()
         
@@ -158,6 +159,7 @@ class MocketDevice:
                 
                 if success:
                     print(f"[mocket] Device {self.device_id} update successful to {version}")
+                    self.lkg_version = self.current_version
                     self.current_version = version
                     self.status = "success"
                 else:
@@ -182,6 +184,7 @@ class MocketDevice:
     def report_state(self):
         payload = {
             "version": self.current_version,
+            "lkg_version": self.lkg_version,
             "status": self.status
         }
         self.publish_uufi(self.device_id, "state", payload, "update", direction="reflect")

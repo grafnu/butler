@@ -61,7 +61,9 @@ class ButlerOrchestrator:
                     # For now, we just take the first subsystem data
                     subsystem_id, subsystem_data = next(iter(subsystems.items()))
                     print(f"[butler] Received model info for {device_id}/{subsystem_id}")
-                    self.known_devices[device_id] = subsystem_data
+                    if device_id not in self.known_devices:
+                        self.known_devices[device_id] = {}
+                    self.known_devices[device_id].update(subsystem_data)
                     # Reconcile if needed
                     self.reconcile_device(device_id)
         elif cloud_data.get("status") == "success":
@@ -71,16 +73,24 @@ class ButlerOrchestrator:
         # Look inside the 'update' subfolder for the device state
         update_state = data.get("update", {})
         current_version = update_state.get("version")
+        lkg_version = update_state.get("lkg_version")
         status = update_state.get("status", "quiescent")
+        registry_id = data.get("deviceRegistryId")
         
-        print(f"[butler] Received device state for {device_id}: {status} (v{current_version})")
+        print(f"[butler] Received device state for {device_id} (reg: {registry_id}): {status} (v{current_version}, lkg: {lkg_version})")
         
         device_info = self.known_devices.get(device_id)
         if not device_info:
             # If we don't know the device, query the model
             print(f"[butler] Unknown device {device_id}, querying model...")
+            # We can store the registry_id here if we want to support multi-registry discovery
+            self.known_devices[device_id] = {"registry_id": registry_id}
             self.query_model(device_id)
             return
+
+        # Ensure registry_id is updated in cache
+        if registry_id:
+            device_info["registry_id"] = registry_id
 
         target_version = device_info.get("target_version")
         old_status = device_info.get("state")
@@ -94,15 +104,15 @@ class ButlerOrchestrator:
             else:
                 if device_info.get("state") != "quiescent":
                     print(f"[butler] Device {device_id} is quiescent and compliant.")
-                    self.update_model(device_id, current_version=current_version, state="quiescent")
+                    self.update_model(device_id, current_version=current_version, last_known_good=lkg_version, state="quiescent")
         
         elif status == "success":
             if device_info.get("current_version") != current_version or device_info.get("state") != "quiescent":
                 print(f"[butler] Device {device_id} success reported. Requesting model update.")
-                self.update_model(device_id, current_version=current_version, last_known_good=current_version, state="quiescent")
+                self.update_model(device_id, current_version=current_version, last_known_good=lkg_version, state="quiescent")
                 # Also update local cache
                 device_info["current_version"] = current_version
-                device_info["last_known_good"] = current_version
+                device_info["last_known_good"] = lkg_version
                 device_info["state"] = "quiescent"
             if device_id in self.devices_pending:
                 del self.devices_pending[device_id]
@@ -117,7 +127,9 @@ class ButlerOrchestrator:
         payload = {
             "operation": "READ"
         }
-        self.publish_uufi(device_id, "query", payload, "cloud")
+        device_info = self.known_devices.get(device_id, {}) if device_id else {}
+        registry_id = device_info.get("registry_id")
+        self.publish_uufi(device_id, "query", payload, "cloud", registry_id=registry_id)
 
     def update_model(self, device_id, **detail):
         # Nested structure as per 3.2: {"devices": { "device_id": { "subsystem": { ... } } } }
@@ -126,6 +138,7 @@ class ButlerOrchestrator:
         self.known_devices[device_id] = device_info # update cache
         
         subsystem = device_info.get("subsystem", "main")
+        registry_id = device_info.get("registry_id")
         payload = {
             "operation": "UPDATE",
             "devices": {
@@ -134,7 +147,7 @@ class ButlerOrchestrator:
                 }
             }
         }
-        self.publish_uufi(device_id, "model", payload, "cloud")
+        self.publish_uufi(device_id, "model", payload, "cloud", registry_id=registry_id)
         self.last_action_time[device_id] = time.time()
 
     def trigger_update(self, device_id, device_info):
@@ -145,6 +158,7 @@ class ButlerOrchestrator:
         make = device_info.get("make", "default")
         model = device_info.get("model", "default")
         subsystem = device_info.get("subsystem", "main")
+        registry_id = device_info.get("registry_id")
         
         print(f"[butler] Triggering update for {device_id} to version {version}")
         metadata = self.blob_repo.get_blob_metadata(make, model, subsystem, version)
@@ -155,7 +169,7 @@ class ButlerOrchestrator:
                 "message": f"No blob metadata found for {make}/{model}/{subsystem}/{version}",
                 "transactionId": f"BUTLER:{self.generate_nonce()}"
             }
-            self.publish_uufi(device_id, "errors", error_payload, "update")
+            self.publish_uufi(device_id, "errors", error_payload, "update", registry_id=registry_id)
             return
         
         payload = {
@@ -163,7 +177,7 @@ class ButlerOrchestrator:
             "sha256": metadata["sha256"],
             "version": version
         }
-        self.publish_uufi(device_id, "config", payload, "update", target_principal="mocket")
+        self.publish_uufi(device_id, "config", payload, "update", target_principal="mocket", registry_id=registry_id)
         self.devices_pending[device_id] = time.time()
         self.last_action_time[device_id] = time.time()
         # Update local cache and model

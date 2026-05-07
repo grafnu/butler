@@ -127,7 +127,7 @@ class ButlerBusBase:
     def loop_forever(self):
         pass
 
-    def publish_uufi(self, device_id, sub_type, payload_data, sub_folder=None, direction="reflect", target_principal=None, transaction_id=None):
+    def publish_uufi(self, device_id, sub_type, payload_data, sub_folder=None, direction="reflect", target_principal=None, transaction_id=None, registry_id=None):
         pass
 
     def subscribe_uufi(self):
@@ -198,6 +198,7 @@ class ButlerMQTTBase(ButlerBusBase):
                     sub_type = parts[uufi_idx + 3]
                     sub_folder = parts[uufi_idx + 4] if len(parts) > uufi_idx + 4 else None
                     device_id = None
+                    registry_id = None
                 else:
                     self.on_raw_message(msg.topic, payload_str)
                     return
@@ -207,6 +208,10 @@ class ButlerMQTTBase(ButlerBusBase):
                     if k != "payload":
                         udmi_payload[k] = v
                 
+                # Add registry_id to payload for dynamic discovery
+                if registry_id:
+                    udmi_payload["deviceRegistryId"] = registry_id
+
                 self._handle_received_message(msg.topic, device_id, sub_type, sub_folder, udmi_payload)
             except json.JSONDecodeError:
                 self.on_raw_message(msg.topic, payload_str)
@@ -225,7 +230,7 @@ class ButlerMQTTBase(ButlerBusBase):
     def loop_forever(self):
         self.client.loop_forever()
 
-    def publish_uufi(self, device_id, sub_type, payload_data, sub_folder=None, direction="reflect", target_principal=None, transaction_id=None):
+    def publish_uufi(self, device_id, sub_type, payload_data, sub_folder=None, direction="reflect", target_principal=None, transaction_id=None, registry_id=None):
         publish_time = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         nonce = self.generate_nonce()
         is_handshake = (sub_folder == "udmi")
@@ -254,7 +259,7 @@ class ButlerMQTTBase(ButlerBusBase):
         if is_handshake:
             topic_parts.extend(["p", target_principal or self.principal])
         else:
-            topic_parts.extend(["r", self.registry_id, "d", str(device_id) if device_id is not None else "all"])
+            topic_parts.extend(["r", registry_id or self.registry_id, "d", str(device_id) if device_id is not None else "all"])
         topic_parts.append(sub_type)
         if sub_folder:
             topic_parts.append(sub_folder)
@@ -288,7 +293,7 @@ class ButlerPubSubBase(ButlerBusBase):
                 print(f"[{self.source}] Note: Using existing subscription or permission denied for creation: {e}")
         self.on_connect()
 
-    def publish_uufi(self, device_id, sub_type, payload_data, sub_folder=None, direction="reflect", target_principal=None, transaction_id=None):
+    def publish_uufi(self, device_id, sub_type, payload_data, sub_folder=None, direction="reflect", target_principal=None, transaction_id=None, registry_id=None):
         publish_time = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         nonce = self.generate_nonce()
         is_handshake = (sub_folder == "udmi")
@@ -306,7 +311,7 @@ class ButlerPubSubBase(ButlerBusBase):
         # PubSub Attributes (Envelope fields as per 4.1)
         attributes = {
             "projectId": self.project_id,
-            "deviceRegistryId": "" if is_handshake else self.registry_id,
+            "deviceRegistryId": registry_id or ("" if is_handshake else self.registry_id),
             "deviceId": "" if is_handshake else (device_id or ""),
             "subFolder": sub_folder or "",
             "subType": sub_type,
