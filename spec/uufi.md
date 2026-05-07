@@ -113,7 +113,7 @@ Because the initial handshake is generic and occurs before the Client is associa
 **Important:** Handshake messages MUST be addressed using this principal-based scheme instead of the standard registry-based addressing (`/uufi/r/...`).
 
 ### Timeouts and Retries
-Clients SHOULD implement a handshake timeout (default 30s). If no matching configuration reply is received within this window, the Client SHOULD retry the handshake with an exponential backoff, utilizing a new `transaction_id` for each attempt.
+The handshake MUST be completed within 60 seconds. If no matching configuration reply is received within this window, the Client MUST log a critical error and terminate the connection (Fail-fast). Retries with exponential backoff SHOULD only be used if the connection itself fails before the handshake can be initiated.
 
 ## 4. Message Encapsulation
 
@@ -170,8 +170,8 @@ UUFI supports direct operations on the Cloud Model by setting specific attribute
 ### 5.1. Cloud Model Schema
 The `CloudModel` object used in these operations contains:
 - `operation`: The action to perform (`READ`, `CREATE`, `UPDATE`, `DELETE`, `BIND`, `UNBIND`).
-- `devices`: A map where keys are `deviceId` and values are a map of `subsystem` identifiers to their state objects.
-  - *Example structure:* `{"devices": {"dev-001": {"main": {"target_version": "1.1.0", "current_version": "1.0.0"}}}}`
+- `registries`: A map where keys are `registry_id`, values are maps of `device_id` to subsystem states.
+  - *Example structure:* `{"registries": {"reg-A": {"devices": {"dev-001": {"main": {"target_version": "1.1.0", "current_version": "1.0.0"}}}}}}`
 - `detail`: (Optional) Additional parameters specific to the operation.
 
 ### 5.2. Cloud Model Queries
@@ -422,8 +422,9 @@ Every message's inner `payload` object MUST contain `timestamp` and `version` fi
 - **Payload Structure:** The `payload` object MUST contain exactly one top-level key matching the `subFolder` name (e.g., `system`, `pointset`, `update`, `cloud`), which contains the UDMI data, in addition to the mandatory `timestamp` and `version` fields at the same level.
 - **Field Consistency:**
     - **Current Version:** Devices MUST report their active firmware version using the `current_version` field within the inner `state` data.
+    - **LKG Version:** Devices MUST report their most recent verified operational version using the `lkg_version` field.
     - **Operation Status:** Devices MUST report their operational state (e.g., `quiescent`, `pending`, `success`, `failure`) using the `status` field.
-- **Guidance:** Ensure `publishTime` is in the envelope and `timestamp` is in the inner payload. Ensure `version` is present in the payload. Use the subfolder wrapper for all UDMI fields.
+- **Guidance:** Ensure `publishTime` is in the envelope and `timestamp` is in the inner payload. Ensure `version` and `lkg_version` are present in the payload. Use the subfolder wrapper for all UDMI fields.
 
 ### 9.2. Handshake Addressing
 The `/uufi/p/{principal}/` topic prefix MUST be used for the initial handshake.
