@@ -1,0 +1,34 @@
+Merge Integration Test Results Summary
+=======================================
+
+Test Matrix:
+- Butler=A, Verifier=B: FAILED (Timeout)
+- Butler=B, Verifier=C: FAILED (Timeout/Handshake)
+- Butler=C, Verifier=A: FAILED (Timeout/Handshake)
+
+Diagnoses:
+----------
+
+1. Architectural Mismatch (Model Access):
+   - Implementation A (and C partially) treat the Cloud Model as an MQTT-based service. The Butler sends 'query/cloud' and expects a 'config/cloud' response. In A, the Mocket/Device responds to these queries.
+   - Implementation B treats the Cloud Model as a shared file ('model.json'). Its tools (register/trigger) update the file directly but do not publish MQTT notifications. A's Butler never sees the updates because it doesn't watch the file and doesn't receive MQTT messages from B's tools.
+
+2. Topic Structure Incompatibility (Implementation C):
+   - Implementations A and B use the '/uufi/c/' pattern for common messages and '/uufi/r/.../c/' for registry-scoped messages.
+   - Implementation C uses a '/uufi/p/{principal}/' pattern, which is incompatible with the others. This caused Handshake timeouts in all tests involving C.
+
+3. Model Schema Incompatibility:
+   - Implementations A and B use a nested structure: {"registries": {"reg1": {"devices": {"dev1": ...}}}}.
+   - Implementation C uses a flat structure: {"devices": {"dev1": ...}}.
+   - This caused KeyErrors when C's tools tried to interact with models created by A or B.
+
+4. Handshake Requirements:
+   - A and B require a UDMI handshake before processing traffic. C also requires one but on different topics.
+   - B's Verifier tool does not respond to handshakes, preventing it from verifying A's Butler.
+
+Recommendations for spec/ changes:
+----------------------------------
+- Mandate the topic structure: Use '/uufi/c/' for common and '/uufi/r/{reg}/d/{dev}/c/' for device-scoped messages. Eliminate '/uufi/p/'.
+- Explicitly define Model Access: Determine if the model is a shared file or an MQTT service. If it's a service, define the responder role.
+- Standardize Model Schema: Mandate the nested 'registries' structure to support multi-registry environments.
+- Formalize Handshake: Define topics and payloads for handshakes and mandate that all components (Butler, Mocket, Verifier) must support and respond to them.

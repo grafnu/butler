@@ -3,5 +3,4 @@ __pycache__
 testing/
 tmp/
 blobs/
-opt_*/
-opt_*.log
+impl/

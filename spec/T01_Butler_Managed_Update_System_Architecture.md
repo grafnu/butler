@@ -121,13 +121,15 @@ indicate test failure, they should have enough information to guide the implemen
 
 ### The Verifier
 
-The Verifier watches the channel and reports results if the observed sequences pass or fail expecations as accoring to the spec.
-It is purely an observational test utility, used to either validate an installed system or to guide an active agent towards a complete
+The Verifier watches the channel and reports results if the observed sequences pass or fail expectations according to the spec.
+It is an **Active Observer**, used to either validate an installed system or to guide an active agent towards a complete
 functioning implementation. When it detects a valid sequence, or an invalid message, it will output a validation message.
 
 **Verifier Requirements:**
-- **Handshake Awareness:** The Verifier MUST monitor the `/uufi/c/` handshake topics to ensure clients successfully activate before performing operations.
-- **Validation Schema:** It SHOULD validate that all messages contain the mandatory UDMI `payload` fields (`timestamp`, `version`) and that timestamps follow the RFC 3339 format.
+- **Handshake Protocol:** The Verifier MUST perform a full UUFI handshake and become **Active** before performing its validation duties to ensure it is synchronized with the System state.
+- **Handshake Awareness:** The Verifier MUST monitor the `/uufi/p/{principal}/c/` handshake topics to ensure other clients successfully activate before performing operations.
+- **Validation Schema:** It SHOULD validate that all messages contain the mandatory UDMI `payload` fields (`timestamp`, `version`).
+- **Timestamp Strictness:** The Verifier MUST strictly enforce the minimal precision format (RFC 3339) for all messages originating *from* the Butler orchestrator. It SHOULD be graceful for messages originating from other sources (e.g., devices) to ensure interoperability while still validating core system behavior.
 - **State Transition Monitoring:** It MUST track the state transitions for device subsystems using the `update` subfolder (e.g., `quiescent` -> `pending` -> `success/failure`).
 - **Reporting Topic:** Verification results MUST be published to the registry-scoped validation topic: `/uufi/r/{registry_id}/d/{device_id}/validation`.
 - **Envelope:** Reports MUST be reported using a UUFI-compliant envelope with the `validation` subFolder.
@@ -141,7 +143,7 @@ state. When this is the case, `verifier` should detect that there was an invalid
 
 ### Observer
 
-The `observe` utility should observe _all_ available traffic for the indicated communication channel. This should show all the communication
+The `observe` utility should observe _all_ available traffic for the indicated communication channel. It is a **Passive Observer** and MUST NOT initiate a handshake. This should show all the communication
 between the components, regardless of the `device_id` or other configuration parameters.
 
 **Output Format:**
