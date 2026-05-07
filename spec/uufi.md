@@ -62,18 +62,17 @@ not all receive every message.
 Not all received messages will have a `principal` attribute as some are generic (e.g. telemetry received from a building). Only
 messages that are explicitly intended for the recipient (e.g. message acks) will have this attribute present. The subscription
 should be filtered to only include messages that have this (matching) attribute or the attribute missing. Received UUFI
-will have the principle of _butler_, not of the sending entity. The principal in a received message indicates the **Session Owner** (the identity of the entity managing that specific communication channel), rather than strictly the sender or receiver. All messages in/out from one entity (e.g. `butler`) will have the same `principal` attribute value.
+will have a `principal` indicating the **Session Owner** (the identity of the entity managing that specific communication channel), rather than strictly the sender or receiver. All messages in/out from one entity will have the same `principal` attribute value.
 
 **MQTT (`mqtt://`)**
 *   The base `host` and `:port` map as expected (network address).
-*   The `user@` prefix maps to a `username` property that's added to the MQTT topic path (e.g., as the `{principal}` identifier in `/uufi/p/{principal}/...`).
-  * Clients need to subscribe to two topics (with and without the principal) to also receive generic broadcast messages.
-*   **Discovery Topic:** For proactive discovery in MQTT, clients SHOULD publish a `query/cloud` message to the dedicated topic `/uufi/c/query/cloud`.
-  * All model-hosting components (Systems/Mockets) MUST subscribe to this topic and respond by pushing their current model to their respective registry topics.
-*   *Example:* `mqtt://the-user@localhost:1883/a-prefix` maps to:
-  * The MQTT broker at `localhost:1883`
-  * Adds `a-prefix` as the root of the topic path (e.g., `/a-prefix/uufi/c/...`).
-    * The resulting structure follows the pattern `/{prefix}/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`.
+*   **Topic Isolation (Pattern C):** All MQTT topic paths MUST be prefixed with the principal identifier to ensure session isolation. The principal is derived from the `user@` component of the connection string (defaulting to `unknown`).
+  *   **Structure:** `/uufi/p/{principal}/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
+  *   *Example:* `mqtt://butler@localhost` uses prefix `/uufi/p/butler/`.
+*   **Cloud Model Service:** The Cloud Model is managed as an MQTT-based service.
+  *   **Discovery:** Clients (like the Butler) MUST publish a `query/cloud` message to the registry-less topic `/uufi/p/{principal}/c/query/cloud`.
+  *   **Responder Role:** A Model-Hosting component (System/Mocket) MUST subscribe to these queries and respond by publishing the current model to the `/uufi/p/{principal}/c/config/cloud` topic.
+  *   **Model Schema:** The Cloud Model MUST use the nested **Registries** structure to support multi-registry environments (see Section 5.1).
 
 ### 2.2. PubSub Transport
 The Client must have access to the GCP project where the UDMI system is deployed.
@@ -87,32 +86,31 @@ The Client must have access to the GCP project where the UDMI system is deployed
 For local testing or on-premise deployments, a standard MQTT broker (like Mosquitto) can be used.
 
 *   **Broker URL:** Typically `tcp://localhost:1883` or `ssl://localhost:8883`.
-*   **Topic Structure:** `/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
+*   **Topic Structure:** `/uufi/p/{principal}/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
 *   **Authentication:** Username/Password or mTLS (certificate-based).
 
 ## 3. Handshake Protocol
 
 Upon connection, the Client must perform a handshake to synchronize with the System. **The Handshake is always initiated by the Client. The System MUST NOT initiate a handshake unless it is acting as a Client to a higher-level System.**
 
-1.  **State Declaration:** The Client publishes a UDMI `state` message to the UUFI topic. This message must include a `udmi` subfolder with a `setup` block (see `state_udmi.json`).
+1.  **State Declaration:**
+ The Client publishes a UDMI `state` message to the UUFI topic. This message must include a `udmi` subfolder with a `setup` block (see `state_udmi.json`).
     -   `functions_ver`: The version of the UDMI functions the Client expects.
     -   `transaction_id`: A unique ID for the handshake transaction.
-    -   **Addressing:** The Client MUST use the registry-less `/uufi/c/state/udmi` topic and include its unique identity in the `source` field in the envelope.
+    -   **Addressing:** The Client MUST use the registry-less `/uufi/p/{principal}/c/state/udmi` topic and include its unique identity in the `source` field in the envelope.
 
 2.  **Configuration Confirmation:** The System responds via the reply channel by updating the Client's `config`. This message includes a `udmi` subfolder (see `config_udmi.json`) containing:
     -   `setup`: System version information (min/max supported function versions).
     -   `reply`: A copy of the Client's setup block to confirm receipt.
-    -   **Addressing:** The System MUST publish the reply to the `/uufi/c/config/udmi` topic. Clients filter incoming messages by `transactionId` or `principal` in the envelope.
+    -   **Addressing:** The System MUST publish the reply to the `/uufi/p/{principal}/c/config/udmi` topic. Clients filter incoming messages by `transactionId` or `principal` in the envelope.
 
 The Client is considered **Active** only after receiving a configuration reply where the `transaction_id` inside the `udmi.reply` block matches the `transaction_id` sent in the original `state` message.
 
 ### Handshake Addressing
-Because the initial handshake is generic and occurs before the Client is associated with a specific registry or device, a distinct addressing scheme is used:
+Because the initial handshake is generic and occurs before the Client is associated with a specific registry or device, the registry-less Pattern C structure is used:
 
 - **PubSub:** The `deviceRegistryId` and `deviceId` message attributes MUST be not present empty strings (or `null`).
-- **MQTT:** The topic MUST use the mandatory `c/` topic segment without registry or device segments.
-  - The resulting topic structure is `/uufi/c/{subType}/{subFolder}`.
-  - **Note:** Principal identification is handled via the message envelope.
+- **MQTT:** The topic MUST be `/uufi/p/{principal}/c/{subType}/{subFolder}`.
 
 **Important:** Handshake messages MUST be addressed using this registry-less scheme instead of registry-based addressing (`/uufi/r/.../c/...`).
 
@@ -450,5 +448,4 @@ Top-level envelope fields MUST only include data NOT already encoded in the MQTT
 All timestamps MUST follow RFC 3339 in the **minimal precision format** (e.g., `2026-05-01T22:32:17Z`). Implementations should use UTC to avoid ambiguity. Microseconds or numeric time zone offsets MUST NOT be used when generating messages. 
 
 **Permissiveness Rule:**
-- **Butler/Mocket:** These components MUST be strict in what they send (minimal precision only) but SHOULD be permissive in what they receive (handling microseconds or offsets gracefully).
-- **Verifier:** The Verifier MUST strictly enforce the minimal precision format for all messages originating *from* the Butler orchestrator. It SHOULD be graceful for messages originating from other sources (e.g., devices) to ensure interoperability while still validating core system behavior.
+All components MUST be strict in what they send (minimal precision only) but SHOULD be permissive in what they receive (handling microseconds or offsets gracefully).
