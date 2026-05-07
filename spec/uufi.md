@@ -67,13 +67,12 @@ of the receiver, not the sender. All messages in/out from one entity (e.g. `butl
 
 **MQTT (`mqtt://`)**
 *   The base `host` and `:port` map as expected (network address).
-*   The `user@` prefix maps to a `username` property that's added to the MQTT topic path (e.g., as the `{principal}` identifier in `/uufi/p/{principal}/...`).
-  * Clients need to subscribe to two topics (with and without the principal) to also receive generic broadcast messages.
-*   The first URL path part, if present, maps to an optional topic prefix (else empty)
+*   The `user@` prefix maps to the `principal` identifier included in the message envelope.
+*   The first URL path part, if present, maps to an optional topic prefix (else empty).
 *   *Example:* `mqtt://the-user@localhost:1883/a-prefix` maps to:
   * The MQTT broker at `localhost:1883`
-  * Adds `the-user` and `a-prefix` into the MQTT topic path (e.g., `/uufi/a-prefix/p/the-user/...`).
-    * The prefix is optional, with the pattern being `/uufi/` + [`{prefix}/`]
+  * Adds `a-prefix` as the root of the topic path (e.g., `/a-prefix/uufi/c/...`).
+    * The resulting structure follows the pattern `/{prefix}/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`.
 
 ### 2.2. PubSub Transport
 The Client must have access to the GCP project where the UDMI system is deployed.
@@ -87,19 +86,22 @@ The Client must have access to the GCP project where the UDMI system is deployed
 For local testing or on-premise deployments, a standard MQTT broker (like Mosquitto) can be used.
 
 *   **Broker URL:** Typically `tcp://localhost:1883` or `ssl://localhost:8883`.
-*   **Topic Prefix:** `/uufi/r/{registryId}/d/{deviceId}` where `registryId` is the Managed Registry.
+*   **Topic Structure:** `/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
 *   **Authentication:** Username/Password or mTLS (certificate-based).
 
 ## 3. Handshake Protocol
 
-Upon connection, the Client must perform a handshake to synchronize with the System.
+Upon connection, the Client must perform a handshake to synchronize with the System. **The Handshake is always initiated by the Client. The System MUST NOT initiate a handshake unless it is acting as a Client to a higher-level System.**
 
 1.  **State Declaration:** The Client publishes a UDMI `state` message to the UUFI topic. This message must include a `udmi` subfolder with a `setup` block (see `state_udmi.json`).
     -   `functions_ver`: The version of the UDMI functions the Client expects.
     -   `transaction_id`: A unique ID for the handshake transaction.
+    -   **Addressing:** The Client MUST use the registry-less `/uufi/c/state/udmi` topic and include its unique identity in the `source` field in the envelope.
+
 2.  **Configuration Confirmation:** The System responds via the reply channel by updating the Client's `config`. This message includes a `udmi` subfolder (see `config_udmi.json`) containing:
     -   `setup`: System version information (min/max supported function versions).
     -   `reply`: A copy of the Client's setup block to confirm receipt.
+    -   **Addressing:** The System MUST publish the reply to the `/uufi/c/config/udmi` topic. Clients filter incoming messages by `transactionId` or `principal` in the envelope.
 
 The Client is considered **Active** only after receiving a configuration reply where the `transaction_id` inside the `udmi.reply` block matches the `transaction_id` sent in the original `state` message.
 
@@ -107,10 +109,16 @@ The Client is considered **Active** only after receiving a configuration reply w
 Because the initial handshake is generic and occurs before the Client is associated with a specific registry or device, a distinct addressing scheme is used:
 
 - **PubSub:** The `deviceRegistryId` and `deviceId` message attributes MUST be empty strings (`""`).
-- **MQTT:** The topic MUST use the prefix `/uufi/p/{principal}/` where `{principal}` is the Client's unique identifier.
-  - The resulting topic structure is `/uufi/p/{principal}/{subType}/{subFolder}`.
+- **MQTT:** The topic MUST use the mandatory `c/` topic segment without registry or device segments.
+  - The resulting topic structure is `/uufi/c/{subType}/{subFolder}`.
+  - **Note:** Principal identification is handled via the message envelope.
 
-**Important:** Handshake messages MUST be addressed using this principal-based scheme instead of the standard registry-based addressing (`/uufi/r/...`).
+**Important:** Handshake messages MUST be addressed using this registry-less scheme instead of registry-based addressing (`/uufi/r/.../c/...`).
+
+### 3.1. Registry ID Discovery
+Registry-based addressing (`/uufi/r/{registryId}/.../c/...`) requires knowledge of the `registryId`. 
+- **Mandatory Default:** In the absence of a specific configuration, implementations MUST default to `default` as the `{registryId}`.
+- **System Configuration:** The System MAY inform the Client of the appropriate `{registryId}` via the `config.udmi` block during the handshake.
 
 ### Timeouts and Retries
 Clients SHOULD implement a handshake timeout (default 30s). If no matching configuration reply is received within this window, the Client SHOULD retry the handshake with an exponential backoff, utilizing a new `transaction_id` for each attempt.
@@ -143,9 +151,9 @@ The following fields are available in the envelope to provide context for the me
 | **MQTT** | Topic Structure & Payload | Payload `payload` field |
 
 #### MQTT Topic Structure
-There are two primary topic structures supported for MQTT:
-1. **Registry-based:** `/uufi/r/{registryId}/d/{deviceId}/{subType}/{subFolder}`
-2. **Principal-based:** `/uufi/p/{principal}/{subType}/{subFolder}`
+MQTT topic paths follow a unified structure where registry and device segments are optional, but the channel segment `c/` is mandatory:
+- **Structure:** `/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
+- **Constraint:** A device segment `d/` MUST NOT be present if the registry segment `r/` is absent.
 
 #### MQTT Message Wrap
 Since MQTT 3.1.1 does not support separate attributes, the envelope fields are included in the JSON payload alongside the actual UDMI message. **Crucially, the top-level JSON envelope fields MUST only include data NOT already encoded in the MQTT topic structure (e.g., omitting projectId, deviceId, etc.).**
@@ -353,7 +361,7 @@ The following examples demonstrate the same operations using the MQTT transport,
 #### Example: Handshake State (Publish)
 Using generic addressing for the initial handshake.
 
-**Topic:** `/uufi/p/my-user-id/state/udmi`
+**Topic:** `/uufi/c/state/udmi`
 
 **Payload (JSON):**
 ```json
@@ -361,6 +369,7 @@ Using generic addressing for the initial handshake.
   "transactionId": "UUFI:sess123:001",
   "nonce": "a1b2c3d4",
   "source": "my-user-id",
+  "principal": "my-user-id",
   "payload": {
     "version": "1.5.2",
     "timestamp": "2026-04-29T10:00:00Z",
@@ -379,7 +388,7 @@ Using generic addressing for the initial handshake.
 #### Example: Pointset Config (Publish)
 Updating device `BLD-1`.
 
-**Topic:** `/uufi/r/my-managed-registry/d/BLD-1/config/pointset`
+**Topic:** `/uufi/r/my-managed-registry/d/BLD-1/c/config/pointset`
 
 **Payload (JSON):**
 ```json
@@ -387,6 +396,7 @@ Updating device `BLD-1`.
   "transactionId": "UUFI:sess123:002",
   "nonce": "e5f6a7b8",
   "source": "my-user-id",
+  "principal": "my-user-id",
   "payload": {
     "version": "1.5.2",
     "timestamp": "2026-04-29T10:05:00Z",
@@ -426,9 +436,9 @@ Every message's inner `payload` object MUST contain `timestamp` and `version` fi
 - **Guidance:** Ensure `publishTime` is in the envelope and `timestamp` is in the inner payload. Ensure `version` is present in the payload. Use the subfolder wrapper for all UDMI fields.
 
 ### 9.2. Handshake Addressing
-The `/uufi/p/{principal}/` topic prefix MUST be used for the initial handshake.
-- **Strict Prefix:** The handshake topic MUST exactly match the `/uufi/p/{principal}/` pattern to ensure early-session identification.
-- **Guidance:** Reserve `/uufi/r/` for post-handshake, registry-associated traffic.
+The `/uufi/c/` topic branch MUST be used for the initial handshake.
+- **Strict Prefix:** The handshake topic MUST exactly match the `/uufi/c/{subType}/{subFolder}` pattern to ensure early-session identification.
+- **Guidance:** Reserve `/uufi/r/` for post-handshake, registry-associated traffic. Ensure all clients use the same `c/` channel for handshakes and rely on envelope-based identification.
 
 ### 9.3. Envelope Redundancy
 Top-level envelope fields MUST only include data NOT already encoded in the MQTT topic structure.

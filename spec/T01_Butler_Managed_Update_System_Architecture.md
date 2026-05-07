@@ -77,7 +77,7 @@ The central engine that manages the update lifecycle state machine:
 - **Timeout Management:** The Orchestrator MUST implement a configurable timeout (default 60s) for each device subsystem in the `pending` state. If a device fails to report `success` or `failure` within this window, it must be treated as a failure and potentially trigger a rollback.
 - **Handshake:** Should implement the UUFI startup handshake.
 - **Model Interaction:** All requests to read or update the model MUST be sent to `mocket` over the communication substrate. Butler maintains no direct connection to the model storage.
-- **Dynamic Registry Discovery:** The Orchestrator MUST dynamically discover registries and devices by monitoring the communication substrate using wildcards (e.g., `/uufi/r/+/d/+/...`). It identifies the relevant `registry_id` from the message envelope or topic structure and initializes its internal state for any newly observed device subsystems.
+- **Dynamic Registry Discovery:** The Orchestrator MUST dynamically discover registries and devices by monitoring the communication substrate using wildcards (e.g., `/uufi/r/+/d/+/c/...`). It identifies the relevant `registry_id` from the message envelope or topic structure and initializes its internal state for any newly observed device subsystems.
 
 ### 3.4 Device Conduit (Client-side)
 The implementation on the device must adhere to this state flow:
@@ -124,7 +124,7 @@ It is purely an observational test utility, used to either validate an installed
 functioning implementation. When it detects a valid sequence, or an invalid message, it will output a validation message.
 
 **Verifier Requirements:**
-- **Handshake Awareness:** The Verifier MUST monitor the `/uufi/p/` handshake topics to ensure clients successfully activate before performing operations.
+- **Handshake Awareness:** The Verifier MUST monitor the `/uufi/c/` handshake topics to ensure clients successfully activate before performing operations.
 - **Validation Schema:** It SHOULD validate that all messages contain the mandatory UDMI `payload` fields (`timestamp`, `version`) and that timestamps follow the RFC 3339 format.
 - **State Transition Monitoring:** It MUST track the state transitions for device subsystems using the `update` subfolder (e.g., `quiescent` -> `pending` -> `success/failure`).
 - **Output:** Results MUST be reported using a UUFI-compliant envelope with the `validation` subFolder.
@@ -178,7 +178,7 @@ To ensure the reliability and transparency of the system, all monitoring and dia
 1.  **Protocol Decoupling:** Monitoring tools SHOULD NOT share stateful protocol logic (such as nonce tracking, idempotency checks, or handshake state) with the core `butler` or `mocket` components. They must operate as "transparent taps" to avoid masking underlying network or protocol issues.
 2.  **Graceful Degradation:** Tools MUST handle malformed, non-JSON, or non-compliant messages gracefully. If a message cannot be parsed according to the UUFI schema, it MUST be displayed in its raw format rather than being suppressed.
 3.  **Real-time Transparency:** Tools designed for real-time monitoring MUST use unbuffered output (e.g., explicit flushing of `stdout`) to ensure that messages are visible to the operator immediately upon arrival, especially when piped or redirected.
-4.  **Schema Agnosticism:** While tools should "pretty-print" known schemas, they MUST process all messages regardless of whether they match the expected `/uufi/{r,p}/...` structure.
+4.  **Schema Agnosticism:** While tools should "pretty-print" known schemas, they MUST process all messages regardless of whether they match the expected `/uufi/[r/d/]c/...` structure.
 
 ### 6.1 Tooling List
 All commands should be restartable without any problems if they are in a quiescent state. If the are restarted
