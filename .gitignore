@@ -5,3 +5,4 @@ tmp/
 blobs/
 opt_*/
 opt_*.log
+venv/
