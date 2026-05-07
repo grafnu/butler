@@ -47,7 +47,7 @@ def main():
             state = update.get('state')
 
             if state:
-                subsystem = "default"
+                subsystem = "main"
                 if device_id not in device_states:
                     device_states[device_id] = {}
 

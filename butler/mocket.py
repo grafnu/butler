@@ -10,6 +10,7 @@ import hashlib
 def main():
     parser = argparse.ArgumentParser(description="Mocket device simulator")
     parser.add_argument("conn_spec", help="Connection spec")
+    parser.add_argument("registry_id", help="Registry ID")
     parser.add_argument("device_id", help="Device ID")
     parser.add_argument("-f", "--fail", action="store_true", help="Introduce failure mode")
     args = parser.parse_args()
@@ -19,11 +20,11 @@ def main():
 
     transport = MqttTransport(conn_spec)
     model_repo = ModelRepo()
-    registry_id = "default_registry"
+    registry_id = args.registry_id
 
     state = "quiescent"
     current_version = None
-    subsystem = "default"
+    subsystem = "main"
 
     def handle_cloud_query(topic, payload):
         unwrapped = unwrap_message(payload)
