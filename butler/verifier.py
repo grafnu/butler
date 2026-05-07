@@ -17,9 +17,14 @@ def main():
 
     def publish_verification(msg_str):
         print(f"VERIFICATION: {msg_str}")
-        topic_base = conn_spec.prefix or "butler"
-        topic = f"{topic_base}/verify"
-        transport.client.publish(topic, json.dumps({"message": msg_str}))
+        # Results MUST be reported using a UUFI-compliant envelope with the `validation` subFolder.
+        try:
+            topic = transport.format_topic("events", "validation")
+        except ValueError:
+            topic = f"{conn_spec.prefix or 'uufi'}/events/validation"
+
+        payload = wrap_message({"validation": {"message": msg_str}})
+        transport.publish(topic, payload)
 
     def validate_schema(payload):
         if 'payload' not in payload:
