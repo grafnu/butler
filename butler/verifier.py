@@ -56,7 +56,26 @@ class Verifier:
                 if principal:
                     self.handshakes[principal] = {"tid": tid, "active": False}
                     self.log_verification(registry_id, "_validator", f"Handshake started for {principal} (tid: {tid})")
-            
+
+                # Send Handshake Reply
+                reply_payload_data = {
+                    "setup": {
+                        "functions_min": 9,
+                        "functions_max": 9,
+                        "udmi_version": "1.5.2"
+                    },
+                    "reply": setup
+                }
+                reply_env = create_envelope(
+                    sub_type="config",
+                    sub_folder="udmi",
+                    transaction_id=tid,
+                    source="verifier"
+                )
+                if principal:
+                    reply_env["principal"] = principal
+                self.transport.publish(reply_env, create_payload("udmi", reply_payload_data))
+
             elif sub_type == "config":
                 udmi = payload.get("udmi", payload)
                 reply = udmi.get("reply", {})
