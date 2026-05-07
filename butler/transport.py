@@ -43,6 +43,10 @@ def wrap_message(payload: dict, **envelope_kwargs) -> dict:
 
     msg = envelope_kwargs.copy()
 
+    # Omit fields already encoded in the MQTT topic structure
+    for key in ['deviceId', 'registryId', 'subFolder', 'subType', 'projectId']:
+        msg.pop(key, None)
+
     now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
     if 'publishTime' not in msg:
