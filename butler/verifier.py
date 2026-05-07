@@ -1,6 +1,7 @@
 import sys
 import time
 import json
+import re
 from butler.transport import parse_conn_spec, MqttTransport, wrap_message
 
 def main():
@@ -26,14 +27,27 @@ def main():
         payload = wrap_message({"validation": {"message": msg_str}})
         transport.publish(topic, payload)
 
-    def validate_schema(payload):
+    def validate_schema(payload, is_from_butler=False):
+        def check_timestamp(ts):
+            if not isinstance(ts, str):
+                publish_verification("INVALID SCHEMA: Timestamp is not a string")
+                return False
+            if is_from_butler and not re.match(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$', ts):
+                publish_verification("INVALID SCHEMA: Timestamp not in minimal precision format")
+                return False
+            return True
+
         if 'payload' not in payload:
             if 'timestamp' not in payload or 'version' not in payload:
                 publish_verification("INVALID SCHEMA: Missing timestamp or version")
                 return False
+            if not check_timestamp(payload['timestamp']):
+                return False
         else:
             if 'timestamp' not in payload['payload'] or 'version' not in payload['payload']:
                 publish_verification("INVALID SCHEMA: Missing timestamp or version in payload wrapper")
+                return False
+            if not check_timestamp(payload['payload']['timestamp']):
                 return False
         return True
 
@@ -44,7 +58,12 @@ def main():
         device_id = parsed.get('deviceId')
 
         if subType and subFolder:
-            validate_schema(payload)
+            is_from_butler = False
+            if (subFolder == 'cloud' and subType in ['model', 'query']) or \
+               (subFolder == 'udmi' and subType == 'state') or \
+               (subFolder == 'update' and subType == 'config'):
+                is_from_butler = True
+            validate_schema(payload, is_from_butler=is_from_butler)
 
         if subType == 'state' and subFolder == 'update' and device_id:
             unwrapped = payload.get('payload', payload)
