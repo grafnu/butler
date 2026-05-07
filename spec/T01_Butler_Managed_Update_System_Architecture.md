@@ -73,14 +73,13 @@ The central engine that manages the update lifecycle state machine:
 - **Re-triggering Logic:** The Orchestrator MAY issue a new `update_payload` while a device is in the `pending` state ONLY if the `target_version` has changed to a value different from the version currently being applied by the device. If the `target_version` remains the same, the Orchestrator MUST NOT re-issue the payload until the current attempt succeeds, fails, or times out.
 - **Error State:** Triggered by device-reported failure or timeout.
 - **Loop Prevention (Settling Time):** The Orchestrator MUST implement a "Settling Time" (minimum 5s) after issuing an update command or detecting a state change before re-evaluating reconciliation for that specific device subsystem. This prevents aggressive re-triggering loops caused by message propagation latency.
-- **Rollback Logic:** On critical failure, the Orchestrator MUST automatically revert the `target_version` in the Model Repository (via `mocket`) to the LKG version stored in the model.
-- **Device-Verified LKG:** The device is the authority on operational viability. The `last_known_good` (LKG) version in the Model Repository MUST be updated by the Orchestrator to match the `current_version` whenever the device reports a `success` status.
-- **LKG Synchronization:** The Orchestrator MUST update the model's LKG whenever it is reported by the device in its `status` message, ensuring the model always reflects the most recent verified operational version.
-- **Trigger Detect:** Butler should automatically detect changes in the site model (reported by `mocket`) for the target or expected version.
 - **Timeout Management:** The Orchestrator MUST implement a configurable timeout (default 60s) for each device subsystem in the `pending` state. If a device fails to report `success` or `failure` within this window, it must be treated as a failure and potentially trigger a rollback.
 - **Handshake:** MUST implement the UUFI startup handshake. If a matching configuration reply is not received within 60 seconds of sending the initial state message, the component MUST log a critical error and exit (Fail-fast).
+- **Rollback Logic:** On critical failure, the Orchestrator MUST automatically revert the `target_version` in the Model Repository (via `mocket`) to the LKG version.
+- **LKG Update:** The `last_known_good` (LKG) version in the Model Repository is updated by the Orchestrator whenever it is reported by the device in its `status` message. Butler SHOULD always trust and persist the LKG version reported by the device.
+- **Trigger Detect:** Butler should automatically detect changes in the site model (reported by `mocket`) for the target or expected version.
 - **Model Interaction:** All requests to read or update the model MUST be sent to `mocket` over the communication substrate. Butler maintains no direct connection to the model storage.
-- **Dynamic Registry Discovery:** The Orchestrator MUST dynamically discover registries and devices by monitoring the communication substrate using wildcards (e.g., `/uufi/r/+/d/+/c/...`). It identifies the relevant `registry_id` from the message envelope or topic structure and initializes its internal state for any newly observed device subsystems.
+- **Dynamic Registry Discovery:** The Orchestrator MUST dynamically discover registries and devices by monitoring the communication substrate (e.g., `/uufi/c/...`). It identifies the relevant `registry_id` from the message envelope or topic structure and initializes its internal state for any newly observed device subsystems.
 
 ### 3.4 Device Conduit (Client-side)
 The implementation on the device must adhere to this state flow:
