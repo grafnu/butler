@@ -30,4 +30,4 @@ Run the setup and tests multiple times, exactly just enough iterations to satisf
 * Every branch (ID) is run at least twice, once as `butler` and the other as `observe`.
 * The graph of connected components should be a connected graph (e.g., if you have A, B, and C, you might test A-B and B-C).
 
-The resulting `impl/${ID}.log` files and `summary.txt` should be committed to the repo and pushed as the results automatically upon completion of the test suite.
+Only changes to the `spec/` files should be commited and pushed.
