@@ -63,19 +63,21 @@ Responsible for tracking the "source of truth" for the fleet. The internal struc
 - **Environment Isolation:** The repository MUST support an environment variable `BUTLER_MODEL_FILE` to override the default model storage path. This is critical for parallel testing and isolating demo environments from developer state.
 - **Atomicity:** All updates to the model file MUST be atomic (e.g., write to a temporary file and rename) to prevent corruption during system crashes.
 - **Access:** Direct access is restricted to `mocket`, `register`, and `trigger`. The `butler` component MUST interact with the model file exclusively through `mocket` via the communication substrate.
-- **MQTT Representation:** While internal storage is an implementation detail, the representation of the model on the communication substrate (via UUFI `cloud` messages) MUST be strictly standardized to ensure interoperability. When replying to a model query, the `cloud` payload MUST follow the nested structure: `{"devices": { "device_id": { "subsystem": { "target_version": "...", "current_version": "...", "lkg_version": "..." } } } }` (wrapped in the mandatory UUFI `cloud` subfolder).
+- **Composite Primary Keys:** State tracking for all device subsystems MUST utilize a composite primary key consisting of both the `registry_id` and `device_id`. This ensures absolute uniqueness across multi-registry environments.
+- **MQTT Representation:** While internal storage is an implementation detail, the representation of the model on the communication substrate (via UUFI `cloud` messages) MUST be strictly standardized to ensure interoperability. When replying to a model query, the `cloud` payload MUST follow the nested structure: `{"registries": { "registry_id": { "devices": { "device_id": { "subsystem": { "target_version": "...", "current_version": "...", "lkg_version": "..." } } } } } }` (wrapped in the mandatory UUFI `cloud` subfolder).
 
 ### 3.3 Butler Orchestrator (Control Logic)
 The central engine that manages the update lifecycle state machine:
 - **Quiescent State:** Device is compliant (Current == Target).
 - **Active State:** Triggered when Target != Current (as observed via `mocket` status reports). The Orchestrator pushes an `update_payload` containing the URL and SHA256.
+- **Re-triggering Logic:** The Orchestrator MAY issue a new `update_payload` while a device is in the `pending` state ONLY if the `target_version` has changed to a value different from the version currently being applied by the device. If the `target_version` remains the same, the Orchestrator MUST NOT re-issue the payload until the current attempt succeeds, fails, or times out.
 - **Error State:** Triggered by device-reported failure or timeout.
 - **Loop Prevention (Settling Time):** The Orchestrator MUST implement a "Settling Time" (minimum 5s) after issuing an update command or detecting a state change before re-evaluating reconciliation for that specific device subsystem. This prevents aggressive re-triggering loops caused by message propagation latency.
+- **Timeout Management:** The Orchestrator MUST implement a configurable timeout (default 60s) for each device subsystem in the `pending` state. If a device fails to report `success` or `failure` within this window, it must be treated as a failure and potentially trigger a rollback.
+- **Handshake:** MUST implement the UUFI startup handshake. If a matching configuration reply is not received within 60 seconds of sending the initial state message, the component MUST log a critical error and exit (Fail-fast).
 - **Rollback Logic:** On critical failure, the Orchestrator MUST automatically revert the `target_version` in the Model Repository (via `mocket`) to the LKG version.
 - **LKG Update:** The `last_known_good` (LKG) version in the Model Repository is updated by the Orchestrator whenever it is reported by the device in its `status` message. Butler SHOULD always trust and persist the LKG version reported by the device.
 - **Trigger Detect:** Butler should automatically detect changes in the site model (reported by `mocket`) for the target or expected version.
-- **Timeout Management:** The Orchestrator MUST implement a configurable timeout (default 60s) for each device subsystem in the `pending` state. This timeout is a **hard limit** starting from the first time the subsystem entered the `pending` state; subsequent `pending` status messages from the device do not reset this timer. If a device fails to report `success` or `failure` within this window, it must be treated as a failure and potentially trigger a rollback.
-- **Handshake:** Should implement the UUFI startup handshake.
 - **Model Interaction:** All requests to read or update the model MUST be sent to `mocket` over the communication substrate. Butler maintains no direct connection to the model storage.
 - **Dynamic Registry Discovery:** The Orchestrator MUST dynamically discover registries and devices by monitoring the communication substrate (e.g., `/uufi/c/...`). It identifies the relevant `registry_id` from the message envelope or topic structure and initializes its internal state for any newly observed device subsystems.
 
@@ -108,8 +110,8 @@ The implementation on the device must adhere to this state flow:
 
 ### 4.3 Idempotency and Robustness
 - **Duplicate Message Handling:** All components MUST be idempotent. Receiving the same `update_payload` or `status` message multiple times must not lead to inconsistent state transitions.
-- **Message Nonce:** The `nonce` (8-digit hex) MUST be used to uniquely identify messages. Components SHOULD track recently seen nonces to ignore duplicates if the underlying transport (e.g., MQTT QoS 1) delivers them multiple times.
-- **Graceful Restart:** Components MUST be able to recover their internal state by observing the latest `status` messages on the bus or querying the Model Repository upon startup.
+- **Message Nonce:** The `nonce` (8-digit hex) MUST be used to uniquely identify messages. Components MUST track recently seen nonces for a minimum of **5 minutes** and MUST ignore any duplicate messages received within this window to ensure idempotency, especially when utilizing transport layers like MQTT QoS 1.
+- **Graceful Restart:** Components MUST be able to recover their internal state by observing the latest `status` messages on the bus or querying the Model Repository upon startup. Nonce history is NOT required to persist across restarts.
 
 ## 5. Verification and Test Strategy
 
@@ -127,7 +129,8 @@ functioning implementation. When it detects a valid sequence, or an invalid mess
 - **Handshake Awareness:** The Verifier MUST monitor the `/uufi/c/` handshake topics to ensure clients successfully activate before performing operations.
 - **Validation Schema:** It SHOULD validate that all messages contain the mandatory UDMI `payload` fields (`timestamp`, `version`) and that timestamps follow the RFC 3339 format.
 - **State Transition Monitoring:** It MUST track the state transitions for device subsystems using the `update` subfolder (e.g., `quiescent` -> `pending` -> `success/failure`).
-- **Output:** Results MUST be reported using a UUFI-compliant envelope with the `validation` subFolder.
+- **Reporting Topic:** Verification results MUST be published to the registry-scoped validation topic: `/uufi/r/{registry_id}/d/{device_id}/validation`.
+- **Envelope:** Reports MUST be reported using a UUFI-compliant envelope with the `validation` subFolder.
 
 The verification watcher and the rest of the system can only communicate over the observable shared bus.
 
