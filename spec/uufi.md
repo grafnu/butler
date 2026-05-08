@@ -109,7 +109,7 @@ The Client is considered **Active** only after receiving a configuration reply w
 Because the initial handshake is generic and occurs before the Client is associated with a specific registry or device, the registry-less Pattern C structure is used:
 
 - **PubSub:** The `deviceRegistryId` and `deviceId` message attributes MUST be not present empty strings (or `null`).
-- **MQTT:** The topic MUST be `/uufi/p/{principal}/c/{subType}/{subFolder}`.
+- **MQTT:** The topic MUST be `/uufi/c/{subType}/{subFolder}`.
 
 **Important:** Handshake messages MUST be addressed using this registry-less scheme instead of registry-based addressing (`/uufi/r/.../c/...`).
 
@@ -359,7 +359,7 @@ The following examples demonstrate the same operations using the MQTT transport,
 #### Example: Handshake State (Publish)
 Using generic addressing for the initial handshake.
 
-**Topic:** `/uufi/p/{principal}/c/state/udmi`
+**Topic:** `/uufi/c/state/udmi`
 
 **Payload (JSON):**
 ```json
@@ -432,7 +432,7 @@ Every message's inner `payload` object MUST contain `timestamp` and `version` fi
     - **Current Version:** Devices MUST report their active firmware version using the `current_version` field within the inner `state` data.
     - **LKG Version:** Devices MUST report their most recent verified operational version using the `lkg_version` field.
     - **Operation Status:** Devices MUST report their operational state (e.g., `quiescent`, `pending`, `success`, `failure`) using the `status` field.
-- **Guidance:** Ensure `publishTime` is in the envelope and `timestamp` is in the inner payload. Ensure `version` and `lkg_version` are present in the payload. Use the subfolder wrapper for all UDMI fields.
+- **Guidance:** Ensure `publishTime` is in the envelope and `timestamp` is in the inner payload. Ensure `current_version`, `lkg_version`, and `status` are present in the `update` subfolder of the `state` message. Use the subfolder wrapper for all UDMI fields.
 
 ### 9.2. Handshake Addressing
 The registry-less `/uufi/c/` topic branch MUST be used for the initial handshake.
