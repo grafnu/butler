@@ -3,10 +3,8 @@
 The goal is to test multiple different implementations of the `butler` spec, as defined in `spec/`. There are (should be)
 multiple working subdirectories, each one containing a different version of an implementation.
 
-Each zip file in `impl/` constitutes a different implementation version. Those files should be extracted and then used for
-testing. Each implementation ID (e.g., A, B, C from A.zip, B.zip, C.zip) is referred to as a "branch" in these instructions.
-
-* `cd impl; unzip {ID}.zip` should expand to the directory `impl/{ID}/`
+Check the remote branches of the form `impl_ID`. Each one is a different implementation of the butler spec. Clone
+each one into the `impl/ID` directory (replacing the `_` with the file separator `/`).
 
 The `venv` based off of `requirements.txt` needs to be setup for each subdirectory independently.
 
@@ -19,7 +17,7 @@ If the smoke test fails, indicating that there is an incompatibility in the impl
 determine what the problem is, and recommend a change to the specs (in `spec/`) to remediate.
 
 If the smoke test passes, analyze the generated log files to see if there is any other discrepancy or ambiguities
-that should be addressed (and likewise recomment a change to `spec/`).
+that should be addressed and likewise recommend changes to `spec/`.
 
 The actual implementation in `*/butler/` will be different and that's expected. (Same with `*/bin/`).
 
