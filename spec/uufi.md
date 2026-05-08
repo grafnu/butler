@@ -66,12 +66,11 @@ will have a `principal` indicating the **Session Owner** (the identity of the en
 
 **MQTT (`mqtt://`)**
 *   The base `host` and `:port` map as expected (network address).
-*   **Topic Isolation (Pattern C):** All MQTT topic paths MUST be prefixed with the principal identifier to ensure session isolation. The principal is derived from the `user@` component of the connection string (defaulting to `unknown`).
-  *   **Structure:** `/uufi/p/{principal}/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
-  *   *Example:* `mqtt://butler@localhost` uses prefix `/uufi/p/butler/`.
+*   **Topic Structure:** `/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
+*   **Topic Isolation:** For shared brokers, the `principal` identifier MUST be included in the JSON envelope rather than the topic path.
 *   **Cloud Model Service:** The Cloud Model is managed as an MQTT-based service.
-  *   **Discovery:** Clients (like the Butler) MUST publish a `query/cloud` message to the registry-less topic `/uufi/p/{principal}/c/query/cloud`.
-  *   **Responder Role:** A Model-Hosting component (System/Mocket) MUST subscribe to these queries and respond by publishing the current model to the `/uufi/p/{principal}/c/config/cloud` topic.
+  *   **Discovery:** Clients (like the Butler) MUST publish a `query/cloud` message to the registry-less topic `/uufi/c/query/cloud`.
+  *   **Responder Role:** A Model-Hosting component (System/Mocket) MUST subscribe to these queries and respond by publishing the current model to the `/uufi/c/config/cloud` topic.
   *   **Model Schema:** The Cloud Model MUST use the nested **Registries** structure to support multi-registry environments (see Section 5.1).
 
 ### 2.2. PubSub Transport
@@ -86,7 +85,7 @@ The Client must have access to the GCP project where the UDMI system is deployed
 For local testing or on-premise deployments, a standard MQTT broker (like Mosquitto) can be used.
 
 *   **Broker URL:** Typically `tcp://localhost:1883` or `ssl://localhost:8883`.
-*   **Topic Structure:** `/uufi/p/{principal}/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
+*   **Topic Structure:** `/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
 *   **Authentication:** Username/Password or mTLS (certificate-based).
 
 ## 3. Handshake Protocol
@@ -97,23 +96,20 @@ Upon connection, the Client must perform a handshake to synchronize with the Sys
  The Client publishes a UDMI `state` message to the UUFI topic. This message must include a `udmi` subfolder with a `setup` block (see `state_udmi.json`).
     -   `functions_ver`: The version of the UDMI functions the Client expects.
     -   `transaction_id`: A unique ID for the handshake transaction.
-    -   **Addressing:** The Client MUST use the registry-less `/uufi/p/{principal}/c/state/udmi` topic and include its unique identity in the `source` field in the envelope.
+    -   **Addressing:** The Client MUST use the registry-less `/uufi/c/state/udmi` topic and include its unique identity in the `source` field in the envelope.
 
 2.  **Configuration Confirmation:** The System responds via the reply channel by updating the Client's `config`. This message includes a `udmi` subfolder (see `config_udmi.json`) containing:
     -   `setup`: System version information (min/max supported function versions).
     -   `reply`: A copy of the Client's setup block to confirm receipt.
-    -   **Addressing:** The System MUST publish the reply to the `/uufi/p/{principal}/c/config/udmi` topic. Clients filter incoming messages by `transactionId` or `principal` in the envelope.
+    -   **Addressing:** The System MUST publish the reply to the `/uufi/c/config/udmi` topic. The reply envelope MUST use the Client's principal in the `principal` field, as it represents the Session Owner. Clients filter incoming messages by `transactionId` or by matching their own `principal` in the envelope.
 
 The Client is considered **Active** only after receiving a configuration reply where the `transaction_id` inside the `udmi.reply` block matches the `transaction_id` sent in the original `state` message.
-
-**Transaction Integrity:** Implementations MUST ignore Handshake configuration replies if the `reply.transaction_id` does not match the currently active `handshake_tid`. Receipt of an unmatched transaction ID MUST NOT activate the client. This prevents a restarting component from accidentally "activating" on a leftover message from a previous session.
 
 ### Handshake Addressing
 Because the initial handshake is generic and occurs before the Client is associated with a specific registry or device, the registry-less Pattern C structure is used:
 
 - **PubSub:** The `deviceRegistryId` and `deviceId` message attributes MUST be not present empty strings (or `null`).
-- **MQTT:** The topic MUST be `/uufi/p/{principal}/c/{subType}/{subFolder}`.
-    - **Principal Fallback:** If a `{principal}` is not explicitly provided in the connection configuration, the Client MUST generate a unique identity (e.g., using its process name and a UUID or timestamp) to use in the topic structure.
+- **MQTT:** The topic MUST be `/uufi/c/{subType}/{subFolder}`.
 
 **Important:** Handshake messages MUST be addressed using this registry-less scheme instead of registry-based addressing (`/uufi/r/.../c/...`).
 
@@ -363,7 +359,7 @@ The following examples demonstrate the same operations using the MQTT transport,
 #### Example: Handshake State (Publish)
 Using generic addressing for the initial handshake.
 
-**Topic:** `/uufi/p/{principal}/c/state/udmi`
+**Topic:** `/uufi/c/state/udmi`
 
 **Payload (JSON):**
 ```json
@@ -421,7 +417,7 @@ To ensure reliable delivery of state and configuration messages, all MQTT commun
 ### Error Reporting
 When the System encounters an error processing a UUFI message, it will respond via the reply channel using the `error` subType.
 The payload will include:
-- `category`: A string describing the error type. All components MUST use standardized categories as defined in the [UDMI Categories Specification](https://github.com/faucetsdn/udmi/blob/master/docs/specs/categories.md) (e.g., `system.config.parse`, `system.auth.error`, `validation.error`).
+- `category`: A string describing the error type (e.g., `auth`, `validation`, `not_found`).
 - `message`: A human-readable description of the error.
 - `transactionId`: The ID of the message that caused the error (if available).
 
@@ -432,31 +428,26 @@ Integration testing between different implementations has identified common area
 ### 9.1. Mandatory Payload Fields
 Every message's inner `payload` object MUST contain `timestamp` and `version` fields.
 - **Payload Structure:** The `payload` object MUST contain exactly one top-level key matching the `subFolder` name (e.g., `system`, `pointset`, `update`, `cloud`), which contains the UDMI data, in addition to the mandatory `timestamp` and `version` fields at the same level.
-    - **Cloud Specifics:** For `cloud` subfolder messages, the UDMI payload MUST be wrapped in a top-level `cloud` key (e.g., `{"version": "...", "timestamp": "...", "cloud": { ... }}`). This ensures consistent parsing across all subfolders and prevents implementations from accidentally sending model data at the root of the message.
-    - **Protocol Version:** The top-level `payload.version` field MUST ONLY reflect the UUFI Protocol Version (e.g., `1.5.2`). It MUST NOT be used to report device firmware versions.
 - **Field Consistency:**
-    - **Current Version:** Devices MUST report their active firmware version using the `current_version` field within the inner `state` data. It MUST NOT use the top-level `version` field for this purpose.
+    - **Current Version:** Devices MUST report their active firmware version using the `current_version` field within the inner `state` data.
     - **LKG Version:** Devices MUST report their most recent verified operational version using the `lkg_version` field.
     - **Operation Status:** Devices MUST report their operational state (e.g., `quiescent`, `pending`, `success`, `failure`) using the `status` field.
-- **Guidance:** Ensure `publishTime` is in the envelope and `timestamp` is in the inner payload. Ensure `version` (protocol) and `lkg_version` (firmware) are present in the payload. Use the subfolder wrapper for all UDMI fields.
+- **Guidance:** Ensure `publishTime` is in the envelope and `timestamp` is in the inner payload. Ensure `current_version`, `lkg_version`, and `status` are present in the `update` subfolder of the `state` message. Use the subfolder wrapper for all UDMI fields.
 
 ### 9.2. Handshake Addressing
-The `/uufi/p/{principal}/c/` topic branch MUST be used for the initial handshake.
-- **Strict Prefix:** The handshake topic MUST exactly match the `/uufi/p/{principal}/c/{subType}/{subFolder}` pattern to ensure early-session identification.
-- **Guidance:** Reserve `/uufi/r/` for post-handshake, registry-associated traffic. Ensure all clients use the same `c/` channel for handshakes and rely on envelope-based identification.
+The registry-less `/uufi/c/` topic branch MUST be used for the initial handshake.
+- **Strict Prefix:** The handshake topic MUST exactly match the `/uufi/c/{subType}/{subFolder}` pattern (e.g. `/uufi/c/state/udmi`).
+- **Guidance:** Reserve `/uufi/r/` for post-handshake, registry-associated traffic. Ensure all clients use the same `c/` channel for handshakes and rely on envelope-based identification (e.g. `transactionId` and `principal`).
 
 ### 9.3. Envelope Redundancy
 Top-level envelope fields MUST only include data NOT already encoded in the MQTT topic structure.
-- **Principal Exception:** While the `principal` is encoded in the MQTT topic path for registry-less topics, it SHOULD also be included in the outer JSON envelope for all registry-less messages to facilitate easier filtering by passive observers and multi-session responders.
 - **Guidance:** Maintain a clean inner UDMI message by omitting redundant fields like `deviceId` or `subType` from the outer JSON wrap.
 
 ### 9.4. Timestamp Format
-All timestamps MUST follow RFC 3339 in the **minimal precision format** (e.g., `2026-05-01T22:32:17Z`). 
-- **UTC Mandate:** Implementations MUST use UTC and MUST use the `Z` suffix (e.g., `2026-05-01T22:32:17Z`). 
-- **Strictness:** Microseconds or numeric time zone offsets (e.g., `+00:00`) MUST NOT be used when generating messages. 
+All timestamps MUST follow RFC 3339 in the **minimal precision format** (e.g., `2026-05-01T22:32:17Z`). Implementations should use UTC to avoid ambiguity. Microseconds or numeric time zone offsets MUST NOT be used when generating messages. 
 
 **Permissiveness Rule:**
-All components MUST be strict in what they send (minimal precision only with `Z` suffix) but SHOULD be permissive in what they receive (handling microseconds or offsets gracefully).
+All components MUST be strict in what they send (minimal precision only) but SHOULD be permissive in what they receive (handling microseconds or offsets gracefully).
 
 ### 9.5. Model Storage Consistency
 While internal storage format is an implementation detail, tools sharing a Model Repository (e.g., `register`, `trigger`, and `mocket`) MUST agree on the schema.
