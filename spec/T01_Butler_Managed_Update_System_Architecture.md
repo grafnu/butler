@@ -70,8 +70,9 @@ Responsible for tracking the "source of truth" for the fleet. The internal struc
 ### 3.3 Butler Orchestrator (Control Logic)
 The central engine that manages the update lifecycle state machine:
 - **Quiescent State:** Device is compliant (Current == Target).
-- **Active State:** Triggered when Target != Current (as observed via `mocket` status reports). The Orchestrator pushes an `update_payload` containing the URL and SHA256.
+- **Active State:** Triggered when Target != Current (as observed via `mocket` status reports). If `current_version` is missing or null (initial provisioning), it MUST be treated as an empty string for the purpose of this comparison. The Orchestrator pushes an `update_payload` containing the URL and SHA256.
 - **Re-triggering Logic:** The Orchestrator MAY issue a new `update_payload` while a device is in the `pending` state ONLY if the `target_version` has changed to a value different from the version currently being applied by the device. If the `target_version` remains the same, the Orchestrator MUST NOT re-issue the payload until the current attempt succeeds, fails, or times out.
+- **Connection Stability:** Implementations MUST ensure that the underlying communication transport (e.g., MQTT connection) is fully established and ready for traffic before attempting to publish high-priority lifecycle messages, such as the initial handshake initiation. A short delay or waiting for a 'connect' callback is recommended.
 - **Error State:** Triggered by device-reported failure or timeout.
 - **Loop Prevention (Settling Time):** The Orchestrator MUST implement a "Settling Time" (minimum 5s) after issuing an update command or detecting a state change before re-evaluating reconciliation for that specific device subsystem. This prevents aggressive re-triggering loops caused by message propagation latency.
 - **Timeout Management:** The Orchestrator MUST implement a configurable timeout (default 60s) for each device subsystem in the `pending` state. If a device fails to report `success` or `failure` within this window, it must be treated as a failure and potentially trigger a rollback.

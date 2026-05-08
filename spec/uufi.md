@@ -101,7 +101,7 @@ Upon connection, the Client must perform a handshake to synchronize with the Sys
 2.  **Configuration Confirmation:** The System responds via the reply channel by updating the Client's `config`. This message includes a `udmi` subfolder (see `config_udmi.json`) containing:
     -   `setup`: System version information (min/max supported function versions).
     -   `reply`: A copy of the Client's setup block to confirm receipt.
-    -   **Addressing:** The System MUST publish the reply to the `/uufi/c/config/udmi` topic. Clients filter incoming messages by `transactionId` or `principal` in the envelope.
+    -   **Addressing:** The System MUST publish the reply to the `/uufi/c/config/udmi` topic. The reply envelope MUST use the Client's principal in the `principal` field, as it represents the Session Owner. Clients filter incoming messages by `transactionId` or by matching their own `principal` in the envelope.
 
 The Client is considered **Active** only after receiving a configuration reply where the `transaction_id` inside the `udmi.reply` block matches the `transaction_id` sent in the original `state` message.
 
@@ -109,7 +109,7 @@ The Client is considered **Active** only after receiving a configuration reply w
 Because the initial handshake is generic and occurs before the Client is associated with a specific registry or device, the registry-less Pattern C structure is used:
 
 - **PubSub:** The `deviceRegistryId` and `deviceId` message attributes MUST be not present empty strings (or `null`).
-- **MQTT:** The topic MUST be `/uufi/p/{principal}/c/{subType}/{subFolder}`.
+- **MQTT:** The topic MUST be `/uufi/c/{subType}/{subFolder}`.
 
 **Important:** Handshake messages MUST be addressed using this registry-less scheme instead of registry-based addressing (`/uufi/r/.../c/...`).
 
@@ -359,7 +359,7 @@ The following examples demonstrate the same operations using the MQTT transport,
 #### Example: Handshake State (Publish)
 Using generic addressing for the initial handshake.
 
-**Topic:** `/uufi/p/{principal}/c/state/udmi`
+**Topic:** `/uufi/c/state/udmi`
 
 **Payload (JSON):**
 ```json
@@ -432,7 +432,7 @@ Every message's inner `payload` object MUST contain `timestamp` and `version` fi
     - **Current Version:** Devices MUST report their active firmware version using the `current_version` field within the inner `state` data.
     - **LKG Version:** Devices MUST report their most recent verified operational version using the `lkg_version` field.
     - **Operation Status:** Devices MUST report their operational state (e.g., `quiescent`, `pending`, `success`, `failure`) using the `status` field.
-- **Guidance:** Ensure `publishTime` is in the envelope and `timestamp` is in the inner payload. Ensure `version` and `lkg_version` are present in the payload. Use the subfolder wrapper for all UDMI fields.
+- **Guidance:** Ensure `publishTime` is in the envelope and `timestamp` is in the inner payload. Ensure `current_version`, `lkg_version`, and `status` are present in the `update` subfolder of the `state` message. Use the subfolder wrapper for all UDMI fields.
 
 ### 9.2. Handshake Addressing
 The registry-less `/uufi/c/` topic branch MUST be used for the initial handshake.
