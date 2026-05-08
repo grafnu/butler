@@ -10,8 +10,8 @@ def main():
     device_id = sys.argv[2]
 
     repo = ModelRepo()
-    repo.add_device(device_id)
-    print(f"Registered device {device_id} in model.")
+    repo.add_device(registry_id, device_id)
+    print(f"Registered device {device_id} in registry {registry_id} in model.")
 
 if __name__ == '__main__':
     main()

@@ -36,18 +36,22 @@ def main():
         subFolder = parsed.get('subFolder')
         unwrapped = unwrap_message(payload)
 
+        state_key = (registry_id, device_id)
+
         if subType == 'config' and subFolder == 'cloud':
             cloud = unwrapped.get('cloud', {})
-            devices = cloud.get('devices', {})
+            registries = cloud.get('registries', {})
+            reg_data = registries.get(registry_id, {})
+            devices = reg_data.get('devices', {})
             dev_data = devices.get(device_id, {})
 
-            if device_id not in device_states:
-                device_states[device_id] = {}
+            if state_key not in device_states:
+                device_states[state_key] = {}
 
             for subsystem, data in dev_data.items():
-                if subsystem not in device_states[device_id]:
-                    device_states[device_id][subsystem] = {}
-                state_data = device_states[device_id][subsystem]
+                if subsystem not in device_states[state_key]:
+                    device_states[state_key][subsystem] = {}
+                state_data = device_states[state_key][subsystem]
                 state_data['target_version'] = data.get('target_version')
                 state_data['current_version'] = data.get('current_version')
                 state_data['lkg_version'] = data.get('lkg_version')
@@ -58,14 +62,14 @@ def main():
             state = update.get('state')
             current_version = update.get('current_version')
 
-            if device_id not in device_states:
-                device_states[device_id] = {}
+            if state_key not in device_states:
+                device_states[state_key] = {}
 
             subsystem = "main"
-            if subsystem not in device_states[device_id]:
-                device_states[device_id][subsystem] = {}
+            if subsystem not in device_states[state_key]:
+                device_states[state_key][subsystem] = {}
 
-            state_data = device_states[device_id][subsystem]
+            state_data = device_states[state_key][subsystem]
 
             if 'target_version' not in state_data:
                 fetch_model_state(registry_id, device_id)
@@ -74,7 +78,7 @@ def main():
             state_data['state'] = state
             state_data['registry_id'] = registry_id
 
-            settling_times[(device_id, subsystem)] = time.time()
+            settling_times[(registry_id, device_id, subsystem)] = time.time()
 
             if state == 'success':
                 if 'pending_start' in state_data:
@@ -118,21 +122,17 @@ def main():
     try:
         while True:
             now = time.time()
-            for device_id, subsystems in device_states.items():
+            for (registry_id, device_id), subsystems in device_states.items():
                 for subsystem, state_data in subsystems.items():
                     target = state_data.get('target_version')
                     current = state_data.get('current_version')
                     state = state_data.get('state')
-                    registry_id = state_data.get('registry_id')
-
-                    if not registry_id:
-                        continue
 
                     if target and current and target != current and state == 'quiescent':
                         if args.fail:
                             continue
 
-                        if now - settling_times.get((device_id, subsystem), 0) < 5.0:
+                        if now - settling_times.get((registry_id, device_id, subsystem), 0) < 5.0:
                             continue
 
                         blob_info = blob_repo.get_blob_info("default", "default", subsystem, target)
@@ -147,7 +147,7 @@ def main():
                             })
                             transport.publish(topic, msg)
                             state_data['pending_start'] = now
-                            settling_times[(device_id, subsystem)] = now
+                            settling_times[(registry_id, device_id, subsystem)] = now
 
                     elif state == 'pending' and 'pending_start' in state_data:
                         if now - state_data['pending_start'] > 60:

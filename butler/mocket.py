@@ -31,18 +31,23 @@ def main():
         cloud = unwrapped.get('cloud', {})
         if cloud.get('operation') == 'READ':
             model = model_repo.get_model()
-            device = model.get('devices', {}).get(args.device_id, {})
+            reg = model.get('registries', {}).get(registry_id, {})
+            device = reg.get('devices', {}).get(args.device_id, {})
             sub = device.get('subsystems', {}).get(subsystem, {})
 
             reply_topic = transport.format_topic("config", "cloud", registry_id, args.device_id)
             reply_payload = wrap_message({
                 "cloud": {
-                    "devices": {
-                        args.device_id: {
-                            subsystem: {
-                                "target_version": sub.get('target_version'),
-                                "current_version": sub.get('current_version'),
-                                "lkg_version": sub.get('lkg_version')
+                    "registries": {
+                        registry_id: {
+                            "devices": {
+                                args.device_id: {
+                                    subsystem: {
+                                        "target_version": sub.get('target_version'),
+                                        "current_version": sub.get('current_version'),
+                                        "lkg_version": sub.get('lkg_version')
+                                    }
+                                }
                             }
                         }
                     }
@@ -56,9 +61,9 @@ def main():
         if cloud.get('operation') == 'UPDATE':
             detail = cloud.get('detail', {})
             if 'current_version' in detail:
-                model_repo.update_current_version(args.device_id, subsystem, detail['current_version'])
+                model_repo.update_current_version(registry_id, args.device_id, subsystem, detail['current_version'])
             if 'revert_to_lkg' in detail and detail['revert_to_lkg']:
-                model_repo.revert_to_lkg(args.device_id, subsystem)
+                model_repo.revert_to_lkg(registry_id, args.device_id, subsystem)
 
     def verify_blob(url, expected_hash):
         try:
@@ -140,7 +145,8 @@ def main():
             if now - last_pub > 5:
                 if current_version is None:
                     model = model_repo.get_model()
-                    device = model.get('devices', {}).get(args.device_id, {})
+                    reg = model.get('registries', {}).get(registry_id, {})
+                    device = reg.get('devices', {}).get(args.device_id, {})
                     sub = device.get('subsystems', {}).get(subsystem, {})
                     current_version = sub.get('current_version')
 

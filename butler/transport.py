@@ -104,7 +104,7 @@ class MqttTransport:
         if registry_id and device_id:
             parts.extend(["r", registry_id, "d", device_id])
         elif self.conn_spec.principal:
-            parts.extend(["p", self.conn_spec.principal])
+            parts.extend(["p", self.conn_spec.principal, "c"])
         else:
             raise ValueError("Must provide either registry_id/device_id or have a principal configured")
 
@@ -131,14 +131,15 @@ class MqttTransport:
 
         if parts[idx] == "r":
             result['registryId'] = parts[idx+1]
-            if parts[idx+2] == "d":
+            if len(parts) > idx + 3 and parts[idx+2] == "d":
                 result['deviceId'] = parts[idx+3]
-                result['subType'] = parts[idx+4]
-                result['subFolder'] = parts[idx+5]
+                result['subType'] = parts[idx+4] if len(parts) > idx + 4 else None
+                result['subFolder'] = parts[idx+5] if len(parts) > idx + 5 else None
         elif parts[idx] == "p":
             result['principal'] = parts[idx+1]
-            result['subType'] = parts[idx+2]
-            result['subFolder'] = parts[idx+3]
+            if len(parts) > idx + 2 and parts[idx+2] == "c":
+                result['subType'] = parts[idx+3] if len(parts) > idx + 3 else None
+                result['subFolder'] = parts[idx+4] if len(parts) > idx + 4 else None
 
         return result
 

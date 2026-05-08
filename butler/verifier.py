@@ -56,6 +56,7 @@ def main():
         subType = parsed.get('subType')
         subFolder = parsed.get('subFolder')
         device_id = parsed.get('deviceId')
+        registry_id = parsed.get('registryId')
 
         if subType and subFolder:
             is_from_butler = False
@@ -65,27 +66,28 @@ def main():
                 is_from_butler = True
             validate_schema(payload, is_from_butler=is_from_butler)
 
-        if subType == 'state' and subFolder == 'update' and device_id:
+        if subType == 'state' and subFolder == 'update' and device_id and registry_id:
             unwrapped = payload.get('payload', payload)
             update = unwrapped.get('update', {})
             state = update.get('state')
 
             if state:
                 subsystem = "main"
-                if device_id not in device_states:
-                    device_states[device_id] = {}
+                state_key = (registry_id, device_id)
+                if state_key not in device_states:
+                    device_states[state_key] = {}
 
-                prev_state = device_states[device_id].get(subsystem, 'unknown')
+                prev_state = device_states[state_key].get(subsystem, 'unknown')
 
                 if state != prev_state:
-                    publish_verification(f"State transition for {device_id}: {prev_state} -> {state}")
+                    publish_verification(f"State transition for {device_id} in {registry_id}: {prev_state} -> {state}")
 
                     if state == 'success' and prev_state != 'pending':
-                        publish_verification(f"INVALID TRANSITION: {device_id} went to success without pending")
+                        publish_verification(f"INVALID TRANSITION: {device_id} in {registry_id} went to success without pending")
                     if state == 'failure' and prev_state != 'pending':
-                        publish_verification(f"INVALID TRANSITION: {device_id} went to failure without pending")
+                        publish_verification(f"INVALID TRANSITION: {device_id} in {registry_id} went to failure without pending")
 
-                    device_states[device_id][subsystem] = state
+                    device_states[state_key][subsystem] = state
 
     transport.set_on_message(on_message)
     transport.connect()
