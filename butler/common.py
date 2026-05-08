@@ -102,12 +102,8 @@ class ButlerBusBase:
             udmi_block = udmi_payload.get("udmi", {})
             reply = udmi_block.get("reply")
             if reply and reply.get("transaction_id") == self.handshake_transaction_id:
-                setup = udmi_block.get("setup", {})
-                new_registry_id = setup.get("registry_id")
-                if new_registry_id:
-                    self.registry_id = new_registry_id
                 self.handshake_complete = True
-                print(f"[{self.source}] Handshake complete! (Registry: {self.registry_id})")
+                print(f"[{self.source}] Handshake complete!")
 
         self.on_message(topic, device_id, sub_type, sub_folder, udmi_payload)
 
