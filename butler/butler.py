@@ -105,6 +105,9 @@ def main():
                 transport.publish(topic_model, wrap_message(model_update, principal=transport.principal, source=transport.principal))
 
             # Update internal tracking from device report
+            if state != state_data.get('state'):
+                settling_times[state_key + (subsystem,)] = time.time()
+
             state_data['state'] = state
             if current_version:
                 state_data['current_version'] = current_version
