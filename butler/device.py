@@ -156,11 +156,12 @@ class MockDevice:
                         target = info.get("target_version")
                         current = info.get("current_version")
                         lkg = info.get("lkg_version")
+                        status = info.get("status")
 
                         if target is not None:
                             self.model_repo.set_target_version(reg_id, dev_id, subsystem, target)
-                        if current is not None:
-                            self.model_repo.update_current_version(reg_id, dev_id, subsystem, current, lkg_version=lkg)
+                        if current is not None or lkg is not None or status is not None:
+                            self.model_repo.update_current_version(reg_id, dev_id, subsystem, current, lkg_version=lkg, status=status)
             self.push_model()
 
     def push_model(self):

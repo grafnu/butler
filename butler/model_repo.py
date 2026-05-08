@@ -47,7 +47,8 @@ class ModelRepository:
             self.data["registries"][registry_id]["devices"][device_id][subsystem] = {
                 "current_version": "0.0.0",
                 "target_version": "0.0.0",
-                "lkg_version": "0.0.0"
+                "lkg_version": "0.0.0",
+                "status": "quiescent"
             }
 
     def set_device_info(self, registry_id, device_id, subsystem, make, model):
@@ -63,11 +64,13 @@ class ModelRepository:
         self.data["registries"][registry_id]["devices"][device_id][subsystem]["target_version"] = version
         self._save()
 
-    def update_current_version(self, registry_id, device_id, subsystem, version, lkg_version=None):
+    def update_current_version(self, registry_id, device_id, subsystem, version, lkg_version=None, status=None):
         self._ensure_registry_device(registry_id, device_id, subsystem)
         self.data["registries"][registry_id]["devices"][device_id][subsystem]["current_version"] = version
         if lkg_version is not None:
             self.data["registries"][registry_id]["devices"][device_id][subsystem]["lkg_version"] = lkg_version
+        if status is not None:
+            self.data["registries"][registry_id]["devices"][device_id][subsystem]["status"] = status
         self._save()
 
     def get_device_state(self, registry_id, device_id, subsystem):

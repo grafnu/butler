@@ -78,7 +78,7 @@ class Orchestrator:
             self.settle_times[key] = time.time()
 
             # Always update LKG if reported, and update current_version
-            self.update_cloud_model(registry_id, device_id, subsystem, current_version=current_version, lkg_version=lkg_version)
+            self.update_cloud_model(registry_id, device_id, subsystem, current_version=current_version, lkg_version=lkg_version, status=status)
             
             if status in ["success", "failure"]:
                 if key in self.pending_updates:
@@ -108,11 +108,12 @@ class Orchestrator:
         payload = create_payload("cloud", {"operation": "READ"})
         self.transport.publish(env, payload)
 
-    def update_cloud_model(self, registry_id, device_id, subsystem, target_version=None, current_version=None, lkg_version=None):
+    def update_cloud_model(self, registry_id, device_id, subsystem, target_version=None, current_version=None, lkg_version=None, status=None):
         subsystem_data = {}
         if target_version: subsystem_data["target_version"] = target_version
         if current_version is not None: subsystem_data["current_version"] = current_version
         if lkg_version: subsystem_data["lkg_version"] = lkg_version
+        if status is not None: subsystem_data["status"] = status
         
         payload_data = {
             "operation": "UPDATE",
@@ -141,7 +142,8 @@ class Orchestrator:
         devices = self.models.get(registry_id, {})
         dev_info = devices.get(device_id, {}).get(subsystem, {})
         lkg = dev_info.get("lkg_version", "0.0.0")
-        self.update_cloud_model(registry_id, device_id, subsystem, target_version=lkg)
+        status = dev_info.get("status")
+        self.update_cloud_model(registry_id, device_id, subsystem, target_version=lkg, status=status)
 
     def check_reconciliation(self):
         if not self.is_active:
