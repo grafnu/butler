@@ -33,7 +33,8 @@ class ConnSpec:
             self.subscription = f"{self.root_topic}+{self.username}"
         else:
             if not username:
-                username = "unknown"
+                import secrets
+                username = f"unknown-{secrets.token_hex(2)}"
             
             self.username = username
             self.project_id = None

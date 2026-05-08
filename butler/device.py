@@ -90,7 +90,7 @@ class MockDevice:
                 if not os.path.exists(url):
                     print(f"[mocket] Blob not found: {url}", flush=True)
                     self.state = "failure"
-                    self.report_status()
+                    self.report_status(category="blob_invalid")
                     return
 
                 with open(url, "rb") as f:

@@ -110,6 +110,8 @@ class Verifier:
             "message": text,
             "timestamp": datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         }
+        if level == "FAIL":
+            payload_data["category"] = "validation.error"
         env = create_envelope(
             registry_id=registry_id,
             device_id=device_id,
