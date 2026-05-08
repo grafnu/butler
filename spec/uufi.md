@@ -106,6 +106,8 @@ Upon connection, the Client must perform a handshake to synchronize with the Sys
 
 The Client is considered **Active** only after receiving a configuration reply where the `transaction_id` inside the `udmi.reply` block matches the `transaction_id` sent in the original `state` message.
 
+**Transaction Integrity:** Implementations MUST ignore Handshake configuration replies if the `reply.transaction_id` does not match the currently active `handshake_tid`. Receipt of an unmatched transaction ID MUST NOT activate the client. This prevents a restarting component from accidentally "activating" on a leftover message from a previous session.
+
 ### Handshake Addressing
 Because the initial handshake is generic and occurs before the Client is associated with a specific registry or device, the registry-less Pattern C structure is used:
 
@@ -419,7 +421,7 @@ To ensure reliable delivery of state and configuration messages, all MQTT commun
 ### Error Reporting
 When the System encounters an error processing a UUFI message, it will respond via the reply channel using the `error` subType.
 The payload will include:
-- `category`: A string describing the error type. This MUST follow the [UDMI Categories](https://github.com/faucetsdn/udmi/blob/master/docs/specs/categories.md) specification (e.g., `system.auth.error`, `validation.error`, `not_found`).
+- `category`: A string describing the error type. Implementations MUST follow the [standard UDMI categories](https://github.com/faucetsdn/udmi/blob/master/docs/specs/categories.md) specification (e.g., `system.config.parse`, `system.auth.error`, `validation.error`).
 - `message`: A human-readable description of the error.
 - `transactionId`: The ID of the message that caused the error (if available).
 
@@ -430,6 +432,7 @@ Integration testing between different implementations has identified common area
 ### 9.1. Mandatory Payload Fields
 Every message's inner `payload` object MUST contain `timestamp` and `version` fields.
 - **Payload Structure:** The `payload` object MUST contain exactly one top-level key matching the `subFolder` name (e.g., `system`, `pointset`, `update`, `cloud`), which contains the UDMI data, in addition to the mandatory `timestamp` and `version` fields at the same level.
+    - **Cloud Specifics:** For `cloud` subfolder messages, the UDMI payload MUST be wrapped in a top-level `cloud` key (e.g., `{"version": "...", "timestamp": "...", "cloud": { ... }}`). This ensures consistent parsing across all subfolders and prevents implementations from accidentally sending model data at the root of the message.
     - **Protocol Version:** The top-level `payload.version` field MUST ONLY reflect the UUFI Protocol Version (e.g., `1.5.2`). It MUST NOT be used to report device firmware versions.
 - **Field Consistency:**
     - **Current Version:** Devices MUST report their active firmware version using the `current_version` field within the inner `state` data. It MUST NOT use the top-level `version` field for this purpose.
@@ -444,6 +447,7 @@ The `/uufi/p/{principal}/c/` topic branch MUST be used for the initial handshake
 
 ### 9.3. Envelope Redundancy
 Top-level envelope fields MUST only include data NOT already encoded in the MQTT topic structure.
+- **Principal Exception:** While the `principal` is encoded in the MQTT topic path for registry-less topics, it SHOULD also be included in the outer JSON envelope for all registry-less messages to facilitate easier filtering by passive observers and multi-session responders.
 - **Guidance:** Maintain a clean inner UDMI message by omitting redundant fields like `deviceId` or `subType` from the outer JSON wrap.
 
 ### 9.4. Timestamp Format
