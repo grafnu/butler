@@ -106,11 +106,14 @@ Upon connection, the Client must perform a handshake to synchronize with the Sys
 
 The Client is considered **Active** only after receiving a configuration reply where the `transaction_id` inside the `udmi.reply` block matches the `transaction_id` sent in the original `state` message.
 
+**Transaction Integrity:** Implementations MUST ignore Handshake configuration replies if the `reply.transaction_id` does not match the currently active `handshake_tid`. Receipt of an unmatched transaction ID MUST NOT activate the client. This prevents a restarting component from accidentally "activating" on a leftover message from a previous session.
+
 ### Handshake Addressing
 Because the initial handshake is generic and occurs before the Client is associated with a specific registry or device, the registry-less Pattern C structure is used:
 
 - **PubSub:** The `deviceRegistryId` and `deviceId` message attributes MUST be not present empty strings (or `null`).
 - **MQTT:** The topic MUST be `/uufi/p/{principal}/c/{subType}/{subFolder}`.
+    - **Principal Fallback:** If a `{principal}` is not explicitly provided in the connection configuration, the Client MUST generate a unique identity (e.g., using its process name and a UUID or timestamp) to use in the topic structure.
 
 **Important:** Handshake messages MUST be addressed using this registry-less scheme instead of registry-based addressing (`/uufi/r/.../c/...`).
 
@@ -418,7 +421,7 @@ To ensure reliable delivery of state and configuration messages, all MQTT commun
 ### Error Reporting
 When the System encounters an error processing a UUFI message, it will respond via the reply channel using the `error` subType.
 The payload will include:
-- `category`: A string describing the error type (e.g., `auth`, `validation`, `not_found`).
+- `category`: A string describing the error type. All components MUST use standardized categories as defined in the [UDMI Categories Specification](https://github.com/faucetsdn/udmi/blob/master/docs/specs/categories.md) (e.g., `system.config.parse`, `system.auth.error`, `validation.error`).
 - `message`: A human-readable description of the error.
 - `transactionId`: The ID of the message that caused the error (if available).
 
@@ -429,11 +432,13 @@ Integration testing between different implementations has identified common area
 ### 9.1. Mandatory Payload Fields
 Every message's inner `payload` object MUST contain `timestamp` and `version` fields.
 - **Payload Structure:** The `payload` object MUST contain exactly one top-level key matching the `subFolder` name (e.g., `system`, `pointset`, `update`, `cloud`), which contains the UDMI data, in addition to the mandatory `timestamp` and `version` fields at the same level.
+    - **Cloud Specifics:** For `cloud` subfolder messages, the UDMI payload MUST be wrapped in a top-level `cloud` key (e.g., `{"version": "...", "timestamp": "...", "cloud": { ... }}`). This ensures consistent parsing across all subfolders and prevents implementations from accidentally sending model data at the root of the message.
+    - **Protocol Version:** The top-level `payload.version` field MUST ONLY reflect the UUFI Protocol Version (e.g., `1.5.2`). It MUST NOT be used to report device firmware versions.
 - **Field Consistency:**
-    - **Current Version:** Devices MUST report their active firmware version using the `current_version` field within the inner `state` data.
+    - **Current Version:** Devices MUST report their active firmware version using the `current_version` field within the inner `state` data. It MUST NOT use the top-level `version` field for this purpose.
     - **LKG Version:** Devices MUST report their most recent verified operational version using the `lkg_version` field.
     - **Operation Status:** Devices MUST report their operational state (e.g., `quiescent`, `pending`, `success`, `failure`) using the `status` field.
-- **Guidance:** Ensure `publishTime` is in the envelope and `timestamp` is in the inner payload. Ensure `version` and `lkg_version` are present in the payload. Use the subfolder wrapper for all UDMI fields.
+- **Guidance:** Ensure `publishTime` is in the envelope and `timestamp` is in the inner payload. Ensure `version` (protocol) and `lkg_version` (firmware) are present in the payload. Use the subfolder wrapper for all UDMI fields.
 
 ### 9.2. Handshake Addressing
 The `/uufi/p/{principal}/c/` topic branch MUST be used for the initial handshake.
@@ -442,13 +447,16 @@ The `/uufi/p/{principal}/c/` topic branch MUST be used for the initial handshake
 
 ### 9.3. Envelope Redundancy
 Top-level envelope fields MUST only include data NOT already encoded in the MQTT topic structure.
+- **Principal Exception:** While the `principal` is encoded in the MQTT topic path for registry-less topics, it SHOULD also be included in the outer JSON envelope for all registry-less messages to facilitate easier filtering by passive observers and multi-session responders.
 - **Guidance:** Maintain a clean inner UDMI message by omitting redundant fields like `deviceId` or `subType` from the outer JSON wrap.
 
 ### 9.4. Timestamp Format
-All timestamps MUST follow RFC 3339 in the **minimal precision format** (e.g., `2026-05-01T22:32:17Z`). Implementations should use UTC to avoid ambiguity. Microseconds or numeric time zone offsets MUST NOT be used when generating messages. 
+All timestamps MUST follow RFC 3339 in the **minimal precision format** (e.g., `2026-05-01T22:32:17Z`).
+- **UTC Mandate:** Implementations MUST use UTC and MUST use the `Z` suffix (e.g., `2026-05-01T22:32:17Z`).
+- **Strictness:** Microseconds or numeric time zone offsets (e.g., `+00:00`) MUST NOT be used when generating messages.
 
 **Permissiveness Rule:**
-All components MUST be strict in what they send (minimal precision only) but SHOULD be permissive in what they receive (handling microseconds or offsets gracefully).
+All components MUST be strict in what they send (minimal precision only with `Z` suffix) but SHOULD be permissive in what they receive (handling microseconds or offsets gracefully).
 
 ### 9.5. Model Storage Consistency
 While internal storage format is an implementation detail, tools sharing a Model Repository (e.g., `register`, `trigger`, and `mocket`) MUST agree on the schema.
