@@ -90,7 +90,7 @@ The implementation on the device must adhere to this state flow:
 - **Report Status:** Periodically publish current version, state (`quiescent`), and its own `last_known_good` version (`lkg_version`).
 - **Handle Update:** Upon receiving `update_payload`, transition to `pending`.
 - **Verify & Apply:** Download the blob, verify the SHA256 hash, and apply the update.
-- **Finalize:** Report `success` (if verified) or `failure` (if hash mismatch or install error).
+- **Finalize:** Report `success` (if verified) or `failure` (using appropriate [UDMI categories](https://github.com/faucetsdn/udmi/blob/master/docs/specs/categories.md) like `blob_invalid` for hash mismatch or `apply_error` for installation failures).
 - **Interface:** Should be accessed through the `mocket` component.
 
 ## 4. System Behaviors
