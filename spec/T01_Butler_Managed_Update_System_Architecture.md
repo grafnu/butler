@@ -64,10 +64,8 @@ Responsible for tracking the "source of truth" for the fleet. The internal struc
 - **Atomicity:** All updates to the model file MUST be atomic (e.g., write to a temporary file and rename) to prevent corruption during system crashes.
 - **Access:** Direct access is restricted to `mocket`, `register`, and `trigger`. The `butler` component MUST interact with the model file exclusively through `mocket` via the communication substrate.
 - **Composite Primary Keys:** State tracking for all device subsystems MUST utilize a composite primary key consisting of both the `registry_id` and `device_id`. This ensures absolute uniqueness across multi-registry environments. 
-    - **Standard Delimiter:** When a composite key must be represented as a single string (e.g., in logs, error reports, or internal lookups), the forward-slash `/` delimiter MUST be used: `{registry_id}/{device_id}`.
 - **Internal Storage Schema:** To ensure interoperability between tools (e.g. `register` from one implementation and `mocket` from another), the internal storage file (e.g. `model.json`) MUST mirror the nested `"registries"` hierarchy defined for MQTT messages. Flat `devices` maps or omitting the `"registries"` root key is non-compliant.
 - **MQTT Representation:** While internal storage is an implementation detail, the representation of the model on the communication substrate (via UUFI `cloud` messages) MUST be strictly standardized to ensure interoperability. When replying to a model query, the `cloud` payload MUST follow the nested structure: `{"registries": { "registry_id": { "devices": { "device_id": { "subsystem": { "target_version": "...", "current_version": "...", "lkg_version": "..." } } } } } }` (wrapped in the mandatory UUFI `cloud` subfolder).
-- **Operation Semantics:** The `UPDATE` operation for the `cloud` subfolder MUST be treated as a partial merge at the device subsystem level. Receiving an `UPDATE` message with only specific fields (e.g., `target_version`) MUST update those fields in the model without overwriting or deleting other existing fields (e.g., `make`, `model`, or `current_version`) for that subsystem.
 
 ### 3.3 Butler Orchestrator (Control Logic)
 The central engine that manages the update lifecycle state machine:
@@ -76,7 +74,6 @@ The central engine that manages the update lifecycle state machine:
 - **Re-triggering Logic:** The Orchestrator MAY issue a new `update_payload` while a device is in the `pending` state ONLY if the `target_version` has changed to a value different from the version currently being applied by the device. If the `target_version` remains the same, the Orchestrator MUST NOT re-issue the payload until the current attempt succeeds, fails, or times out.
 - **Error State:** Triggered by device-reported failure or timeout.
 - **Loop Prevention (Settling Time):** The Orchestrator MUST implement a "Settling Time" (minimum 5s) after issuing an update command or detecting a state change before re-evaluating reconciliation for that specific device subsystem. This prevents aggressive re-triggering loops caused by message propagation latency.
-    - **Processing Behavior:** The Settling Time applies only to the **initiation of new commands** (reconciliation). The Orchestrator MUST continue to ingest and cache state updates during the settling period, but MUST NOT issue a new `update_payload` or `model_update` for that specific subsystem until the timer expires.
 - **Timeout Management:** The Orchestrator MUST implement a configurable timeout (default 60s) for each device subsystem in the `pending` state. If a device fails to report `success` or `failure` within this window, it must be treated as a failure and potentially trigger a rollback.
 - **Handshake:** MUST implement the UUFI startup handshake. If a matching configuration reply is not received within 60 seconds of sending the initial state message, the component MUST log a critical error and exit (Fail-fast).
 - **Rollback Logic:** On critical failure, the Orchestrator MUST automatically revert the `target_version` in the Model Repository (via `mocket`) to the LKG version.
@@ -90,7 +87,7 @@ The implementation on the device must adhere to this state flow:
 - **Report Status:** Periodically publish current version, state (`quiescent`), and its own `last_known_good` version (`lkg_version`).
 - **Handle Update:** Upon receiving `update_payload`, transition to `pending`.
 - **Verify & Apply:** Download the blob, verify the SHA256 hash, and apply the update.
-- **Finalize:** Report `success` (if verified) or `failure` (using appropriate [UDMI categories](https://github.com/faucetsdn/udmi/blob/master/docs/specs/categories.md) like `blob_invalid` for hash mismatch or `apply_error` for installation failures).
+- **Finalize:** Report `success` (if verified) or `failure` (if hash mismatch or install error).
 - **Interface:** Should be accessed through the `mocket` component.
 
 ## 4. System Behaviors
@@ -131,7 +128,7 @@ functioning implementation. When it detects a valid sequence, or an invalid mess
 
 **Verifier Requirements:**
 - **Handshake Protocol:** The Verifier MUST perform a full UUFI handshake and become **Active** before performing its validation duties to ensure it is synchronized with the System state.
-- **Handshake Awareness:** The Verifier MUST monitor the `/uufi/p/{principal}/c/` handshake topics to ensure other clients successfully activate before performing operations.
+- **Handshake Awareness:** The Verifier MUST monitor the `/uufi/c/` handshake topics to ensure other clients successfully activate before performing operations.
 - **Validation Schema:** It SHOULD validate that all messages contain the mandatory UDMI `payload` fields (`timestamp`, `version`).
 - **Timestamp Strictness:** The Verifier MUST strictly enforce the minimal precision format (RFC 3339) for all messages originating *from* the Butler orchestrator. It SHOULD be graceful for messages originating from other sources (e.g., devices) to ensure interoperability while still validating core system behavior.
 - **State Transition Monitoring:** It MUST track the state transitions for device subsystems using the `update` subfolder (e.g., `quiescent` -> `pending` -> `success/failure`).
