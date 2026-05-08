@@ -106,11 +106,11 @@ class MockDevice:
                 else:
                     print(f"[mocket] Hash mismatch for {url}: expected {sha256}, got {actual_hash}", flush=True)
                     self.state = "failure"
-                    self.report_status()
+                    self.report_status(category="blob_invalid")
             except Exception as e:
                 print(f"[mocket] Error applying update: {e}", flush=True)
                 self.state = "failure"
-                self.report_status()
+                self.report_status(category="apply_error")
 
     def handle_handshake(self, principal, payload, tid):
         udmi = payload.get("udmi", payload)
@@ -175,13 +175,15 @@ class MockDevice:
         payload = create_payload("cloud", model_data)
         self.transport.publish(env, payload)
 
-    def report_status(self):
+    def report_status(self, category=None):
         update_data = {
             "current_version": self.current_version,
             "lkg_version": self.lkg_version,
             "state": self.state,
             "subsystem": self.subsystem
         }
+        if category:
+            update_data["category"] = category
         env = create_envelope(
             registry_id=self.registry_id,
             device_id=self.device_id,
