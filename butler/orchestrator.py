@@ -68,7 +68,7 @@ class ButlerOrchestrator:
                         now = time.time()
                         last_action = self.last_action_time.get(key, 0)
                         if now - last_action < self.settling_time and key in self.known_devices:
-                            # Still update target_version as that comes from outside
+                            # Still update target_version as that comes from outside (e.g. user)
                             if "target_version" in subsystem_data:
                                 self.known_devices[key]["target_version"] = subsystem_data["target_version"]
                             continue
@@ -125,7 +125,7 @@ class ButlerOrchestrator:
             if current_version != target_version:
                 self.reconcile_device(registry_id, device_id)
             else:
-                if device_info.get("state") != "quiescent":
+                if device_info.get("state") != "quiescent" or device_info.get("current_version") != current_version:
                     print(f"[butler] Device {key} is quiescent and compliant.")
                     updates["current_version"] = current_version
                     updates["state"] = "quiescent"
@@ -162,29 +162,21 @@ class ButlerOrchestrator:
         device_info.update(detail)
         self.known_devices[key] = device_info
         
-        # Settling time check moved to higher level (trigger_update)
-        # However, the spec says "MUST NOT issue a new ... model_update ... until the timer expires."
-        # If we ARE in settling time, we should skip the network call but keep the cache.
-        now = time.time()
-        last_action = self.last_action_time.get(key, 0)
-        if now - last_action < self.settling_time:
-             return
-
         subsystem = device_info.get("subsystem", "main")
+        # Only send the changed fields to avoid overwriting with stale cache
         payload = {
             "operation": "UPDATE",
             "registries": {
                 registry_id: {
                     "devices": {
                         device_id: {
-                            subsystem: device_info
+                            subsystem: detail
                         }
                     }
                 }
             }
         }
         self.publish_uufi(device_id, "model", payload, "cloud", registry_id=registry_id)
-        # self.last_action_time[key] = time.time() # Don't update here, let the caller do it if it's a command
 
     def trigger_update(self, registry_id, device_id, device_info):
         if self.failure_mode:
@@ -192,12 +184,6 @@ class ButlerOrchestrator:
 
         key = f"{registry_id}/{device_id}"
         
-        # Settling time check
-        now = time.time()
-        last_action = self.last_action_time.get(key, 0)
-        if now - last_action < self.settling_time:
-            return
-
         version = device_info.get("target_version")
         make = device_info.get("make", "default")
         model = device_info.get("model", "default")
@@ -228,12 +214,6 @@ class ButlerOrchestrator:
     def trigger_rollback(self, registry_id, device_id, device_info):
         key = f"{registry_id}/{device_id}"
         
-        # Settling time check
-        now = time.time()
-        last_action = self.last_action_time.get(key, 0)
-        if now - last_action < self.settling_time:
-            return
-
         lkg = device_info.get("last_known_good", "1.0")
         print(f"[butler] Rolling back {key} to {lkg}")
         # Update local cache and model
@@ -244,6 +224,12 @@ class ButlerOrchestrator:
         key = f"{registry_id}/{device_id}"
         device_info = self.known_devices.get(key)
         if not device_info:
+            return
+
+        # Settling time check: prevent re-evaluation within 5s of last action/state change
+        now = time.time()
+        last_action = self.last_action_time.get(key, 0)
+        if now - last_action < self.settling_time:
             return
 
         if device_info.get("current_version") != device_info.get("target_version"):

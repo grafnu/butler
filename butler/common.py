@@ -87,6 +87,19 @@ class ButlerBusBase:
         if msg_source == self.source:
             return
 
+        msg_principal = udmi_payload.get("principal")
+        # Base principal for filtering (e.g. "impl_A" from "impl_A.butler")
+        base_principal = self.principal.split('.')[0]
+        
+        if msg_principal:
+            msg_base = msg_principal.split('.')[0]
+            if msg_base != base_principal:
+                # Different session/principal
+                return
+        elif self.filter_principal:
+            # If we require a principal and none is provided, ignore
+            return
+
         if self.track_nonces:
             nonce = udmi_payload.get("nonce")
             if nonce:
@@ -210,11 +223,10 @@ class ButlerMQTTBase(ButlerBusBase):
                     self.on_raw_message(msg.topic, payload_str)
                     return
 
-                # Unified Structure: /uufi/[r/{registryId}/[d/{deviceId}/]|p/{principal}/]c/{subType}/{subFolder}
+                # Unified Structure: /uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}
                 remaining = parts[uufi_idx + 1:]
                 registry_id = None
                 device_id = None
-                principal = None
                 
                 if not remaining:
                     self.on_raw_message(msg.topic, payload_str)
@@ -224,14 +236,11 @@ class ButlerMQTTBase(ButlerBusBase):
                 if remaining[curr] == "r":
                     registry_id = remaining[curr+1]
                     curr += 2
-                    if remaining[curr] == "d":
+                    if len(remaining) > curr and remaining[curr] == "d":
                         device_id = remaining[curr+1]
                         curr += 2
-                elif remaining[curr] == "p":
-                    principal = remaining[curr+1]
-                    curr += 2
                 
-                if remaining[curr] != "c":
+                if len(remaining) <= curr or remaining[curr] != "c":
                     self.on_raw_message(msg.topic, payload_str)
                     return
                 
@@ -247,8 +256,8 @@ class ButlerMQTTBase(ButlerBusBase):
                     udmi_payload["deviceRegistryId"] = registry_id
                 if device_id:
                     udmi_payload["deviceId"] = device_id
-                if principal:
-                    udmi_payload["principal"] = principal
+                
+                # Principal is now always in the envelope, handled by data.items() loop above
 
                 self._handle_received_message(msg.topic, device_id, sub_type, sub_folder, udmi_payload)
             except (json.JSONDecodeError, IndexError):
@@ -285,14 +294,11 @@ class ButlerMQTTBase(ButlerBusBase):
         topic_parts = [self.prefix] if self.prefix else []
         topic_parts.append("uufi")
         
-        # Unified Structure: /uufi/[r/{registryId}/[d/{deviceId}/]|p/{principal}/]c/{subType}/{subFolder}
+        # Unified Structure: /uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}
         if registry_id:
             topic_parts.extend(["r", registry_id])
             if device_id:
                 topic_parts.extend(["d", str(device_id)])
-        else:
-            p = target_principal or self.principal
-            topic_parts.extend(["p", p])
         
         topic_parts.append("c")
         topic_parts.append(sub_type)

@@ -28,7 +28,6 @@ class MocketDevice:
         
         # Ensure bus uses our registry_id
         self.bus.registry_id = registry_id
-        self.bus.filter_principal = False
         
         self.bus.on_connect = self.on_connect
         self.bus.on_message = self.on_message
@@ -81,8 +80,8 @@ class MocketDevice:
                 "msg_source": source
             }
         }
-        # Handshake reply MUST go to /uufi/p/{principal}/c/config/udmi (registry-less)
-        self.publish_uufi(None, "config", response_payload, "udmi", transaction_id=transaction_id, target_principal=principal)
+        # Handshake reply MUST go to /uufi/c/config/udmi (registry-less)
+        self.publish_uufi(None, "config", response_payload, "udmi", transaction_id=transaction_id)
 
     def handle_cloud_message(self, data):
         # Cloud data is wrapped in 'cloud' key
