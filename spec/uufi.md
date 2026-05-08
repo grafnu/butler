@@ -421,7 +421,7 @@ To ensure reliable delivery of state and configuration messages, all MQTT commun
 ### Error Reporting
 When the System encounters an error processing a UUFI message, it will respond via the reply channel using the `error` subType.
 The payload will include:
-- `category`: A string describing the error type. Implementations MUST follow the [standard UDMI categories](https://github.com/faucetsdn/udmi/blob/master/docs/specs/categories.md) specification (e.g., `system.config.parse`, `system.auth.error`, `validation.error`).
+- `category`: A string describing the error type. All components MUST use standardized categories as defined in the [UDMI Categories Specification](https://github.com/faucetsdn/udmi/blob/master/docs/specs/categories.md) (e.g., `system.config.parse`, `system.auth.error`, `validation.error`).
 - `message`: A human-readable description of the error.
 - `transactionId`: The ID of the message that caused the error (if available).
 
