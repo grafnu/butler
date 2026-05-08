@@ -20,7 +20,8 @@ def main():
     transport.connect()
     
     if conn_spec.protocol == "mqtt":
-        transport.subscribe("/uufi/#" if not conn_spec.prefix else f"/uufi/{conn_spec.prefix}/#", on_message)
+        prefix = conn_spec.prefix + '/' if conn_spec.prefix else ''
+        transport.subscribe(f"/{prefix}uufi/#", on_message)
     else:
         transport.subscribe(on_message)
 

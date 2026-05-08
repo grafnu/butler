@@ -200,11 +200,11 @@ class MockDevice:
         if self.conn_spec.protocol == "mqtt":
             prefix = self.conn_spec.prefix + '/' if self.conn_spec.prefix else ''
             # Generic UUFI channel for handshakes and discovery
-            self.transport.subscribe(f"/{prefix}uufi/p/+/c/+/+", self.on_message)
-            # Registry-specific channel (nested under principal)
-            self.transport.subscribe(f"/{prefix}uufi/p/+/r/{self.registry_id}/d/{self.device_id}/c/+/+", self.on_message)
-            # Registry-level cloud ops (nested under principal)
-            self.transport.subscribe(f"/{prefix}uufi/p/+/r/{self.registry_id}/d/{self.registry_id}/c/+/+", self.on_message)
+            self.transport.subscribe(f"/{prefix}uufi/c/+/+", self.on_message)
+            # Registry-specific channel
+            self.transport.subscribe(f"/{prefix}uufi/r/{self.registry_id}/d/{self.device_id}/c/+/+", self.on_message)
+            # Registry-level cloud ops
+            self.transport.subscribe(f"/{prefix}uufi/r/{self.registry_id}/d/{self.registry_id}/c/+/+", self.on_message)
         else:
             self.transport.subscribe(self.on_message)
             

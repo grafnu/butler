@@ -93,7 +93,7 @@ class Orchestrator:
             self.query_all_registries()
 
     def query_all_registries(self):
-        # Query using the dedicated discovery topic /uufi/p/{principal}/c/query/cloud
+        # Query using the dedicated discovery topic /uufi/c/query/cloud
         env = create_envelope(
             sub_type="query",
             sub_folder="cloud",
@@ -106,7 +106,7 @@ class Orchestrator:
     def update_cloud_model(self, registry_id, device_id, subsystem, target_version=None, current_version=None, lkg_version=None):
         subsystem_data = {}
         if target_version: subsystem_data["target_version"] = target_version
-        if current_version: subsystem_data["current_version"] = current_version
+        if current_version is not None: subsystem_data["current_version"] = current_version
         if lkg_version: subsystem_data["lkg_version"] = lkg_version
         
         payload_data = {
@@ -157,7 +157,7 @@ class Orchestrator:
                         continue
 
                     target = info.get("target_version")
-                    current = info.get("current_version")
+                    current = info.get("current_version") or ""
                     
                     retrigger = False
                     if key in self.pending_updates:
@@ -165,7 +165,7 @@ class Orchestrator:
                         if target != pending_target and target != current:
                             print(f"[butler] Retriggering {key}: target {target} != pending {pending_target}", flush=True)
                             retrigger = True
-                    elif target != current:
+                    elif target and target != current:
                         retrigger = True
 
                     if retrigger:
@@ -241,12 +241,12 @@ class Orchestrator:
         
         # Subscribe to handshake reply and discovery
         if self.conn_spec.protocol == "mqtt":
-            # New unified topics: /uufi/p/{principal}/c/...
+            # New unified topics: /uufi/c/...
             prefix = self.conn_spec.prefix + '/' if self.conn_spec.prefix else ''
-            self.transport.subscribe(f"/{prefix}uufi/p/{self.principal}/c/config/udmi", self.on_message)
-            self.transport.subscribe(f"/{prefix}uufi/p/{self.principal}/c/config/cloud", self.on_message)
-            self.transport.subscribe(f"/{prefix}uufi/p/+/r/+/d/+/c/state/update", self.on_message)
-            self.transport.subscribe(f"/{prefix}uufi/p/+/r/+/d/+/c/config/cloud", self.on_message)
+            self.transport.subscribe(f"/{prefix}uufi/c/config/udmi", self.on_message)
+            self.transport.subscribe(f"/{prefix}uufi/c/config/cloud", self.on_message)
+            self.transport.subscribe(f"/{prefix}uufi/r/+/d/+/c/state/update", self.on_message)
+            self.transport.subscribe(f"/{prefix}uufi/r/+/d/+/c/config/cloud", self.on_message)
         else:
             self.transport.subscribe(self.on_message)
 
@@ -258,12 +258,16 @@ class Orchestrator:
             while True:
                 now = time.time()
                 if not self.is_active:
-                    if now - self.handshake_start_time > 60:
-                        print("[butler] CRITICAL: Handshake timeout. Fail-fast.", flush=True)
-                        sys.exit(1)
-                    if now - last_handshake > 5:
-                        self.send_handshake()
-                        last_handshake = now
+                    if self.transport.is_connected:
+                        if now - self.handshake_start_time > 60:
+                            print("[butler] CRITICAL: Handshake timeout. Fail-fast.", flush=True)
+                            sys.exit(1)
+                        if now - last_handshake > 5:
+                            self.send_handshake()
+                            last_handshake = now
+                    else:
+                        # Reset handshake start time until we actually connect
+                        self.handshake_start_time = now
                 else:
                     self.check_reconciliation()
                     self.check_timeouts()

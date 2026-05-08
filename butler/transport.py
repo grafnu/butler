@@ -10,6 +10,8 @@ class Transport:
     def subscribe(self, callback): raise NotImplementedError()
     def loop_start(self): pass
     def loop_stop(self): pass
+    @property
+    def is_connected(self): return True
 
 class MqttTransport(Transport):
     def __init__(self, conn_spec):
@@ -17,6 +19,11 @@ class MqttTransport(Transport):
         self.client = mqtt.Client()
         self.callback = None
         self.on_connect_callback = None
+        self._is_connected = False
+
+    @property
+    def is_connected(self):
+        return self._is_connected
 
     def connect(self):
         host = self.conn_spec.host
@@ -29,9 +36,11 @@ class MqttTransport(Transport):
 
     def on_connect(self, client, userdata, flags, rc):
         if rc == 0:
+            self._is_connected = True
             if self.on_connect_callback:
                 self.on_connect_callback()
         else:
+            self._is_connected = False
             print(f"MQTT connect failed: {rc}")
 
     def on_message(self, client, userdata, msg):
@@ -50,7 +59,7 @@ class MqttTransport(Transport):
                 if field in data: env[field] = data[field]
         
         # Parse topic to extract envelope
-        # Structure: /{prefix}/uufi/p/{principal}/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}
+        # Structure: /{prefix}/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}
         parts = msg.topic.strip('/').split('/')
         
         try:
@@ -59,10 +68,6 @@ class MqttTransport(Transport):
             return
 
         rem = parts[uufi_idx + 1:]
-        
-        if len(rem) >= 2 and rem[0] == "p":
-            env["principal"] = rem[1]
-            rem = rem[2:]
         
         if "c" in rem:
             c_idx = rem.index("c")
@@ -87,6 +92,9 @@ class MqttTransport(Transport):
         wrapped = {"payload": payload}
         for field in ["transactionId", "nonce", "publishTime", "source", "projectId", "principal"]:
             if field in envelope: wrapped[field] = envelope[field]
+        
+        if "principal" not in wrapped and self.conn_spec.principal:
+            wrapped["principal"] = self.conn_spec.principal
             
         self.client.publish(topic, json.dumps(wrapped))
 
@@ -95,10 +103,6 @@ class MqttTransport(Transport):
         if self.conn_spec.prefix:
             parts.append(self.conn_spec.prefix)
         parts.append("uufi")
-            
-        principal = env.get("principal") or self.conn_spec.principal
-        if principal:
-            parts.extend(["p", principal])
             
         if env.get("deviceRegistryId"):
             parts.extend(["r", env["deviceRegistryId"]])

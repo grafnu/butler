@@ -47,7 +47,7 @@ class Verifier:
                 self.log_verification(registry_id, device_id or "_validator", f"Invalid timestamp format from {source}: {timestamp}", level="FAIL")
                 return
 
-        # Monitor Handshake on /uufi/p/{principal}/c/
+        # Monitor Handshake on /uufi/c/
         if sub_folder == "udmi" and not device_id:
             if sub_type == "state":
                 udmi = payload.get("udmi", payload)
