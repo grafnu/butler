@@ -177,16 +177,18 @@ UUFI supports direct operations on the Cloud Model by setting specific attribute
 The `CloudModel` object used in these operations contains:
 - `operation`: The action to perform (`READ`, `CREATE`, `UPDATE`, `DELETE`, `BIND`, `UNBIND`).
 - `registries`: A map where keys are `registry_id`, values are maps of `device_id` to subsystem states.
-  - *Example structure:* `{"registries": {"reg-A": {"devices": {"dev-001": {"main": {"target_version": "1.1.0", "current_version": "1.0.0"}}}}}}`
+  - *Example structure:* `{"registries": {"reg-A": {"devices": {"dev-001": {"main": {"target_version": "1.1.0", "current_version": "1.0.0", "status": "quiescent", "lkg_version": "1.0.0"}}}}}}`
 - `detail`: (Optional) Additional parameters specific to the operation.
 
 ### 5.2. Cloud Model Queries
 - Set `subFolder: cloud` and `subType: query`.
 - **Payload:** A `CloudModel` object with `operation: READ`.
+- **Addressing:** Discovery queries MUST be published to the registry-less topic `/uufi/c/query/cloud`.
 
 ### 5.3. Cloud Model Updates
 - Set `subFolder: cloud` and `subType: model`.
 - **Payload:** A `CloudModel` object specifying the `operation` (e.g., `CREATE`, `UPDATE`, `DELETE`, `BIND`, `UNBIND`) and the target `devices` map.
+- **Mandatory Status:** When updating device subsystems, the `status` field SHOULD be included to reflect the current operational state.
 
 ## 6. Mapping UDMI to UUFI Envelopes
 
@@ -427,7 +429,7 @@ Integration testing between different implementations has identified common area
 
 ### 9.1. Mandatory Payload Fields
 Every message's inner `payload` object MUST contain `timestamp` and `version` fields.
-- **Payload Structure:** The `payload` object MUST contain exactly one top-level key matching the `subFolder` name (e.g., `system`, `pointset`, `update`, `cloud`), which contains the UDMI data, in addition to the mandatory `timestamp` and `version` fields at the same level.
+- **Payload Structure:** The `payload` object MUST contain exactly one top-level key matching the `subFolder` name (e.g., `system`, `pointset`, `update`, `cloud`, `validation`), which contains the UDMI data, in addition to the mandatory `timestamp` and `version` fields at the same level.
 - **Field Consistency:**
     - **Current Version:** Devices MUST report their active firmware version using the `current_version` field within the inner `state` data.
     - **LKG Version:** Devices MUST report their most recent verified operational version using the `lkg_version` field.
