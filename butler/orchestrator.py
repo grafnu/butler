@@ -27,9 +27,9 @@ class ButlerOrchestrator:
         self.failure_mode = failure_mode
         self.timeout = timeout
         self.settling_time = 5
-        self.devices_pending = {} # (registry_id, device_id) -> start_time
-        self.known_devices = {} # (registry_id, device_id) -> device_info
-        self.last_action_time = {} # (registry_id, device_id) -> time
+        self.devices_pending = {} # "registry_id/device_id" -> start_time
+        self.known_devices = {} # "registry_id/device_id" -> device_info
+        self.last_action_time = {} # "registry_id/device_id" -> time
 
     def on_connect(self):
         print("[butler] Orchestrator connected, starting handshake...")
@@ -62,8 +62,18 @@ class ButlerOrchestrator:
                     if subsystems:
                         # For now, we just take the first subsystem data
                         subsystem_id, subsystem_data = next(iter(subsystems.items()))
-                        print(f"[butler] Received model info for {registry_id}/{device_id}/{subsystem_id}")
-                        key = (registry_id, device_id)
+                        key = f"{registry_id}/{device_id}"
+                        
+                        # Only update if NOT in settling time, to avoid stale data overwriting local cache
+                        now = time.time()
+                        last_action = self.last_action_time.get(key, 0)
+                        if now - last_action < self.settling_time and key in self.known_devices:
+                            # Still update target_version as that comes from outside
+                            if "target_version" in subsystem_data:
+                                self.known_devices[key]["target_version"] = subsystem_data["target_version"]
+                            continue
+
+                        print(f"[butler] Received model info for {key}/{subsystem_id}")
                         if key not in self.known_devices:
                             self.known_devices[key] = {"registry_id": registry_id, "device_id": device_id, "subsystem": subsystem_id}
                         self.known_devices[key].update(subsystem_data)
@@ -83,21 +93,23 @@ class ButlerOrchestrator:
         if not registry_id:
             return
 
-        print(f"[butler] Received device state for {device_id} (reg: {registry_id}): {status} (v{current_version}, lkg: {lkg_version})")
+        key = f"{registry_id}/{device_id}"
+        print(f"[butler] Received device state for {key}: {status} (v{current_version}, lkg: {lkg_version})")
         
-        key = (registry_id, device_id)
         device_info = self.known_devices.get(key)
         if not device_info:
             # If we don't know the device, query the model
-            print(f"[butler] Unknown device {registry_id}/{device_id}, querying model...")
+            print(f"[butler] Unknown device {key}, querying model...")
             self.known_devices[key] = {"registry_id": registry_id, "device_id": device_id}
             self.query_model(registry_id, device_id)
             return
 
+        updates = {}
+
         # Always trust and persist LKG if reported
         if lkg_version and lkg_version != device_info.get("last_known_good"):
-            print(f"[butler] Updating LKG for {registry_id}/{device_id} to {lkg_version}")
-            self.update_model(registry_id, device_id, last_known_good=lkg_version)
+            print(f"[butler] Updating LKG for {key} to {lkg_version}")
+            updates["last_known_good"] = lkg_version
 
         old_status = device_info.get("state")
         if status != old_status:
@@ -105,7 +117,7 @@ class ButlerOrchestrator:
 
         if status == "pending":
             if key not in self.devices_pending:
-                print(f"[butler] Device {registry_id}/{device_id} entered pending state. Starting timeout timer.")
+                print(f"[butler] Device {key} entered pending state. Starting timeout timer.")
                 self.devices_pending[key] = time.time()
         
         elif status == "quiescent":
@@ -114,25 +126,27 @@ class ButlerOrchestrator:
                 self.reconcile_device(registry_id, device_id)
             else:
                 if device_info.get("state") != "quiescent":
-                    print(f"[butler] Device {registry_id}/{device_id} is quiescent and compliant.")
-                    self.update_model(registry_id, device_id, current_version=current_version, state="quiescent")
+                    print(f"[butler] Device {key} is quiescent and compliant.")
+                    updates["current_version"] = current_version
+                    updates["state"] = "quiescent"
         
         elif status == "success":
             if device_info.get("current_version") != current_version or device_info.get("state") != "quiescent":
-                print(f"[butler] Device {registry_id}/{device_id} success reported. Requesting model update.")
-                self.update_model(registry_id, device_id, current_version=current_version, last_known_good=lkg_version, state="quiescent")
-                # Also update local cache
-                device_info["current_version"] = current_version
-                device_info["last_known_good"] = lkg_version
-                device_info["state"] = "quiescent"
+                print(f"[butler] Device {key} success reported. Requesting model update.")
+                updates["current_version"] = current_version
+                updates["last_known_good"] = lkg_version
+                updates["state"] = "quiescent"
             if key in self.devices_pending:
                 del self.devices_pending[key]
         
         elif status == "failure":
-            print(f"[butler] Device {registry_id}/{device_id} failure reported. Triggering rollback.")
+            print(f"[butler] Device {key} failure reported. Triggering rollback.")
             self.trigger_rollback(registry_id, device_id, device_info)
             if key in self.devices_pending:
                 del self.devices_pending[key]
+
+        if updates:
+            self.update_model(registry_id, device_id, **updates)
 
     def query_model(self, registry_id=None, device_id=None):
         payload = {
@@ -141,12 +155,21 @@ class ButlerOrchestrator:
         self.publish_uufi(device_id, "query", payload, "cloud", registry_id=registry_id)
 
     def update_model(self, registry_id, device_id, **detail):
-        # Nested structure as per 3.2: {"registries": { "registry_id": { "devices": { "device_id": { "subsystem": { ... } } } } } }
-        key = (registry_id, device_id)
+        key = f"{registry_id}/{device_id}"
+        
+        # Ingest and cache state updates ALWAYS (as per spec)
         device_info = self.known_devices.get(key, {}).copy()
         device_info.update(detail)
-        self.known_devices[key] = device_info # update cache
+        self.known_devices[key] = device_info
         
+        # Settling time check moved to higher level (trigger_update)
+        # However, the spec says "MUST NOT issue a new ... model_update ... until the timer expires."
+        # If we ARE in settling time, we should skip the network call but keep the cache.
+        now = time.time()
+        last_action = self.last_action_time.get(key, 0)
+        if now - last_action < self.settling_time:
+             return
+
         subsystem = device_info.get("subsystem", "main")
         payload = {
             "operation": "UPDATE",
@@ -161,10 +184,18 @@ class ButlerOrchestrator:
             }
         }
         self.publish_uufi(device_id, "model", payload, "cloud", registry_id=registry_id)
-        self.last_action_time[key] = time.time()
+        # self.last_action_time[key] = time.time() # Don't update here, let the caller do it if it's a command
 
     def trigger_update(self, registry_id, device_id, device_info):
         if self.failure_mode:
+            return
+
+        key = f"{registry_id}/{device_id}"
+        
+        # Settling time check
+        now = time.time()
+        last_action = self.last_action_time.get(key, 0)
+        if now - last_action < self.settling_time:
             return
 
         version = device_info.get("target_version")
@@ -172,7 +203,7 @@ class ButlerOrchestrator:
         model = device_info.get("model", "default")
         subsystem = device_info.get("subsystem", "main")
         
-        print(f"[butler] Triggering update for {registry_id}/{device_id} to version {version}")
+        print(f"[butler] Triggering update for {key} to version {version}")
         metadata = self.blob_repo.get_blob_metadata(make, model, subsystem, version)
         if not metadata:
             print(f"[butler] No metadata found for {make}/{model}/{subsystem}/{version}")
@@ -190,34 +221,41 @@ class ButlerOrchestrator:
             "version": version
         }
         self.publish_uufi(device_id, "config", payload, "update", target_principal="mocket", registry_id=registry_id)
-        self.last_action_time[(registry_id, device_id)] = time.time()
+        self.last_action_time[key] = time.time()
         # Update local cache and model
-        device_info["state"] = "active"
-        self.update_model(registry_id, device_id, state="active")
+        self.update_model(registry_id, device_id, state="active", active_version=version)
 
     def trigger_rollback(self, registry_id, device_id, device_info):
-        lkg = device_info.get("last_known_good", "1.0")
-        print(f"[butler] Rolling back {registry_id}/{device_id} to {lkg}")
-        # Update local cache and model
-        device_info["target_version"] = lkg
-        device_info["state"] = "error"
-        self.update_model(registry_id, device_id, target_version=lkg, state="error")
-        self.last_action_time[(registry_id, device_id)] = time.time()
-
-    def reconcile_device(self, registry_id, device_id):
-        key = (registry_id, device_id)
-        device_info = self.known_devices.get(key)
-        if not device_info:
-            return
-
+        key = f"{registry_id}/{device_id}"
+        
+        # Settling time check
         now = time.time()
         last_action = self.last_action_time.get(key, 0)
         if now - last_action < self.settling_time:
             return
 
+        lkg = device_info.get("last_known_good", "1.0")
+        print(f"[butler] Rolling back {key} to {lkg}")
+        # Update local cache and model
+        self.last_action_time[key] = time.time()
+        self.update_model(registry_id, device_id, target_version=lkg, state="error")
+
+    def reconcile_device(self, registry_id, device_id):
+        key = f"{registry_id}/{device_id}"
+        device_info = self.known_devices.get(key)
+        if not device_info:
+            return
+
         if device_info.get("current_version") != device_info.get("target_version"):
+            # Re-triggering Logic: allow if quiescent/error OR if pending but target changed
             if device_info.get("state") in ["quiescent", "error"]:
                 self.trigger_update(registry_id, device_id, device_info)
+            elif device_info.get("state") == "active" or key in self.devices_pending:
+                # ONLY if target_version has changed to a value different from the version currently being applied
+                active_version = device_info.get("active_version")
+                if device_info.get("target_version") != active_version:
+                    print(f"[butler] Target version changed for {key} while pending. Re-triggering.")
+                    self.trigger_update(registry_id, device_id, device_info)
 
     def reconcile_all(self):
         # Instead of loading local file, query mocket

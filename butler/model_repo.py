@@ -53,9 +53,22 @@ class ModelRepository:
 
     def get_subsystem(self, registry_id, device_id, subsystem_id="main"):
         subsystems = self.get_device_subsystems(registry_id, device_id)
-        state = subsystems.get(subsystem_id)
-        if not state:
-            return {
+        return subsystems.get(subsystem_id)
+
+    def save_subsystem(self, registry_id, device_id, subsystem_id, data):
+        model = self.load_model()
+        regs = model.setdefault("registries", {})
+        reg = regs.setdefault(registry_id, {"devices": {}})
+        devices = reg.setdefault("devices", {})
+        device = devices.setdefault(device_id, {})
+        device[subsystem_id] = data
+        self.save_model(model)
+        return data
+
+    def update_subsystem(self, registry_id, device_id, subsystem_id, **kwargs):
+        state = self.get_subsystem(registry_id, device_id, subsystem_id)
+        if state is None:
+            state = {
                 "registry_id": registry_id,
                 "device_id": device_id,
                 "target_version": "1.0",
@@ -66,24 +79,6 @@ class ModelRepository:
                 "model": "default",
                 "subsystem": subsystem_id
             }
-        return state
-
-    def save_subsystem(self, registry_id, device_id, subsystem_id, data):
-        model = self.load_model()
-        regs = model.get("registries", {})
-        if registry_id not in regs:
-            regs[registry_id] = {"devices": {}}
-        if "devices" not in regs[registry_id]:
-            regs[registry_id]["devices"] = {}
-        if device_id not in regs[registry_id]["devices"]:
-            regs[registry_id]["devices"][device_id] = {}
-        regs[registry_id]["devices"][device_id][subsystem_id] = data
-        model["registries"] = regs
-        self.save_model(model)
-        return data
-
-    def update_subsystem(self, registry_id, device_id, subsystem_id, **kwargs):
-        state = self.get_subsystem(registry_id, device_id, subsystem_id)
         state.update(kwargs)
         return self.save_subsystem(registry_id, device_id, subsystem_id, state)
 

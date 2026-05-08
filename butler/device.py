@@ -117,8 +117,12 @@ class MocketDevice:
                 devices = reg_data.get("devices", {})
                 for dev_id, subsystems in devices.items():
                     for subsystem_id, detail in subsystems.items():
-                        print(f"[mocket] Replacing {reg_id}/{dev_id}/{subsystem_id} with {detail}")
-                        self.model_repo.save_subsystem(reg_id, dev_id, subsystem_id, detail)
+                        if operation == "UPDATE":
+                            print(f"[mocket] Updating {reg_id}/{dev_id}/{subsystem_id} with {detail}")
+                            self.model_repo.update_subsystem(reg_id, dev_id, subsystem_id, **detail)
+                        else:
+                            print(f"[mocket] Replacing {reg_id}/{dev_id}/{subsystem_id} with {detail}")
+                            self.model_repo.save_subsystem(reg_id, dev_id, subsystem_id, detail)
             
             # Confirm change
             payload = { "status": "success", "operation": operation }

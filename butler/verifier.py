@@ -24,9 +24,20 @@ class ButlerVerifier:
         )
 
     def on_connect(self):
-        print("[verifier] Verifier connected, observing traffic...")
+        print("[verifier] Verifier connected, starting handshake...")
+        self.bus.start_handshake()
         # Verifier just listens to all UUFI traffic
         self.subscribe_uufi()
+
+    def main_loop(self):
+        print("[verifier] Waiting for handshake completion...")
+        if not self.bus.wait_for_handshake(timeout=60):
+             print("[CRITICAL] Verifier handshake timed out after 60s. Exiting.", file=sys.stderr)
+             sys.exit(1)
+        
+        print("[verifier] Handshake complete, performing validation duties.")
+        while True:
+            time.sleep(1)
 
     def validate_message(self, data, is_strict=False):
         # Validation Schema: mandatory UDMI payload fields
@@ -116,8 +127,7 @@ def main():
     verifier = ButlerVerifier(conn_spec=args.conn_spec)
     verifier.connect()
     threading.Thread(target=verifier.loop_forever, daemon=True).start()
-    while True:
-        time.sleep(1)
+    verifier.main_loop()
 
 if __name__ == "__main__":
     main()
