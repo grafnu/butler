@@ -75,7 +75,7 @@ class ButlerOrchestrator:
     def handle_device_state(self, device_id, data):
         # Look inside the 'update' subfolder for the device state
         update_state = data.get("update", {})
-        current_version = update_state.get("version")
+        current_version = update_state.get("current_version")
         lkg_version = update_state.get("lkg_version")
         status = update_state.get("status", "quiescent")
         registry_id = data.get("deviceRegistryId")

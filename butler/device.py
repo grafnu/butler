@@ -61,7 +61,7 @@ class MocketDevice:
         setup = udmi.get("setup", {})
         transaction_id = setup.get("transaction_id")
         source = data.get("source")
-        principal = data.get("user")
+        principal = data.get("principal")
         
         if source == self.source:
             return
@@ -72,7 +72,8 @@ class MocketDevice:
             "setup": {
                 "functions_min": 9,
                 "functions_max": 9,
-                "udmi_version": "1.5.2"
+                "udmi_version": "1.5.2",
+                "registry_id": self.registry_id
             },
             "reply": {
                 "functions_ver": 9,
@@ -80,8 +81,8 @@ class MocketDevice:
                 "msg_source": source
             }
         }
-        # Handshake reply MUST go to /uufi/c/config/udmi (registry-less)
-        self.publish_uufi(None, "config", response_payload, "udmi", transaction_id=transaction_id)
+        # Handshake reply MUST go to /uufi/p/{principal}/c/config/udmi (registry-less)
+        self.publish_uufi(None, "config", response_payload, "udmi", transaction_id=transaction_id, target_principal=principal)
 
     def handle_cloud_message(self, data):
         # Cloud data is wrapped in 'cloud' key
@@ -101,8 +102,7 @@ class MocketDevice:
                 registries = {registry_id: {"devices": devices}}
             else:
                 model = self.model_repo.load_model()
-                # model is already {registry_id: {device_id: subsystems}}
-                registries = model
+                registries = model.get("registries", {})
             
             payload = {
                 "registries": registries
@@ -181,7 +181,7 @@ class MocketDevice:
 
     def report_state(self):
         payload = {
-            "version": self.current_version,
+            "current_version": self.current_version,
             "lkg_version": self.lkg_version,
             "status": self.status
         }

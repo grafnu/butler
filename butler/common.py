@@ -102,8 +102,12 @@ class ButlerBusBase:
             udmi_block = udmi_payload.get("udmi", {})
             reply = udmi_block.get("reply")
             if reply and reply.get("transaction_id") == self.handshake_transaction_id:
+                setup = udmi_block.get("setup", {})
+                new_registry_id = setup.get("registry_id")
+                if new_registry_id:
+                    self.registry_id = new_registry_id
                 self.handshake_complete = True
-                print(f"[{self.source}] Handshake complete!")
+                print(f"[{self.source}] Handshake complete! (Registry: {self.registry_id})")
 
         self.on_message(topic, device_id, sub_type, sub_folder, udmi_payload)
 
@@ -133,6 +137,34 @@ class ButlerBusBase:
 
     def publish(self, topic, payload_str):
         pass
+
+    def _wrap_payload(self, payload_data, sub_folder):
+        publish_time = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+        timestamp = payload_data.get("timestamp", publish_time)
+        version = payload_data.get("version", "1.5.2")
+        
+        if not sub_folder:
+            res = payload_data.copy()
+            res.setdefault("timestamp", timestamp)
+            res.setdefault("version", version)
+            return res, publish_time
+
+        if sub_folder in payload_data:
+            inner_data = payload_data[sub_folder]
+        else:
+            inner_data = payload_data.copy()
+            # We can optionally remove timestamp/version from the copy if we want a very clean inner payload,
+            # but it's safer to keep them if they might be part of the actual data (like firmware version).
+            # To be strict with 9.1's "exactly one top-level key", we MUST remove them from the WRAPPED payload's top level
+            # which we already do by creating a new 'wrapped' dict.
+            pass
+            
+        wrapped = {
+            "timestamp": timestamp,
+            "version": version,
+            sub_folder: inner_data
+        }
+        return wrapped, publish_time
 
     def start_handshake(self, device_id=None):
         self.handshake_transaction_id = f"UUFI:{self.source}:{self.generate_nonce()}"
@@ -182,10 +214,11 @@ class ButlerMQTTBase(ButlerBusBase):
                     self.on_raw_message(msg.topic, payload_str)
                     return
 
-                # Unified Structure: /uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}
+                # Unified Structure: /uufi/[r/{registryId}/[d/{deviceId}/]|p/{principal}/]c/{subType}/{subFolder}
                 remaining = parts[uufi_idx + 1:]
                 registry_id = None
                 device_id = None
+                principal = None
                 
                 if not remaining:
                     self.on_raw_message(msg.topic, payload_str)
@@ -198,6 +231,9 @@ class ButlerMQTTBase(ButlerBusBase):
                     if remaining[curr] == "d":
                         device_id = remaining[curr+1]
                         curr += 2
+                elif remaining[curr] == "p":
+                    principal = remaining[curr+1]
+                    curr += 2
                 
                 if remaining[curr] != "c":
                     self.on_raw_message(msg.topic, payload_str)
@@ -215,6 +251,8 @@ class ButlerMQTTBase(ButlerBusBase):
                     udmi_payload["deviceRegistryId"] = registry_id
                 if device_id:
                     udmi_payload["deviceId"] = device_id
+                if principal:
+                    udmi_payload["principal"] = principal
 
                 self._handle_received_message(msg.topic, device_id, sub_type, sub_folder, udmi_payload)
             except (json.JSONDecodeError, IndexError):
@@ -235,18 +273,8 @@ class ButlerMQTTBase(ButlerBusBase):
         self.client.loop_forever()
 
     def publish_uufi(self, device_id, sub_type, payload_data, sub_folder=None, direction="reflect", target_principal=None, transaction_id=None, registry_id=None):
-        publish_time = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         nonce = self.generate_nonce()
-        
-        timestamp = payload_data.get("timestamp", publish_time)
-        version = payload_data.get("version", "1.5.2")
-        
-        if sub_folder and sub_folder not in payload_data:
-            wrapped_payload = { "timestamp": timestamp, "version": version, sub_folder: payload_data }
-        else:
-            wrapped_payload = payload_data
-            wrapped_payload.setdefault("timestamp", timestamp)
-            wrapped_payload.setdefault("version", version)
+        wrapped_payload, publish_time = self._wrap_payload(payload_data, sub_folder)
 
         envelope = {
             "projectId": self.project_id,
@@ -261,11 +289,14 @@ class ButlerMQTTBase(ButlerBusBase):
         topic_parts = [self.prefix] if self.prefix else []
         topic_parts.append("uufi")
         
-        # Unified Structure: /uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}
+        # Unified Structure: /uufi/[r/{registryId}/[d/{deviceId}/]|p/{principal}/]c/{subType}/{subFolder}
         if registry_id:
             topic_parts.extend(["r", registry_id])
             if device_id:
                 topic_parts.extend(["d", str(device_id)])
+        else:
+            p = target_principal or self.principal
+            topic_parts.extend(["p", p])
         
         topic_parts.append("c")
         topic_parts.append(sub_type)
@@ -302,19 +333,9 @@ class ButlerPubSubBase(ButlerBusBase):
         self.on_connect()
 
     def publish_uufi(self, device_id, sub_type, payload_data, sub_folder=None, direction="reflect", target_principal=None, transaction_id=None, registry_id=None):
-        publish_time = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         nonce = self.generate_nonce()
+        wrapped_payload, publish_time = self._wrap_payload(payload_data, sub_folder)
         is_handshake = (sub_folder == "udmi")
-
-        timestamp = payload_data.get("timestamp", publish_time)
-        version = payload_data.get("version", "1.5.2")
-        
-        if sub_folder and sub_folder not in payload_data:
-            wrapped_payload = { "timestamp": timestamp, "version": version, sub_folder: payload_data }
-        else:
-            wrapped_payload = payload_data
-            wrapped_payload.setdefault("timestamp", timestamp)
-            wrapped_payload.setdefault("version", version)
 
         # PubSub Attributes (Envelope fields as per 4.1)
         attributes = {

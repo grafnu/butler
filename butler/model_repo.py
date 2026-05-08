@@ -16,14 +16,15 @@ class ModelRepository:
         try:
             with open(self.model_file, 'r') as f:
                 data = json.load(f)
-                # Migration check
-                if data:
-                    first_val = next(iter(data.values()))
-                    if not isinstance(first_val, dict) or "devices" not in first_val:
-                        return {}
+                # Migration check: if 'registries' is not present, wrap it or return empty
+                if "registries" not in data:
+                    if data:
+                        # If it has data but no 'registries' key, it might be the old format
+                        return {"registries": data}
+                    return {"registries": {}}
                 return data
         except (json.JSONDecodeError, FileNotFoundError):
-            return {}
+            return {"registries": {}}
 
     def save_model(self, model):
         # Atomic write
@@ -33,6 +34,8 @@ class ModelRepository:
         fd, temp_path = tempfile.mkstemp(dir=dir_name)
         try:
             with os.fdopen(fd, 'w') as f:
+                if "registries" not in model:
+                    model = {"registries": model}
                 json.dump(model, f, indent=2)
             shutil.move(temp_path, self.model_file)
         except Exception as e:
@@ -42,7 +45,7 @@ class ModelRepository:
 
     def get_registry(self, registry_id):
         model = self.load_model()
-        return model.get(registry_id, {}).get("devices", {})
+        return model.get("registries", {}).get(registry_id, {}).get("devices", {})
 
     def get_device_subsystems(self, registry_id, device_id):
         reg = self.get_registry(registry_id)
@@ -67,13 +70,15 @@ class ModelRepository:
 
     def save_subsystem(self, registry_id, device_id, subsystem_id, data):
         model = self.load_model()
-        if registry_id not in model:
-            model[registry_id] = {"devices": {}}
-        if "devices" not in model[registry_id]:
-            model[registry_id]["devices"] = {}
-        if device_id not in model[registry_id]["devices"]:
-            model[registry_id]["devices"][device_id] = {}
-        model[registry_id]["devices"][device_id][subsystem_id] = data
+        regs = model.get("registries", {})
+        if registry_id not in regs:
+            regs[registry_id] = {"devices": {}}
+        if "devices" not in regs[registry_id]:
+            regs[registry_id]["devices"] = {}
+        if device_id not in regs[registry_id]["devices"]:
+            regs[registry_id]["devices"][device_id] = {}
+        regs[registry_id]["devices"][device_id][subsystem_id] = data
+        model["registries"] = regs
         self.save_model(model)
         return data
 
