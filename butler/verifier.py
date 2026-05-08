@@ -88,20 +88,20 @@ class Verifier:
         elif sub_type == "state" and sub_folder == "update" and device_id:
             update = payload.get("update", {})
             subsystem = update.get("subsystem", "main")
-            state = update.get("state")
+            status = update.get("status")
             current_version = update.get("current_version")
             
             key = (registry_id, device_id, subsystem)
-            prev_state = self.device_states.get(key)
-            self.device_states[key] = state
+            prev_status = self.device_states.get(key)
+            self.device_states[key] = status
             
-            self.log_verification(registry_id, device_id, f"Device {registry_id}/{device_id}/{subsystem} state transition: {prev_state} -> {state} ({current_version})")
+            self.log_verification(registry_id, device_id, f"Device {registry_id}/{device_id}/{subsystem} status transition: {prev_status} -> {status} ({current_version})")
             
             # Check for invalid transitions
-            if prev_state == "quiescent" and state not in ["pending", "quiescent"]:
-                self.log_verification(registry_id, device_id, f"INVALID TRANSITION: {registry_id}/{device_id}/{subsystem} went from quiescent to {state}", level="FAIL")
-            elif prev_state == "pending" and state not in ["success", "failure", "pending"]:
-                self.log_verification(registry_id, device_id, f"INVALID TRANSITION: {registry_id}/{device_id}/{subsystem} went from pending to {state}", level="FAIL")
+            if prev_status == "quiescent" and status not in ["pending", "quiescent"]:
+                self.log_verification(registry_id, device_id, f"INVALID TRANSITION: {registry_id}/{device_id}/{subsystem} went from quiescent to {status}", level="FAIL")
+            elif prev_status == "pending" and status not in ["success", "failure", "pending"]:
+                self.log_verification(registry_id, device_id, f"INVALID TRANSITION: {registry_id}/{device_id}/{subsystem} went from pending to {status}", level="FAIL")
 
     def log_verification(self, registry_id, device_id, text, level="PASS"):
         print(f"[verifier] {level}: {text}", flush=True)

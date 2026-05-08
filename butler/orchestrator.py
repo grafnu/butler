@@ -42,6 +42,11 @@ class Orchestrator:
         sub_folder = env.get("subFolder")
         device_id = env.get("deviceId")
         registry_id = env.get("deviceRegistryId")
+        principal = env.get("principal")
+
+        # Filtering by principal for registry-less messages
+        if not registry_id and principal and principal != self.principal:
+            return
         
         # Handshake reply
         if sub_type == "config" and sub_folder == "udmi" and not device_id:
@@ -61,13 +66,13 @@ class Orchestrator:
         if sub_type == "state" and sub_folder == "update":
             update = payload.get("update", {})
             subsystem = update.get("subsystem", "main")
-            state = update.get("state")
+            status = update.get("status")
             current_version = update.get("current_version")
             lkg_version = update.get("lkg_version")
 
             if not registry_id or not device_id: return
 
-            print(f"[butler] Status from {registry_id}/{device_id}: {state} ({current_version}, lkg: {lkg_version})", flush=True)
+            print(f"[butler] Status from {registry_id}/{device_id}: {status} ({current_version}, lkg: {lkg_version})", flush=True)
             
             key = (registry_id, device_id, subsystem)
             self.settle_times[key] = time.time()
@@ -75,10 +80,10 @@ class Orchestrator:
             # Always update LKG if reported, and update current_version
             self.update_cloud_model(registry_id, device_id, subsystem, current_version=current_version, lkg_version=lkg_version)
             
-            if state in ["success", "failure"]:
+            if status in ["success", "failure"]:
                 if key in self.pending_updates:
                     del self.pending_updates[key]
-                if state == "failure":
+                if status == "failure":
                     print(f"[butler] Device {registry_id}/{device_id} reported FAILURE. Rolling back...", flush=True)
                     self.rollback_cloud_model(registry_id, device_id, subsystem)
 

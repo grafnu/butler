@@ -179,7 +179,7 @@ class MockDevice:
         update_data = {
             "current_version": self.current_version,
             "lkg_version": self.lkg_version,
-            "state": self.state,
+            "status": self.state,
             "subsystem": self.subsystem
         }
         if category:
