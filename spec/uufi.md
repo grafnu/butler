@@ -359,7 +359,7 @@ The following examples demonstrate the same operations using the MQTT transport,
 #### Example: Handshake State (Publish)
 Using generic addressing for the initial handshake.
 
-**Topic:** `/uufi/c/state/udmi`
+**Topic:** `/uufi/p/{principal}/c/state/udmi`
 
 **Payload (JSON):**
 ```json
