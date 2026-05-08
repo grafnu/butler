@@ -85,7 +85,7 @@ class ButlerOrchestrator:
     def handle_device_state(self, device_id, data):
         # Look inside the 'update' subfolder for the device state
         update_state = data.get("update", {})
-        current_version = update_state.get("current_version")
+        current_version = update_state.get("current_version") or ""
         lkg_version = update_state.get("lkg_version")
         status = update_state.get("status", "quiescent")
         registry_id = data.get("deviceRegistryId")
@@ -206,7 +206,7 @@ class ButlerOrchestrator:
             "sha256": metadata["sha256"],
             "version": version
         }
-        self.publish_uufi(device_id, "config", payload, "update", target_principal="mocket", registry_id=registry_id)
+        self.publish_uufi(device_id, "config", payload, "update", registry_id=registry_id)
         self.last_action_time[key] = time.time()
         # Update local cache and model
         self.update_model(registry_id, device_id, state="active", active_version=version)

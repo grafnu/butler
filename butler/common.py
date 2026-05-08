@@ -72,6 +72,7 @@ class ButlerBusBase:
 
         self.handshake_complete = False
         self.handshake_transaction_id = None
+        self.connected = False
         self.project_id = os.environ.get("BUTLER_PROJECT_ID", "vibrant")
         self.registry_id = os.environ.get("BUTLER_REGISTRY_ID", "controller")
         self.track_nonces = track_nonces
@@ -121,7 +122,7 @@ class ButlerBusBase:
         self.on_message(topic, device_id, sub_type, sub_folder, udmi_payload)
 
     def on_connect(self):
-        pass
+        self.connected = True
 
     def on_message(self, topic, device_id, sub_type, sub_folder, data):
         pass
@@ -131,6 +132,12 @@ class ButlerBusBase:
 
     def connect(self):
         pass
+
+    def wait_for_connection(self, timeout=10):
+        start_time = time.time()
+        while not self.connected and time.time() - start_time < timeout:
+            time.sleep(0.1)
+        return self.connected
 
     def loop_start(self):
         pass
@@ -176,6 +183,8 @@ class ButlerBusBase:
         return wrapped, publish_time
 
     def start_handshake(self, device_id=None):
+        if not self.wait_for_connection():
+             print(f"[{self.source}] Warning: Starting handshake before connection is fully established.")
         self.handshake_transaction_id = f"UUFI:{self.source}:{self.generate_nonce()}"
         payload = {
             "setup": {
@@ -205,6 +214,7 @@ class ButlerMQTTBase(ButlerBusBase):
     def _on_connect(self, client, userdata, flags, rc):
         if rc == 0:
             print(f"[{self.source}] Successfully connected to MQTT broker at {self.host}:{self.port_or_topic}")
+            self.connected = True
             self.on_connect()
         else:
             print(f"Connection failed with code {rc}")
@@ -239,9 +249,6 @@ class ButlerMQTTBase(ButlerBusBase):
                     if len(remaining) > curr and remaining[curr] == "d":
                         device_id = remaining[curr+1]
                         curr += 2
-                elif remaining[curr] == "p":
-                    # Principal routing: /uufi/p/{principal}/c/...
-                    curr += 2
                 
                 if len(remaining) <= curr or remaining[curr] != "c":
                     self.on_raw_message(msg.topic, payload_str)
@@ -291,8 +298,9 @@ class ButlerMQTTBase(ButlerBusBase):
             "source": self.source,
             "nonce": nonce,
             "payload": wrapped_payload,
-            "principal": self.principal
+            "principal": target_principal or self.principal
         }
+
         
         topic_parts = [self.prefix] if self.prefix else []
         topic_parts.append("uufi")
@@ -335,6 +343,7 @@ class ButlerPubSubBase(ButlerBusBase):
             # If it already exists, this is fine. Otherwise, log a note.
             if "already exists" not in str(e).lower():
                 print(f"[{self.source}] Note: Using existing subscription or permission denied for creation: {e}")
+        self.connected = True
         self.on_connect()
 
     def publish_uufi(self, device_id, sub_type, payload_data, sub_folder=None, direction="reflect", target_principal=None, transaction_id=None, registry_id=None):

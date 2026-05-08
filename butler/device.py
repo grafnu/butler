@@ -81,7 +81,7 @@ class MocketDevice:
             }
         }
         # Handshake reply MUST go to /uufi/c/config/udmi (registry-less)
-        self.publish_uufi(None, "config", response_payload, "udmi", transaction_id=transaction_id)
+        self.publish_uufi(None, "config", response_payload, "udmi", transaction_id=transaction_id, target_principal=principal)
 
     def handle_cloud_message(self, data):
         # Cloud data is wrapped in 'cloud' key
