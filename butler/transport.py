@@ -1,7 +1,13 @@
 import re
 import urllib.parse
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Callable, Any, List, Dict
+import json
+import paho.mqtt.client as mqtt
+import logging
+import time
+import uuid
+from datetime import datetime, timezone
 
 @dataclass
 class ConnSpec:
@@ -18,7 +24,7 @@ def parse_conn_spec(conn_spec_str: str) -> ConnSpec:
     if scheme not in ["mqtt", "pubsub"]:
         raise ValueError(f"Unsupported scheme: {scheme}")
 
-    principal = parsed.username
+    principal = parsed.username or "unknown"
     host = parsed.hostname
     port = parsed.port
 
@@ -32,22 +38,18 @@ def parse_conn_spec(conn_spec_str: str) -> ConnSpec:
         prefix=prefix
     )
 
-import json
-import paho.mqtt.client as mqtt
-import logging
-from typing import Callable, Any
+def get_timestamp() -> str:
+    """Returns RFC 3339 minimal precision timestamp in UTC."""
+    return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 def wrap_message(payload: dict, **envelope_kwargs) -> dict:
-    from datetime import datetime, timezone
-    import uuid
-
     msg = envelope_kwargs.copy()
 
     # Omit fields already encoded in the MQTT topic structure
-    for key in ['deviceId', 'registryId', 'subFolder', 'subType', 'projectId']:
-        msg.pop(key, None)
+    # But as per 9.3, principal SHOULD be included in outer JSON for registry-less messages.
+    # We'll keep it simple: keep what's passed in, but ensure mandatory fields.
 
-    now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    now = get_timestamp()
 
     if 'publishTime' not in msg:
         msg['publishTime'] = now
@@ -65,14 +67,23 @@ def wrap_message(payload: dict, **envelope_kwargs) -> dict:
     return msg
 
 def unwrap_message(msg: dict) -> dict:
-    return msg.get('payload', msg)
+    if isinstance(msg, dict) and 'payload' in msg:
+        return msg['payload']
+    return msg
 
 class MqttTransport:
-    def __init__(self, conn_spec: ConnSpec):
+    def __init__(self, conn_spec: ConnSpec, tag: str = None, passive: bool = False):
         self.conn_spec = conn_spec
+        self.passive = passive
+        # Apply tag differentiator if provided
+        if tag and tag != "butler": # butler is default
+            self.principal = f"{conn_spec.principal}.{tag}"
+        else:
+            self.principal = conn_spec.principal
+        
         self.client = mqtt.Client()
         self.on_message_callback: Optional[Callable[[str, Any], None]] = None
-        self.seen_nonces = []
+        self.seen_nonces: List[Dict] = [] # List of {'nonce': str, 'time': float}
 
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
@@ -97,18 +108,19 @@ class MqttTransport:
         self.on_message_callback = callback
 
     def format_topic(self, sub_type: str, sub_folder: str, registry_id: str = None, device_id: str = None) -> str:
+        # /uufi/p/{principal}/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}
         parts = ["", "uufi"]
         if self.conn_spec.prefix:
             parts.append(self.conn_spec.prefix)
-
-        if registry_id and device_id:
-            parts.extend(["r", registry_id, "d", device_id])
-        elif self.conn_spec.principal:
-            parts.extend(["p", self.conn_spec.principal, "c"])
-        else:
-            raise ValueError("Must provide either registry_id/device_id or have a principal configured")
-
-        parts.extend([sub_type, sub_folder])
+        
+        parts.extend(["p", self.principal])
+        
+        if registry_id:
+            parts.extend(["r", registry_id])
+            if device_id:
+                parts.extend(["d", device_id])
+        
+        parts.extend(["c", sub_type, sub_folder])
         return "/".join(parts)
 
     def parse_topic(self, topic: str) -> dict:
@@ -121,33 +133,33 @@ class MqttTransport:
 
         idx = 1
         prefix = None
-        if parts[idx] not in ["r", "p"]:
-            prefix = parts[idx]
-            idx += 1
-
+        if parts[idx] not in ["p", "r"]: # Handling prefix if present
+             prefix = parts[idx]
+             idx += 1
+        
         result = {}
         if prefix:
             result['prefix'] = prefix
 
-        if parts[idx] == "r":
-            result['registryId'] = parts[idx+1]
-            if len(parts) > idx + 3 and parts[idx+2] == "d":
-                result['deviceId'] = parts[idx+3]
-                result['subType'] = parts[idx+4] if len(parts) > idx + 4 else None
-                result['subFolder'] = parts[idx+5] if len(parts) > idx + 5 else None
-        elif parts[idx] == "p":
+        if parts[idx] == "p":
             result['principal'] = parts[idx+1]
-            if len(parts) > idx + 2 and parts[idx+2] == "c":
-                result['subType'] = parts[idx+3] if len(parts) > idx + 3 else None
-                result['subFolder'] = parts[idx+4] if len(parts) > idx + 4 else None
+            idx += 2
+        
+        if idx < len(parts) and parts[idx] == "r":
+            result['registryId'] = parts[idx+1]
+            idx += 2
+            if idx < len(parts) and parts[idx] == "d":
+                result['deviceId'] = parts[idx+1]
+                idx += 2
+        
+        if idx < len(parts) and parts[idx] == "c":
+            result['subType'] = parts[idx+1] if len(parts) > idx + 1 else None
+            result['subFolder'] = parts[idx+2] if len(parts) > idx + 2 else None
 
         return result
 
     def handshake(self):
-        import time
-        import uuid
-
-        transaction_id = str(uuid.uuid4())
+        transaction_id = f"UUFI:handshake:{uuid.uuid4().hex[:8]}"
         topic_state = self.format_topic("state", "udmi")
         topic_config = self.format_topic("config", "udmi")
 
@@ -156,7 +168,8 @@ class MqttTransport:
         handshake_complete = False
         def temp_callback(topic, payload):
             nonlocal handshake_complete
-            if topic == topic_config:
+            parsed = self.parse_topic(topic)
+            if parsed.get('subType') == 'config' and parsed.get('subFolder') == 'udmi':
                 unwrapped = unwrap_message(payload)
                 if 'udmi' in unwrapped and 'reply' in unwrapped['udmi']:
                     if unwrapped['udmi']['reply'].get('transaction_id') == transaction_id:
@@ -169,36 +182,60 @@ class MqttTransport:
             "udmi": {
                 "setup": {
                     "functions_ver": 9,
-                    "transaction_id": transaction_id
+                    "transaction_id": transaction_id,
+                    "msg_source": self.principal,
+                    "user": self.principal
                 }
             }
-        })
+        }, transactionId=transaction_id, principal=self.principal)
+        
         self.publish(topic_state, payload)
 
         start = time.time()
-        while not handshake_complete and time.time() - start < 30:
+        while not handshake_complete and time.time() - start < 60:
             time.sleep(0.1)
 
         self.set_on_message(old_callback)
         if not handshake_complete:
-            raise TimeoutError("Handshake timed out")
+            raise TimeoutError("Handshake timed out after 60 seconds")
 
     def _on_connect(self, client, userdata, flags, rc):
         pass
 
     def _on_message(self, client, userdata, msg):
+        now = time.time()
+        # Clean up old nonces (older than 5 minutes)
+        self.seen_nonces = [n for n in self.seen_nonces if now - n['time'] < 300]
+
+        try:
+            payload = json.loads(msg.payload.decode('utf-8'))
+        except json.JSONDecodeError:
+            payload = msg.payload.decode('utf-8')
+
+        if not self.passive and isinstance(payload, dict) and 'nonce' in payload:
+            nonce = payload['nonce']
+            if any(n['nonce'] == nonce for n in self.seen_nonces):
+                return
+            self.seen_nonces.append({'nonce': nonce, 'time': now})
+
         if self.on_message_callback:
-            try:
-                payload = json.loads(msg.payload.decode('utf-8'))
-            except json.JSONDecodeError:
-                payload = msg.payload.decode('utf-8')
-
-            if isinstance(payload, dict) and 'nonce' in payload:
-                nonce = payload['nonce']
-                if nonce in self.seen_nonces:
-                    return
-                self.seen_nonces.append(nonce)
-                if len(self.seen_nonces) > 1000:
-                    self.seen_nonces.pop(0)
-
             self.on_message_callback(msg.topic, payload)
+
+class PubSubTransport:
+    def __init__(self, conn_spec: ConnSpec, tag: str = None):
+        self.conn_spec = conn_spec
+        self.principal = conn_spec.principal
+        if tag and tag != "butler":
+            self.principal = f"{conn_spec.principal}.{tag}"
+        # Placeholder for PubSub implementation
+        pass
+
+    def connect(self): pass
+    def disconnect(self): pass
+    def subscribe(self, topic: str): pass
+    def publish(self, topic: str, payload: dict): pass
+    def set_on_message(self, callback: Callable[[str, Any], None]): pass
+    def format_topic(self, sub_type: str, sub_folder: str, registry_id: str = None, device_id: str = None) -> str:
+        return f"pubsub://{self.conn_spec.host}/{sub_type}/{sub_folder}"
+    def parse_topic(self, topic: str) -> dict: return {}
+    def handshake(self): pass

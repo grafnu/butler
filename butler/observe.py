@@ -18,7 +18,7 @@ def main():
     conn_spec = parse_conn_spec(conn_spec_str)
     print(f"Conn spec: scheme={conn_spec.scheme}, host={conn_spec.host}, port={conn_spec.port}, principal={conn_spec.principal}, prefix={conn_spec.prefix}")
 
-    transport = MqttTransport(conn_spec)
+    transport = MqttTransport(conn_spec, tag="observe", passive=True)
     transport.set_on_message(on_message)
     transport.connect()
     transport.subscribe("#")
