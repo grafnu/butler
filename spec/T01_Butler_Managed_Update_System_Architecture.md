@@ -128,7 +128,7 @@ functioning implementation. When it detects a valid sequence, or an invalid mess
 
 **Verifier Requirements:**
 - **Handshake Protocol:** The Verifier MUST perform a full UUFI handshake and become **Active** before performing its validation duties to ensure it is synchronized with the System state.
-- **Handshake Awareness:** The Verifier MUST monitor the `/uufi/p/{principal}/c/` handshake topics to ensure other clients successfully activate before performing operations.
+- **Handshake Awareness:** The Verifier MUST monitor the `/uufi/c/` handshake topics to ensure other clients successfully activate before performing operations.
 - **Validation Schema:** It SHOULD validate that all messages contain the mandatory UDMI `payload` fields (`timestamp`, `version`).
 - **Timestamp Strictness:** The Verifier MUST strictly enforce the minimal precision format (RFC 3339) for all messages originating *from* the Butler orchestrator. It SHOULD be graceful for messages originating from other sources (e.g., devices) to ensure interoperability while still validating core system behavior.
 - **State Transition Monitoring:** It MUST track the state transitions for device subsystems using the `update` subfolder (e.g., `quiescent` -> `pending` -> `success/failure`).

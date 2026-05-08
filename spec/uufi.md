@@ -66,12 +66,11 @@ will have a `principal` indicating the **Session Owner** (the identity of the en
 
 **MQTT (`mqtt://`)**
 *   The base `host` and `:port` map as expected (network address).
-*   **Topic Isolation (Pattern C):** All MQTT topic paths MUST be prefixed with the principal identifier to ensure session isolation. The principal is derived from the `user@` component of the connection string (defaulting to `unknown`).
-  *   **Structure:** `/uufi/p/{principal}/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
-  *   *Example:* `mqtt://butler@localhost` uses prefix `/uufi/p/butler/`.
+*   **Topic Structure:** `/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
+*   **Topic Isolation:** For shared brokers, the `principal` identifier MUST be included in the JSON envelope rather than the topic path.
 *   **Cloud Model Service:** The Cloud Model is managed as an MQTT-based service.
-  *   **Discovery:** Clients (like the Butler) MUST publish a `query/cloud` message to the registry-less topic `/uufi/p/{principal}/c/query/cloud`.
-  *   **Responder Role:** A Model-Hosting component (System/Mocket) MUST subscribe to these queries and respond by publishing the current model to the `/uufi/p/{principal}/c/config/cloud` topic.
+  *   **Discovery:** Clients (like the Butler) MUST publish a `query/cloud` message to the registry-less topic `/uufi/c/query/cloud`.
+  *   **Responder Role:** A Model-Hosting component (System/Mocket) MUST subscribe to these queries and respond by publishing the current model to the `/uufi/c/config/cloud` topic.
   *   **Model Schema:** The Cloud Model MUST use the nested **Registries** structure to support multi-registry environments (see Section 5.1).
 
 ### 2.2. PubSub Transport
@@ -86,7 +85,7 @@ The Client must have access to the GCP project where the UDMI system is deployed
 For local testing or on-premise deployments, a standard MQTT broker (like Mosquitto) can be used.
 
 *   **Broker URL:** Typically `tcp://localhost:1883` or `ssl://localhost:8883`.
-*   **Topic Structure:** `/uufi/p/{principal}/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
+*   **Topic Structure:** `/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
 *   **Authentication:** Username/Password or mTLS (certificate-based).
 
 ## 3. Handshake Protocol
@@ -97,12 +96,12 @@ Upon connection, the Client must perform a handshake to synchronize with the Sys
  The Client publishes a UDMI `state` message to the UUFI topic. This message must include a `udmi` subfolder with a `setup` block (see `state_udmi.json`).
     -   `functions_ver`: The version of the UDMI functions the Client expects.
     -   `transaction_id`: A unique ID for the handshake transaction.
-    -   **Addressing:** The Client MUST use the registry-less `/uufi/p/{principal}/c/state/udmi` topic and include its unique identity in the `source` field in the envelope.
+    -   **Addressing:** The Client MUST use the registry-less `/uufi/c/state/udmi` topic and include its unique identity in the `source` field in the envelope.
 
 2.  **Configuration Confirmation:** The System responds via the reply channel by updating the Client's `config`. This message includes a `udmi` subfolder (see `config_udmi.json`) containing:
     -   `setup`: System version information (min/max supported function versions).
     -   `reply`: A copy of the Client's setup block to confirm receipt.
-    -   **Addressing:** The System MUST publish the reply to the `/uufi/p/{principal}/c/config/udmi` topic. Clients filter incoming messages by `transactionId` or `principal` in the envelope.
+    -   **Addressing:** The System MUST publish the reply to the `/uufi/c/config/udmi` topic. Clients filter incoming messages by `transactionId` or `principal` in the envelope.
 
 The Client is considered **Active** only after receiving a configuration reply where the `transaction_id` inside the `udmi.reply` block matches the `transaction_id` sent in the original `state` message.
 
@@ -436,9 +435,9 @@ Every message's inner `payload` object MUST contain `timestamp` and `version` fi
 - **Guidance:** Ensure `publishTime` is in the envelope and `timestamp` is in the inner payload. Ensure `version` and `lkg_version` are present in the payload. Use the subfolder wrapper for all UDMI fields.
 
 ### 9.2. Handshake Addressing
-The `/uufi/c/` topic branch MUST be used for the initial handshake.
-- **Strict Prefix:** The handshake topic MUST exactly match the `/uufi/c/{subType}/{subFolder}` pattern to ensure early-session identification.
-- **Guidance:** Reserve `/uufi/r/` for post-handshake, registry-associated traffic. Ensure all clients use the same `c/` channel for handshakes and rely on envelope-based identification.
+The registry-less `/uufi/c/` topic branch MUST be used for the initial handshake.
+- **Strict Prefix:** The handshake topic MUST exactly match the `/uufi/c/{subType}/{subFolder}` pattern (e.g. `/uufi/c/state/udmi`).
+- **Guidance:** Reserve `/uufi/r/` for post-handshake, registry-associated traffic. Ensure all clients use the same `c/` channel for handshakes and rely on envelope-based identification (e.g. `transactionId` and `principal`).
 
 ### 9.3. Envelope Redundancy
 Top-level envelope fields MUST only include data NOT already encoded in the MQTT topic structure.
