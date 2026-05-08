@@ -360,7 +360,7 @@ The following examples demonstrate the same operations using the MQTT transport,
 #### Example: Handshake State (Publish)
 Using generic addressing for the initial handshake.
 
-**Topic:** `/uufi/c/state/udmi`
+**Topic:** `/uufi/p/{principal}/c/state/udmi`
 
 **Payload (JSON):**
 ```json
@@ -436,8 +436,8 @@ Every message's inner `payload` object MUST contain `timestamp` and `version` fi
 - **Guidance:** Ensure `publishTime` is in the envelope and `timestamp` is in the inner payload. Ensure `version` and `lkg_version` are present in the payload. Use the subfolder wrapper for all UDMI fields.
 
 ### 9.2. Handshake Addressing
-The `/uufi/c/` topic branch MUST be used for the initial handshake.
-- **Strict Prefix:** The handshake topic MUST exactly match the `/uufi/c/{subType}/{subFolder}` pattern to ensure early-session identification.
+The `/uufi/p/{principal}/c/` topic branch MUST be used for the initial handshake.
+- **Strict Prefix:** The handshake topic MUST exactly match the `/uufi/p/{principal}/c/{subType}/{subFolder}` pattern to ensure early-session identification.
 - **Guidance:** Reserve `/uufi/r/` for post-handshake, registry-associated traffic. Ensure all clients use the same `c/` channel for handshakes and rely on envelope-based identification.
 
 ### 9.3. Envelope Redundancy
