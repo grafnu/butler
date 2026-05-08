@@ -109,7 +109,7 @@ The Client is considered **Active** only after receiving a configuration reply w
 Because the initial handshake is generic and occurs before the Client is associated with a specific registry or device, the registry-less Pattern C structure is used:
 
 - **PubSub:** The `deviceRegistryId` and `deviceId` message attributes MUST be not present empty strings (or `null`).
-- **MQTT:** The topic MUST be `/uufi/p/{principal}/c/{subType}/{subFolder}`.
+- **MQTT:** The topic MUST be `/uufi/c/{subType}/{subFolder}`.
 
 **Important:** Handshake messages MUST be addressed using this registry-less scheme instead of registry-based addressing (`/uufi/r/.../c/...`).
 
@@ -359,7 +359,7 @@ The following examples demonstrate the same operations using the MQTT transport,
 #### Example: Handshake State (Publish)
 Using generic addressing for the initial handshake.
 
-**Topic:** `/uufi/p/{principal}/c/state/udmi`
+**Topic:** `/uufi/c/state/udmi`
 
 **Payload (JSON):**
 ```json
