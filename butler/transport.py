@@ -89,12 +89,20 @@ class MqttTransport:
 
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
+        self._connected = False
 
     def connect(self):
         host = self.conn_spec.host
         port = self.conn_spec.port or 1883
         self.client.connect(host, port)
         self.client.loop_start()
+        
+        # Wait for connection to be established (Connection Stability)
+        start = time.time()
+        while not self._connected and time.time() - start < 10:
+            time.sleep(0.1)
+        if not self._connected:
+            logging.warning("Failed to establish MQTT connection within timeout")
 
     def disconnect(self):
         self.client.loop_stop()
@@ -166,8 +174,8 @@ class MqttTransport:
             nonlocal handshake_complete
             parsed = self.parse_topic(topic)
             if parsed.get('subType') == 'config' and parsed.get('subFolder') == 'udmi':
-                # Check principal and transactionId in envelope
-                if payload.get('principal') == self.principal or payload.get('source') == self.principal:
+                # Check principal and transactionId in envelope (Matching own principal as per spec)
+                if payload.get('principal') == self.principal:
                    unwrapped = unwrap_message(payload)
                    if 'udmi' in unwrapped and 'reply' in unwrapped['udmi']:
                        if unwrapped['udmi']['reply'].get('transaction_id') == transaction_id:
@@ -199,7 +207,8 @@ class MqttTransport:
 
 
     def _on_connect(self, client, userdata, flags, rc):
-        pass
+        if rc == 0:
+            self._connected = True
 
     def _on_message(self, client, userdata, msg):
         now = time.time()

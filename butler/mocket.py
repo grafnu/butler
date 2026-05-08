@@ -162,7 +162,7 @@ def main():
         topic = transport.format_topic("state", "update", registry_id, device_id)
         msg = wrap_message({
             "update": {
-                "state": state,
+                "status": state,
                 "current_version": current_version,
                 "lkg_version": lkg_version
             }

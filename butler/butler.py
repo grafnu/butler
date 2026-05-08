@@ -71,7 +71,7 @@ def main():
 
         if subType == 'state' and subFolder == 'update':
             update = unwrapped.get('update', {})
-            state = update.get('state')
+            state = update.get('status') or update.get('state') # Backward compatibility
             current_version = update.get('current_version')
             lkg_version = update.get('lkg_version')
 
@@ -84,6 +84,8 @@ def main():
             
             # Update internal tracking from device report
             state_data['state'] = state
+            if current_version:
+                state_data['current_version'] = current_version
             if lkg_version:
                 state_data['lkg_version'] = lkg_version
             
@@ -162,20 +164,23 @@ def main():
             for (registry_id, device_id), subsystems in list(device_states.items()):
                 for subsystem, state_data in subsystems.items():
                     target = state_data.get('target_version')
-                    current = state_data.get('current_version')
+                    current = state_data.get('current_version') or "" # Initial provisioning (null == "")
                     state = state_data.get('state', 'quiescent')
+                    pending_version = state_data.get('pending_version')
 
-                    if target and current and target != current and state != 'pending':
+                    # Trigger if target != current AND (not pending OR target changed while pending)
+                    if target and target != current:
                         if args.fail:
+                            continue
+
+                        # Re-triggering logic: only if target changed to something else if already pending
+                        if state == 'pending' and target == pending_version:
                             continue
 
                         # Settling Time: 5s
                         last_change = settling_times.get((registry_id, device_id, subsystem), 0)
                         if now - last_change < 5.0:
                             continue
-
-                        # Re-triggering logic: only if target changed to something else if already pending
-                        # (But here we check state != 'pending', so it's fresh or failed/success)
                         
                         blob_info = blob_repo.get_blob_info("default", "default", subsystem, target)
                         if blob_info:
@@ -190,6 +195,7 @@ def main():
                             transport.publish(topic_update, msg)
                             state_data['pending_start'] = now
                             state_data['state'] = 'pending'
+                            state_data['pending_version'] = target
                             settling_times[(registry_id, device_id, subsystem)] = now
 
                     elif state == 'pending' and 'pending_start' in state_data:
@@ -197,6 +203,8 @@ def main():
                         if now - state_data['pending_start'] > 60:
                             state_data['state'] = 'failure'
                             del state_data['pending_start']
+                            if 'pending_version' in state_data:
+                                del state_data['pending_version']
                             
                             # Log error and potentially trigger rollback (already handled in on_message failure state if device reports it, 
                             # but here we timeout)
