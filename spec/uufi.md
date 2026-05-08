@@ -101,7 +101,7 @@ Upon connection, the Client must perform a handshake to synchronize with the Sys
 2.  **Configuration Confirmation:** The System responds via the reply channel by updating the Client's `config`. This message includes a `udmi` subfolder (see `config_udmi.json`) containing:
     -   `setup`: System version information (min/max supported function versions).
     -   `reply`: A copy of the Client's setup block to confirm receipt.
-    -   **Addressing:** The System MUST publish the reply to the `/uufi/c/config/udmi` topic. Clients filter incoming messages by `transactionId` or `principal` in the envelope.
+    -   **Addressing:** The System MUST publish the reply to the `/uufi/c/config/udmi` topic. The reply envelope MUST use the Client's principal in the `principal` field, as it represents the Session Owner. Clients filter incoming messages by `transactionId` or by matching their own `principal` in the envelope.
 
 The Client is considered **Active** only after receiving a configuration reply where the `transaction_id` inside the `udmi.reply` block matches the `transaction_id` sent in the original `state` message.
 
