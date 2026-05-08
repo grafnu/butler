@@ -82,6 +82,28 @@ def main():
             
             state_data = device_states[state_key][subsystem]
             
+            # If current version changed, update model
+            if state == 'success' and current_version and current_version != state_data.get('current_version'):
+                topic_model = transport.format_topic("model", "cloud")
+                model_update = {
+                    "cloud": {
+                        "operation": "UPDATE",
+                        "registries": {
+                            registry_id: {
+                                "devices": {
+                                    device_id: {
+                                        subsystem: {
+                                            "current_version": current_version,
+                                            "lkg_version": state_data.get('lkg_version')
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                transport.publish(topic_model, wrap_message(model_update, principal=transport.principal, source=transport.principal))
+
             # Update internal tracking from device report
             state_data['state'] = state
             if current_version:
@@ -97,30 +119,7 @@ def main():
             if state == 'success':
                 if 'pending_start' in state_data:
                     del state_data['pending_start']
-                
-                # If current version changed, update model
-                if current_version and current_version != state_data.get('current_version'):
-                    topic_model = transport.format_topic("model", "cloud")
-                    model_update = {
-                        "cloud": {
-                            "operation": "UPDATE",
-                            "registries": {
-                                registry_id: {
-                                    "devices": {
-                                        device_id: {
-                                            subsystem: {
-                                                "current_version": current_version,
-                                                "lkg_version": state_data.get('lkg_version')
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    transport.publish(topic_model, wrap_message(model_update, principal=transport.principal, source=transport.principal))
-                    state_data['current_version'] = current_version
-
+            
             elif state == 'failure':
                 if 'pending_start' in state_data:
                     del state_data['pending_start']
@@ -157,10 +156,17 @@ def main():
     transport.subscribe("/uufi/c/config/cloud") # For model queries
     transport.subscribe("/uufi/r/+/d/+/c/state/update")
 
+    last_model_fetch = 0
 
     try:
         while True:
             now = time.time()
+
+            # Periodically poll model state (every 10s)
+            if now - last_model_fetch > 10:
+                fetch_model_state()
+                last_model_fetch = now
+
             for (registry_id, device_id), subsystems in list(device_states.items()):
                 for subsystem, state_data in subsystems.items():
                     target = state_data.get('target_version')

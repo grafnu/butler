@@ -30,6 +30,7 @@ def main():
         parsed = transport.parse_topic(topic)
         registry_id = parsed.get('registryId', 'default')
         device_id = parsed.get('deviceId', 'unknown')
+        sub_folder = parsed.get('subFolder')
 
         def check_timestamp(ts):
             if not isinstance(ts, str):
@@ -51,6 +52,17 @@ def main():
         
         if not check_timestamp(inner_payload['timestamp']):
             return False
+        
+        # Section 9.1: payload MUST contain exactly one top-level key matching the subFolder name
+        if sub_folder:
+            # Filters out timestamp and version
+            keys = [k for k in inner_payload.keys() if k not in ['timestamp', 'version']]
+            if sub_folder not in keys:
+                publish_verification(f"INVALID SCHEMA: Missing subFolder key '{sub_folder}' in payload", registry_id, device_id)
+                return False
+            if len(keys) > 1:
+                publish_verification(f"INVALID SCHEMA: Multiple top-level keys in payload (expected only '{sub_folder}')", registry_id, device_id)
+                return False
             
         return True
 
@@ -86,7 +98,13 @@ def main():
         if subType == 'state' and subFolder == 'update' and device_id and registry_id:
             unwrapped = unwrap_message(payload)
             update = unwrapped.get('update', {})
-            state = update.get('state')
+            
+            # Section 9.1: Mandatory fields in update state
+            if 'status' not in update or 'current_version' not in update or 'lkg_version' not in update:
+                 publish_verification("INVALID SCHEMA: Missing mandatory fields in update state (status/current_version/lkg_version)", registry_id, device_id)
+
+            # Use 'status' as per spec 9.1
+            state = update.get('status') or update.get('state')
 
             if state:
                 subsystem = "main"

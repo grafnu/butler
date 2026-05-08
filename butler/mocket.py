@@ -169,6 +169,17 @@ def main():
         }, principal=transport.principal, source=transport.principal)
         transport.publish(topic, msg)
 
+    def publish_model():
+        model = model_repo.get_model()
+        topic = transport.format_topic("config", "cloud") # Registry-less
+        
+        # Format according to spec: registries -> reg_id -> devices -> dev_id -> subsystem -> data
+        # We broadcast the whole model for this mocket's registry/device at least
+        # But usually mocket handles one device. The model_repo might have more.
+        
+        reply_payload = wrap_message({"cloud": model}, principal=transport.principal, source=transport.principal)
+        transport.publish(topic, reply_payload)
+
     transport.set_on_message(on_message)
     transport.connect()
 
@@ -197,6 +208,7 @@ def main():
                     lkg_version = sub_data.get('lkg_version')
 
                 publish_status()
+                publish_model()
                 last_pub = now
             time.sleep(0.5)
     except KeyboardInterrupt:

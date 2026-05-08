@@ -18,13 +18,24 @@ class ConnSpec:
     prefix: Optional[str]
 
 def parse_conn_spec(conn_spec_str: str) -> ConnSpec:
+    # Handle the @ correctly according to UUFI spec 2.1
+    # "The @ character is only allowed if it is preceded by a non-empty user identifier."
+    # urlparse might strip the @ if it's considered part of the delimiter.
+    
     parsed = urllib.parse.urlparse(conn_spec_str)
 
     scheme = parsed.scheme
     if scheme not in ["mqtt", "pubsub"]:
         raise ValueError(f"Unsupported scheme: {scheme}")
 
+    # Manual check for @ in the netloc to see if it was provided
+    netloc = parsed.netloc
+    has_at = '@' in netloc
+    
     principal = parsed.username or "unknown"
+    if has_at and not principal.endswith('@') and scheme == 'pubsub':
+        principal += '@'
+        
     host = parsed.hostname
     port = parsed.port
 
@@ -37,6 +48,7 @@ def parse_conn_spec(conn_spec_str: str) -> ConnSpec:
         principal=principal,
         prefix=prefix
     )
+
 
 def get_timestamp() -> str:
     """Returns RFC 3339 minimal precision timestamp in UTC."""
@@ -79,9 +91,12 @@ class MqttTransport:
         self.passive = passive
         # Apply tag differentiator if provided
         if tag and tag != "butler": # butler is default
-            self.principal = f"{conn_spec.principal}.{tag}"
+            if self.conn_spec.principal.endswith('@'):
+                self.principal = self.conn_spec.principal[:-1] + "." + tag + "@"
+            else:
+                self.principal = self.conn_spec.principal + "." + tag
         else:
-            self.principal = conn_spec.principal
+            self.principal = self.conn_spec.principal
         
         self.client = mqtt.Client()
         self.on_message_callback: Optional[Callable[[str, Any], None]] = None
