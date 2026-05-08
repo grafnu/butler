@@ -49,7 +49,7 @@ class MqttTransport(Transport):
                 if field in data: env[field] = data[field]
         
         # Parse topic to extract envelope
-        # Structure: /{prefix}/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}
+        # Structure: /{prefix}/uufi/[r/{registryId}/[d/{deviceId}/]|p/{principal}/]c/{subType}/{subFolder}
         parts = msg.topic.strip('/').split('/')
         
         try:
@@ -61,10 +61,13 @@ class MqttTransport(Transport):
         
         if "c" in rem:
             c_idx = rem.index("c")
-            if c_idx >= 2 and rem[0] == "r":
-                env["deviceRegistryId"] = rem[1]
-                if c_idx >= 4 and rem[2] == "d":
-                    env["deviceId"] = rem[3]
+            if c_idx >= 2:
+                if rem[0] == "r":
+                    env["deviceRegistryId"] = rem[1]
+                    if c_idx >= 4 and rem[2] == "d":
+                        env["deviceId"] = rem[3]
+                elif rem[0] == "p":
+                    env["principal"] = rem[1]
             
             if len(rem) > c_idx + 2:
                 env["subType"] = rem[c_idx + 1]
@@ -93,6 +96,10 @@ class MqttTransport(Transport):
             parts.extend(["r", env["deviceRegistryId"]])
             if env.get("deviceId"):
                 parts.extend(["d", env["deviceId"]])
+        else:
+            principal = env.get("principal") or self.conn_spec.principal
+            if principal:
+                parts.extend(["p", principal])
         
         parts.append("c")
         parts.extend([env.get("subType", "unknown"), env.get("subFolder", "unknown")])

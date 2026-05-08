@@ -13,7 +13,8 @@ def create_payload(sub_folder, payload_data):
     }
 
 def create_envelope(transaction_id=None, nonce=None, source=None, project_id=None, 
-                    registry_id=None, device_id=None, sub_type=None, sub_folder=None):
+                    registry_id=None, device_id=None, sub_type=None, sub_folder=None,
+                    principal=None):
     """Creates the UUFI envelope metadata."""
     if transaction_id is None:
         transaction_id = f"tid-{secrets.token_hex(4)}"
@@ -29,6 +30,7 @@ def create_envelope(transaction_id=None, nonce=None, source=None, project_id=Non
     
     if source: envelope["source"] = source
     if project_id: envelope["projectId"] = project_id
+    if principal: envelope["principal"] = principal
     if registry_id: envelope["deviceRegistryId"] = registry_id
     if device_id: envelope["deviceId"] = device_id
     if sub_type: envelope["subType"] = sub_type

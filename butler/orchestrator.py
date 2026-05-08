@@ -93,11 +93,12 @@ class Orchestrator:
             self.query_all_registries()
 
     def query_all_registries(self):
-        # Query using the dedicated discovery topic /uufi/c/query/cloud
+        # Query using the dedicated discovery topic /uufi/p/{principal}/c/query/cloud
         env = create_envelope(
             sub_type="query",
             sub_folder="cloud",
-            source=self.principal
+            source=self.principal,
+            principal=self.principal
         )
         payload = create_payload("cloud", {"operation": "READ"})
         self.transport.publish(env, payload)
@@ -227,9 +228,9 @@ class Orchestrator:
             sub_type="state",
             sub_folder="udmi",
             transaction_id=self.handshake_tid,
-            source=self.principal
+            source=self.principal,
+            principal=self.principal
         )
-        env["principal"] = self.principal
             
         payload = create_payload("udmi", udmi_payload)
         self.transport.publish(env, payload)
@@ -239,10 +240,10 @@ class Orchestrator:
         
         # Subscribe to handshake reply and discovery
         if self.conn_spec.protocol == "mqtt":
-            # New unified topics: /uufi/c/...
+            # New unified topics: /uufi/p/{principal}/c/...
             prefix = self.conn_spec.prefix + '/' if self.conn_spec.prefix else ''
-            self.transport.subscribe(f"/{prefix}uufi/c/config/udmi", self.on_message)
-            self.transport.subscribe(f"/{prefix}uufi/c/config/cloud", self.on_message)
+            self.transport.subscribe(f"/{prefix}uufi/p/{self.principal}/c/config/udmi", self.on_message)
+            self.transport.subscribe(f"/{prefix}uufi/p/{self.principal}/c/config/cloud", self.on_message)
             self.transport.subscribe(f"/{prefix}uufi/r/+/d/+/c/state/update", self.on_message)
             self.transport.subscribe(f"/{prefix}uufi/r/+/d/+/c/config/cloud", self.on_message)
         else:

@@ -131,9 +131,9 @@ class MockDevice:
             sub_type="config",
             sub_folder="udmi",
             transaction_id=tid,
-            source="mocket"
+            source="mocket",
+            principal=principal
         )
-        env["principal"] = principal
 
         payload = create_payload("udmi", reply_payload_data)
         self.transport.publish(env, payload)
@@ -198,7 +198,7 @@ class MockDevice:
         if self.conn_spec.protocol == "mqtt":
             prefix = self.conn_spec.prefix + '/' if self.conn_spec.prefix else ''
             # Generic UUFI channel for handshakes and discovery
-            self.transport.subscribe(f"/{prefix}uufi/c/+/+", self.on_message)
+            self.transport.subscribe(f"/{prefix}uufi/p/+/c/+/+", self.on_message)
             # Registry-specific channel
             self.transport.subscribe(f"/{prefix}uufi/r/{self.registry_id}/d/{self.device_id}/c/+/+", self.on_message)
             # Registry-level cloud ops
