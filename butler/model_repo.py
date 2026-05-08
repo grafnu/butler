@@ -73,7 +73,7 @@ class ModelRepository:
                 "device_id": device_id,
                 "target_version": "1.0",
                 "current_version": "1.0",
-                "last_known_good": "1.0",
+                "lkg_version": "1.0",
                 "state": "quiescent",
                 "make": "default",
                 "model": "default",

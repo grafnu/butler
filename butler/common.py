@@ -239,6 +239,9 @@ class ButlerMQTTBase(ButlerBusBase):
                     if len(remaining) > curr and remaining[curr] == "d":
                         device_id = remaining[curr+1]
                         curr += 2
+                elif remaining[curr] == "p":
+                    # Principal routing: /uufi/p/{principal}/c/...
+                    curr += 2
                 
                 if len(remaining) <= curr or remaining[curr] != "c":
                     self.on_raw_message(msg.topic, payload_str)

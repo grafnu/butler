@@ -107,9 +107,9 @@ class ButlerOrchestrator:
         updates = {}
 
         # Always trust and persist LKG if reported
-        if lkg_version and lkg_version != device_info.get("last_known_good"):
+        if lkg_version and lkg_version != device_info.get("lkg_version"):
             print(f"[butler] Updating LKG for {key} to {lkg_version}")
-            updates["last_known_good"] = lkg_version
+            updates["lkg_version"] = lkg_version
 
         old_status = device_info.get("state")
         if status != old_status:
@@ -134,7 +134,7 @@ class ButlerOrchestrator:
             if device_info.get("current_version") != current_version or device_info.get("state") != "quiescent":
                 print(f"[butler] Device {key} success reported. Requesting model update.")
                 updates["current_version"] = current_version
-                updates["last_known_good"] = lkg_version
+                updates["lkg_version"] = lkg_version
                 updates["state"] = "quiescent"
             if key in self.devices_pending:
                 del self.devices_pending[key]
@@ -213,8 +213,8 @@ class ButlerOrchestrator:
 
     def trigger_rollback(self, registry_id, device_id, device_info):
         key = f"{registry_id}/{device_id}"
-        
-        lkg = device_info.get("last_known_good", "1.0")
+
+        lkg = device_info.get("lkg_version", "1.0")
         print(f"[butler] Rolling back {key} to {lkg}")
         # Update local cache and model
         self.last_action_time[key] = time.time()
