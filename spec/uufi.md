@@ -449,3 +449,13 @@ All timestamps MUST follow RFC 3339 in the **minimal precision format** (e.g., `
 
 **Permissiveness Rule:**
 All components MUST be strict in what they send (minimal precision only) but SHOULD be permissive in what they receive (handling microseconds or offsets gracefully).
+
+### 9.5. Model Storage Consistency
+While internal storage format is an implementation detail, tools sharing a Model Repository (e.g., `register`, `trigger`, and `mocket`) MUST agree on the schema.
+- **Mandatory Format:** For maximum interoperability, it is RECOMMENDED that the internal storage (e.g., `model.json`) uses the same nested `registries` structure defined in Section 5.1.
+- **Initialization:** Components MUST NOT assume the storage file is empty or pre-initialized with a specific structure. Use robust JSON parsing and ensure mandatory top-level keys (like `registries`) exist before operation.
+
+### 9.6. Multi-Registry Support
+All components MUST support multi-registry environments. 
+- **Keys:** State tracking MUST use a composite key of `registry_id` and `device_id`.
+- **Flat Structures:** Implementations MUST NOT use a flat `devices` map at the root of the model, as this prevents supporting devices with the same ID in different registries.
