@@ -86,7 +86,7 @@ The Client must have access to the GCP project where the UDMI system is deployed
 For local testing or on-premise deployments, a standard MQTT broker (like Mosquitto) can be used.
 
 *   **Broker URL:** Typically `tcp://localhost:1883` or `ssl://localhost:8883`.
-*   **Topic Structure:** `/uufi/p/{principal}/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
+*   **Topic Structure:** `/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
 *   **Authentication:** Username/Password or mTLS (certificate-based).
 
 ## 3. Handshake Protocol
@@ -110,7 +110,7 @@ The Client is considered **Active** only after receiving a configuration reply w
 Because the initial handshake is generic and occurs before the Client is associated with a specific registry or device, the registry-less Pattern C structure is used:
 
 - **PubSub:** The `deviceRegistryId` and `deviceId` message attributes MUST be not present empty strings (or `null`).
-- **MQTT:** The topic MUST be `/uufi/p/{principal}/c/{subType}/{subFolder}`.
+- **MQTT:** The topic MUST be `/uufi/c/{subType}/{subFolder}`.
 
 **Important:** Handshake messages MUST be addressed using this registry-less scheme instead of registry-based addressing (`/uufi/r/.../c/...`).
 
@@ -155,7 +155,7 @@ MQTT topic paths follow a unified structure where registry and device segments a
 - **Constraint:** A device segment `d/` MUST NOT be present if the registry segment `r/` is absent.
 
 #### MQTT Message Wrap
-Since MQTT 3.1.1 does not support separate attributes, the envelope fields are included in the JSON payload alongside the actual UDMI message. **Crucially, the top-level JSON envelope fields MUST only include data NOT already encoded in the MQTT topic structure (e.g., omitting projectId, deviceId, etc.).**
+Since MQTT 3.1.1 does not support separate attributes, the envelope fields are placed at the top level of the JSON payload. The actual UDMI message MUST be nested inside a `payload` key. **Crucially, the top-level JSON envelope fields MUST only include data NOT already encoded in the MQTT topic structure (e.g., omitting `projectId`, `deviceRegistryId`, `deviceId`, etc.).**
 
 ```json
 {
@@ -183,10 +183,12 @@ The `CloudModel` object used in these operations contains:
 
 ### 5.2. Cloud Model Queries
 - Set `subFolder: cloud` and `subType: query`.
+- **Addressing:** MUST use registry-less addressing (i.e., `/uufi/c/query/cloud`).
 - **Payload:** A `CloudModel` object with `operation: READ`.
 
 ### 5.3. Cloud Model Updates
 - Set `subFolder: cloud` and `subType: model`.
+- **Addressing:** MUST use registry-less addressing (i.e., `/uufi/c/model/cloud`).
 - **Payload:** A `CloudModel` object specifying the `operation` (e.g., `CREATE`, `UPDATE`, `DELETE`, `BIND`, `UNBIND`) and the target `devices` map.
 
 ## 6. Mapping UDMI to UUFI Envelopes
@@ -228,6 +230,7 @@ The Client initiates the session using generic addressing.
   "subType": "state",
   "transactionId": "UUFI:sess123:001",
   "nonce": "a1b2c3d4",
+  "publishTime": "2026-04-29T10:00:00Z",
   "source": "my-user-id",
   "principal": "my-user-id@"
 }
@@ -303,6 +306,7 @@ Updating the `room_temperature` setpoint for device `BLD-1`.
   "subType": "config",
   "transactionId": "UUFI:sess123:002",
   "nonce": "e5f6a7b8",
+  "publishTime": "2026-04-29T10:05:00Z",
   "source": "my-user-id",
   "principal": "my-user-id@"
 }
@@ -367,6 +371,7 @@ Using generic addressing for the initial handshake.
 {
   "transactionId": "UUFI:sess123:001",
   "nonce": "a1b2c3d4",
+  "publishTime": "2026-04-29T10:00:00Z",
   "source": "my-user-id",
   "principal": "my-user-id",
   "payload": {
@@ -394,6 +399,7 @@ Updating device `BLD-1`.
 {
   "transactionId": "UUFI:sess123:002",
   "nonce": "e5f6a7b8",
+  "publishTime": "2026-04-29T10:05:00Z",
   "source": "my-user-id",
   "principal": "my-user-id",
   "payload": {
@@ -442,10 +448,20 @@ The `/uufi/c/` topic branch MUST be used for the initial handshake.
 
 ### 9.3. Envelope Redundancy
 Top-level envelope fields MUST only include data NOT already encoded in the MQTT topic structure.
-- **Guidance:** Maintain a clean inner UDMI message by omitting redundant fields like `deviceId` or `subType` from the outer JSON wrap.
+- **Guidance:** Maintain a clean inner UDMI message by omitting redundant fields like `deviceRegistryId`, `deviceId`, or `subType` from the outer JSON wrap when they are present in the topic path.
 
 ### 9.4. Timestamp Format
 All timestamps MUST follow RFC 3339 in the **minimal precision format** (e.g., `2026-05-01T22:32:17Z`). Implementations should use UTC to avoid ambiguity. Microseconds or numeric time zone offsets MUST NOT be used when generating messages. 
 
 **Permissiveness Rule:**
 All components MUST be strict in what they send (minimal precision only) but SHOULD be permissive in what they receive (handling microseconds or offsets gracefully).
+
+
+### 9.5. Mandatory Channel Segment
+The `c/` channel segment is mandatory for all topic paths.
+- **Guidance:** Implementations MUST NOT omit the `c/` segment, even for device-specific updates (e.g., use `/uufi/r/my-registry/d/my-device/c/state/update` instead of `/uufi/r/my-registry/d/my-device/state/update`).
+
+
+### 9.6. Payload Wrapping
+The actual UDMI message MUST be nested inside a `payload` key in the outer JSON payload when using the MQTT transport, since MQTT does not natively support message attributes.
+- **Guidance:** Implementations MUST NOT place the UDMI payload directly at the top level of the JSON body. E.g., `{"transactionId": "123", "payload": {"timestamp": "...", "version": "1.5.2", "udmi": {...}}}`.
