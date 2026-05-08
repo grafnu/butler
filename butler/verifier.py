@@ -85,7 +85,8 @@ class ButlerVerifier:
         if sub_type == "state" and sub_folder == "update":
             update_state = data.get("update", {})
             status = update_state.get("status", "quiescent")
-            old_status = self.device_states.get(device_id, "quiescent")
+            key = f"{registry_id}/{device_id}"
+            old_status = self.device_states.get(key, "quiescent")
             
             if old_status != status:
                 self.report_verification(registry_id, device_id, f"State transition: {old_status} -> {status}")
@@ -94,7 +95,7 @@ class ButlerVerifier:
                 if old_status == "quiescent" and status not in ["pending", "quiescent"]:
                     self.report_verification(registry_id, device_id, f"INVALID TRANSITION: {old_status} -> {status}", level="ERROR")
                 
-                self.device_states[device_id] = status
+                self.device_states[key] = status
             
         elif sub_type == "config" and sub_folder == "update":
             self.report_verification(registry_id, device_id, f"Update config sent to {device_id}")

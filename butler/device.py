@@ -31,6 +31,7 @@ class MocketDevice:
         
         self.bus.on_connect = self.on_connect
         self.bus.on_message = self.on_message
+        self.last_model_mtime = 0
 
     def on_connect(self):
         print(f"[mocket] System/Device connected: {self.device_id}")
@@ -196,6 +197,23 @@ class MocketDevice:
                 self.report_state()
             time.sleep(30)
 
+    def watch_model_file(self):
+        model_file = self.model_repo.model_file
+        while True:
+            try:
+                if os.path.exists(model_file):
+                    mtime = os.path.getmtime(model_file)
+                    if mtime > self.last_model_mtime:
+                        if self.last_model_mtime > 0:
+                            print(f"[mocket] Model file change detected, publishing updated model.")
+                            model = self.model_repo.load_model()
+                            payload = { "registries": model.get("registries", {}) }
+                            self.publish_uufi(None, "config", payload, "cloud")
+                        self.last_model_mtime = mtime
+            except Exception as e:
+                print(f"[mocket] Error watching model file: {e}")
+            time.sleep(1)
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("conn_spec", help="Connection specification")
@@ -209,6 +227,7 @@ def main():
     threading.Thread(target=device.loop_forever, daemon=True).start()
     
     threading.Thread(target=device.heartbeat, daemon=True).start()
+    threading.Thread(target=device.watch_model_file, daemon=True).start()
     
     while True:
         time.sleep(1)
