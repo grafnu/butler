@@ -1,7 +1,6 @@
 #FFA
 main       #FAA
-controller #AFA
-verifier   #AAF
+impl_A     #AFA
+impl_B     #AAF
+impl_C     #FAF
 gemerger   #AFF
-jules      #FAF
-
