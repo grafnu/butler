@@ -152,7 +152,7 @@ between the components, regardless of the `device_id` or other configuration par
 Messages MUST be output to `stdout` in the following format:
 `{topic}: {payload}`
 - `{topic}`: The full MQTT topic string.
-- `{payload}`: The complete, JSON-encoded message payload.
+- `{payload}`: The complete, JSON-encoded message payload. This MUST represent the **raw wire format** as received from the transport (e.g., including the `payload` envelope wrapper for MQTT) to ensure transparency for monitoring and verification tools.
 
 **Requirements:**
 - **Single Line:** Each message MUST be output on exactly one line.
