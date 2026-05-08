@@ -20,9 +20,9 @@ def main():
     device_states = {} # (registry_id, device_id) -> {subsystem: state_data}
     settling_times = {} # (registry_id, device_id, subsystem) -> float
 
-    def fetch_model_state(registry_id, device_id):
-        topic = transport.format_topic("query", "cloud", registry_id, device_id)
-        msg = wrap_message({"cloud": {"operation": "READ"}}, principal=transport.principal)
+    def fetch_model_state():
+        topic = transport.format_topic("query", "cloud") # Registry-less
+        msg = wrap_message({"cloud": {"operation": "READ"}}, principal=transport.principal, source=transport.principal)
         transport.publish(topic, msg)
 
     def on_message(topic, payload):
@@ -32,50 +32,50 @@ def main():
         registry_id = parsed.get('registryId')
         device_id = parsed.get('deviceId')
 
-        # Discovery: if we see a registry/device we don't know, we can at least track it
-        if not registry_id or not device_id:
-            # Maybe it's a registry-less message we should care about?
-            # For now, we mainly care about registry-associated traffic for device state.
-            return
-
-        state_key = (registry_id, device_id)
-        if state_key not in device_states:
-            device_states[state_key] = {}
-            # Try to fetch full model state for this new device
-            fetch_model_state(registry_id, device_id)
-
         unwrapped = unwrap_message(payload)
 
         if subType == 'config' and subFolder == 'cloud':
             cloud = unwrapped.get('cloud', {})
             registries = cloud.get('registries', {})
-            reg_data = registries.get(registry_id, {})
-            devices = reg_data.get('devices', {})
-            dev_data = devices.get(device_id, {})
+            for reg_id, reg_data in registries.items():
+                devices = reg_data.get('devices', {})
+                for dev_id, dev_data in devices.items():
+                    state_key = (reg_id, dev_id)
+                    if state_key not in device_states:
+                        device_states[state_key] = {}
+                    
+                    for subsystem, data in dev_data.items():
+                        if subsystem not in device_states[state_key]:
+                            device_states[state_key][subsystem] = {}
+                        state_data = device_states[state_key][subsystem]
+                        
+                        if 'target_version' in data:
+                            state_data['target_version'] = data.get('target_version')
+                        if 'current_version' in data:
+                            state_data['current_version'] = data.get('current_version')
+                        if 'lkg_version' in data:
+                            state_data['lkg_version'] = data.get('lkg_version')
+                        
+                        state_data.setdefault('state', 'quiescent')
+            return
 
-            # dev_data is {subsystem: {target_version, current_version, lkg_version}}
-            for subsystem, data in dev_data.items():
-                if subsystem not in device_states[state_key]:
-                    device_states[state_key][subsystem] = {}
-                state_data = device_states[state_key][subsystem]
-                
-                # Only update if fields are present (partial merge)
-                if 'target_version' in data:
-                    state_data['target_version'] = data.get('target_version')
-                if 'current_version' in data:
-                    state_data['current_version'] = data.get('current_version')
-                if 'lkg_version' in data:
-                    state_data['lkg_version'] = data.get('lkg_version')
-                
-                state_data.setdefault('state', 'quiescent')
+        # For other messages, we still need registry_id and device_id from topic
+        if not registry_id or not device_id:
+            return
 
-        elif subType == 'state' and subFolder == 'update':
+        state_key = (registry_id, device_id)
+        if state_key not in device_states:
+            device_states[state_key] = {}
+            # Try to fetch full model state
+            fetch_model_state()
+
+        if subType == 'state' and subFolder == 'update':
             update = unwrapped.get('update', {})
             state = update.get('state')
             current_version = update.get('current_version')
             lkg_version = update.get('lkg_version')
 
-            # Assume 'main' if not specified, though spec says subsystems should be supported
+            # Assume 'main' if not specified
             subsystem = "main" 
             if subsystem not in device_states[state_key]:
                 device_states[state_key][subsystem] = {}
@@ -89,7 +89,7 @@ def main():
             
             # If we don't have a target version yet, we need to fetch it
             if 'target_version' not in state_data:
-                fetch_model_state(registry_id, device_id)
+                fetch_model_state()
                 return
 
             if state == 'success':
@@ -98,7 +98,7 @@ def main():
                 
                 # If current version changed, update model
                 if current_version and current_version != state_data.get('current_version'):
-                    topic_model = transport.format_topic("model", "cloud", registry_id, device_id)
+                    topic_model = transport.format_topic("model", "cloud")
                     model_update = {
                         "cloud": {
                             "operation": "UPDATE",
@@ -116,7 +116,7 @@ def main():
                             }
                         }
                     }
-                    transport.publish(topic_model, wrap_message(model_update, principal=transport.principal))
+                    transport.publish(topic_model, wrap_message(model_update, principal=transport.principal, source=transport.principal))
                     state_data['current_version'] = current_version
 
             elif state == 'failure':
@@ -126,7 +126,7 @@ def main():
                 # Trigger rollback to LKG
                 lkg = state_data.get('lkg_version')
                 if lkg:
-                    topic_model = transport.format_topic("model", "cloud", registry_id, device_id)
+                    topic_model = transport.format_topic("model", "cloud")
                     model_update = {
                         "cloud": {
                             "operation": "UPDATE",
@@ -143,7 +143,7 @@ def main():
                             }
                         }
                     }
-                    transport.publish(topic_model, wrap_message(model_update, principal=transport.principal))
+                    transport.publish(topic_model, wrap_message(model_update, principal=transport.principal, source=transport.principal))
 
     transport.set_on_message(on_message)
     transport.connect()
@@ -152,11 +152,9 @@ def main():
     transport.handshake()
 
     # Dynamic Discovery: subscribe to all uufi traffic to find registries/devices
-    # The format is /uufi/p/+/r/+/d/+/c/+/+
-    # But also need registry-less for some things
-    transport.subscribe("/uufi/p/+/c/config/cloud") # For model queries
-    transport.subscribe("/uufi/p/+/r/+/d/+/c/config/cloud")
-    transport.subscribe("/uufi/p/+/r/+/d/+/c/state/update")
+    transport.subscribe("/uufi/c/config/cloud") # For model queries
+    transport.subscribe("/uufi/r/+/d/+/c/state/update")
+
 
     try:
         while True:

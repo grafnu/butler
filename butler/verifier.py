@@ -60,7 +60,9 @@ def main():
         subFolder = parsed.get('subFolder')
         device_id = parsed.get('deviceId')
         registry_id = parsed.get('registryId')
-        principal = parsed.get('principal')
+        
+        # In new spec, principal is in the envelope
+        principal = payload.get('principal') or payload.get('source')
 
         # Handshake awareness
         if subType == 'config' and subFolder == 'udmi':
@@ -73,6 +75,8 @@ def main():
         if subType and subFolder:
             is_from_butler = False
             # Identify butler-originated messages
+            # For cloud queries/models, principal might be the best way to identify butler
+            # but we can also use topic patterns.
             if (subFolder == 'cloud' and subType in ['model', 'query']) or \
                (subFolder == 'update' and subType == 'config'):
                 is_from_butler = True
@@ -109,7 +113,7 @@ def main():
     transport.handshake()
 
     # Subscribe to everything to monitor
-    transport.subscribe("#")
+    transport.subscribe("/uufi/#")
     print("Verifier started and active")
 
     try:

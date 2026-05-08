@@ -36,14 +36,9 @@ def main():
             transaction_id = setup.get('transaction_id')
             if transaction_id:
                 # Respond to the principal that sent the state
-                parsed = transport.parse_topic(topic)
-                sender_principal = parsed.get('principal')
+                sender_principal = payload.get('principal') or payload.get('source')
                 if sender_principal:
-                    # We publish back to the same principal's config topic
-                    # Note: format_topic uses self.principal, so we might need a way to target another principal
-                    # but for now, we assume everyone shares the same base principal or we use the sender's.
-                    # Actually, the spec says /uufi/p/{principal}/c/config/udmi
-                    reply_topic = f"/uufi/p/{sender_principal}/c/config/udmi"
+                    reply_topic = transport.format_topic("config", "udmi")
                     reply_payload = wrap_message({
                         "udmi": {
                             "setup": {
@@ -57,7 +52,7 @@ def main():
                                 "msg_source": transport.principal
                             }
                         }
-                    }, transactionId=transaction_id, principal=transport.principal)
+                    }, transactionId=transaction_id, principal=sender_principal, source=transport.principal)
                     transport.publish(reply_topic, reply_payload)
 
     def handle_cloud_query(topic, payload):
@@ -71,9 +66,10 @@ def main():
             # dev_data is {subsystem: {target_version, ...}}
             
             # Format according to spec: registries -> reg_id -> devices -> dev_id -> subsystem -> data
-            reply_topic = transport.format_topic("config", "cloud", registry_id, device_id)
+            reply_topic = transport.format_topic("config", "cloud") # Registry-less
             
-            # Filter for just this device/subsystem or return all for the device?
+            sender_principal = payload.get('principal') or payload.get('source')
+
             # Spec says "When replying to a model query, the cloud payload MUST follow the nested structure..."
             reply_cloud = {
                 "registries": {
@@ -85,7 +81,7 @@ def main():
                 }
             }
             
-            reply_payload = wrap_message({"cloud": reply_cloud}, principal=transport.principal)
+            reply_payload = wrap_message({"cloud": reply_cloud}, principal=sender_principal, source=transport.principal)
             transport.publish(reply_topic, reply_payload)
 
     def handle_cloud_model(topic, payload):
@@ -154,12 +150,12 @@ def main():
             handle_handshake(topic, payload)
             return
 
-        if parsed.get('deviceId') == device_id and parsed.get('registryId') == registry_id:
-            if subType == 'query' and subFolder == 'cloud':
-                handle_cloud_query(topic, payload)
-            elif subType == 'model' and subFolder == 'cloud':
-                handle_cloud_model(topic, payload)
-            elif subType == 'config' and subFolder == 'update':
+        if subType == 'query' and subFolder == 'cloud':
+            handle_cloud_query(topic, payload)
+        elif subType == 'model' and subFolder == 'cloud':
+            handle_cloud_model(topic, payload)
+        elif parsed.get('deviceId') == device_id and parsed.get('registryId') == registry_id:
+            if subType == 'config' and subFolder == 'update':
                 handle_update(topic, payload)
 
     def publish_status():
@@ -170,7 +166,7 @@ def main():
                 "current_version": current_version,
                 "lkg_version": lkg_version
             }
-        }, principal=transport.principal)
+        }, principal=transport.principal, source=transport.principal)
         transport.publish(topic, msg)
 
     transport.set_on_message(on_message)
@@ -178,10 +174,10 @@ def main():
 
     # Mocket might need to handshake if it has a higher-level system, but here it's the system
     # We'll just subscribe to handshakes
-    transport.subscribe("/uufi/p/+/c/state/udmi")
+    transport.subscribe("/uufi/c/state/udmi")
 
-    transport.subscribe(transport.format_topic("query", "cloud", registry_id, device_id))
-    transport.subscribe(transport.format_topic("model", "cloud", registry_id, device_id))
+    transport.subscribe(transport.format_topic("query", "cloud"))
+    transport.subscribe(transport.format_topic("model", "cloud"))
     transport.subscribe(transport.format_topic("config", "update", registry_id, device_id))
 
     try:

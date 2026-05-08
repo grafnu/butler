@@ -47,7 +47,7 @@ def wrap_message(payload: dict, **envelope_kwargs) -> dict:
 
     # Omit fields already encoded in the MQTT topic structure
     # But as per 9.3, principal SHOULD be included in outer JSON for registry-less messages.
-    # We'll keep it simple: keep what's passed in, but ensure mandatory fields.
+    # We'll ensure principal is there if provided.
 
     now = get_timestamp()
 
@@ -55,6 +55,8 @@ def wrap_message(payload: dict, **envelope_kwargs) -> dict:
         msg['publishTime'] = now
     if 'nonce' not in msg:
         msg['nonce'] = uuid.uuid4().hex[:8]
+    if 'principal' not in msg and 'source' in msg:
+        msg['principal'] = msg['source']
 
     if 'payload' not in msg:
         msg['payload'] = payload.copy()
@@ -108,12 +110,10 @@ class MqttTransport:
         self.on_message_callback = callback
 
     def format_topic(self, sub_type: str, sub_folder: str, registry_id: str = None, device_id: str = None) -> str:
-        # /uufi/p/{principal}/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}
+        # /uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}
         parts = ["", "uufi"]
         if self.conn_spec.prefix:
             parts.append(self.conn_spec.prefix)
-        
-        parts.extend(["p", self.principal])
         
         if registry_id:
             parts.extend(["r", registry_id])
@@ -128,12 +128,12 @@ class MqttTransport:
         if parts[0] == "":
             parts.pop(0)
 
-        if len(parts) < 4 or parts[0] != "uufi":
+        if len(parts) < 3 or parts[0] != "uufi":
             return {}
 
         idx = 1
         prefix = None
-        if parts[idx] not in ["p", "r"]: # Handling prefix if present
+        if parts[idx] not in ["r", "c"]: # Handling prefix if present
              prefix = parts[idx]
              idx += 1
         
@@ -141,10 +141,6 @@ class MqttTransport:
         if prefix:
             result['prefix'] = prefix
 
-        if parts[idx] == "p":
-            result['principal'] = parts[idx+1]
-            idx += 2
-        
         if idx < len(parts) and parts[idx] == "r":
             result['registryId'] = parts[idx+1]
             idx += 2
@@ -170,10 +166,12 @@ class MqttTransport:
             nonlocal handshake_complete
             parsed = self.parse_topic(topic)
             if parsed.get('subType') == 'config' and parsed.get('subFolder') == 'udmi':
-                unwrapped = unwrap_message(payload)
-                if 'udmi' in unwrapped and 'reply' in unwrapped['udmi']:
-                    if unwrapped['udmi']['reply'].get('transaction_id') == transaction_id:
-                        handshake_complete = True
+                # Check principal and transactionId in envelope
+                if payload.get('principal') == self.principal or payload.get('source') == self.principal:
+                   unwrapped = unwrap_message(payload)
+                   if 'udmi' in unwrapped and 'reply' in unwrapped['udmi']:
+                       if unwrapped['udmi']['reply'].get('transaction_id') == transaction_id:
+                           handshake_complete = True
 
         old_callback = self.on_message_callback
         self.set_on_message(temp_callback)
@@ -187,7 +185,7 @@ class MqttTransport:
                     "user": self.principal
                 }
             }
-        }, transactionId=transaction_id, principal=self.principal)
+        }, transactionId=transaction_id, principal=self.principal, source=self.principal)
         
         self.publish(topic_state, payload)
 
@@ -198,6 +196,7 @@ class MqttTransport:
         self.set_on_message(old_callback)
         if not handshake_complete:
             raise TimeoutError("Handshake timed out after 60 seconds")
+
 
     def _on_connect(self, client, userdata, flags, rc):
         pass
