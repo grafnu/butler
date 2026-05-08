@@ -5,7 +5,7 @@ multiple working subdirectories, each one containing a different version of an i
 
 Check the remote branches of the form `impl_ID`. Each one is a different implementation of the butler spec. Clone
 each one into the `impl/ID` directory (replacing the `_` with the file separator `/`). If they already exist,
-make sure they are up to date with the remote origin (`git pull`).
+make sure they are up to date with the remote origin (`git pull`) and remote main branch (`git merge origin/main`).
 
 The `venv` based off of `requirements.txt` needs to be setup for each subdirectory independently.
 
