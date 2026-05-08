@@ -215,7 +215,8 @@ class Orchestrator:
 
     def send_handshake(self):
         self.handshake_tid = f"handshake-{int(time.time())}"
-        self.handshake_start_time = time.time()
+        if self.handshake_start_time is None:
+            self.handshake_start_time = time.time()
         udmi_payload = {
             "setup": {
                 "functions_ver": 9,
@@ -244,15 +245,15 @@ class Orchestrator:
             prefix = self.conn_spec.prefix + '/' if self.conn_spec.prefix else ''
             self.transport.subscribe(f"/{prefix}uufi/p/{self.principal}/c/config/udmi", self.on_message)
             self.transport.subscribe(f"/{prefix}uufi/p/{self.principal}/c/config/cloud", self.on_message)
-            self.transport.subscribe(f"/{prefix}uufi/r/+/d/+/c/state/update", self.on_message)
-            self.transport.subscribe(f"/{prefix}uufi/r/+/d/+/c/config/cloud", self.on_message)
+            self.transport.subscribe(f"/{prefix}uufi/p/+/r/+/d/+/c/state/update", self.on_message)
+            self.transport.subscribe(f"/{prefix}uufi/p/+/r/+/d/+/c/config/cloud", self.on_message)
         else:
             self.transport.subscribe(self.on_message)
 
         self.transport.loop_start()
         
-        self.send_handshake()
-        
+        self.handshake_start_time = time.time()
+        last_handshake = 0
         try:
             while True:
                 now = time.time()
@@ -260,6 +261,9 @@ class Orchestrator:
                     if now - self.handshake_start_time > 60:
                         print("[butler] CRITICAL: Handshake timeout. Fail-fast.", flush=True)
                         sys.exit(1)
+                    if now - last_handshake > 5:
+                        self.send_handshake()
+                        last_handshake = now
                 else:
                     self.check_reconciliation()
                     self.check_timeouts()

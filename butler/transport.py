@@ -38,6 +38,7 @@ class MqttTransport(Transport):
         if not self.callback: return
         
         raw_payload = msg.payload.decode('utf-8', errors='replace')
+
         data = parse_message(msg.payload)
         
         env = {}
@@ -49,7 +50,7 @@ class MqttTransport(Transport):
                 if field in data: env[field] = data[field]
         
         # Parse topic to extract envelope
-        # Structure: /{prefix}/uufi/[r/{registryId}/[d/{deviceId}/]|p/{principal}/]c/{subType}/{subFolder}
+        # Structure: /{prefix}/uufi/p/{principal}/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}
         parts = msg.topic.strip('/').split('/')
         
         try:
@@ -59,6 +60,10 @@ class MqttTransport(Transport):
 
         rem = parts[uufi_idx + 1:]
         
+        if len(rem) >= 2 and rem[0] == "p":
+            env["principal"] = rem[1]
+            rem = rem[2:]
+        
         if "c" in rem:
             c_idx = rem.index("c")
             if c_idx >= 2:
@@ -66,8 +71,6 @@ class MqttTransport(Transport):
                     env["deviceRegistryId"] = rem[1]
                     if c_idx >= 4 and rem[2] == "d":
                         env["deviceId"] = rem[3]
-                elif rem[0] == "p":
-                    env["principal"] = rem[1]
             
             if len(rem) > c_idx + 2:
                 env["subType"] = rem[c_idx + 1]
@@ -77,6 +80,7 @@ class MqttTransport(Transport):
 
     def publish(self, envelope, payload):
         topic = self.get_topic(envelope)
+
         
         # Prepare wrapped payload for MQTT
         # "Crucially, the top-level JSON envelope MUST only include data NOT already encoded in the MQTT topic structure"
@@ -92,14 +96,14 @@ class MqttTransport(Transport):
             parts.append(self.conn_spec.prefix)
         parts.append("uufi")
             
+        principal = env.get("principal") or self.conn_spec.principal
+        if principal:
+            parts.extend(["p", principal])
+            
         if env.get("deviceRegistryId"):
             parts.extend(["r", env["deviceRegistryId"]])
             if env.get("deviceId"):
                 parts.extend(["d", env["deviceId"]])
-        else:
-            principal = env.get("principal") or self.conn_spec.principal
-            if principal:
-                parts.extend(["p", principal])
         
         parts.append("c")
         parts.extend([env.get("subType", "unknown"), env.get("subFolder", "unknown")])
