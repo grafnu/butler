@@ -98,7 +98,10 @@ def main():
                     model_repo.update_target_version(registry_id, device_id, sub_name, data['target_version'])
                 if 'current_version' in data:
                     model_repo.update_current_version(registry_id, device_id, sub_name, data['current_version'])
-                # lkg_version update if needed? Usually butler does this.
+                if 'status' in data:
+                    model_repo.update_status(registry_id, device_id, sub_name, data['status'])
+                if 'lkg_version' in data:
+                    model_repo.update_lkg_version(registry_id, device_id, sub_name, data['lkg_version'])
 
     def verify_blob(url, expected_hash):
         try:

@@ -88,6 +88,26 @@ class ModelRepo:
         sub["lkg_version"] = current_version
         self._write_model(data)
 
+    def update_status(self, registry_id: str, device_id: str, subsystem: str, status: str):
+        data = self._read_model()
+        reg = data["registries"].setdefault(registry_id, {"devices": {}})
+        devices = reg.setdefault("devices", {})
+        device = devices.setdefault(device_id, {})
+        sub = device.setdefault(subsystem, {})
+
+        sub["status"] = status
+        self._write_model(data)
+
+    def update_lkg_version(self, registry_id: str, device_id: str, subsystem: str, lkg_version: str):
+        data = self._read_model()
+        reg = data["registries"].setdefault(registry_id, {"devices": {}})
+        devices = reg.setdefault("devices", {})
+        device = devices.setdefault(device_id, {})
+        sub = device.setdefault(subsystem, {})
+
+        sub["lkg_version"] = lkg_version
+        self._write_model(data)
+
     def revert_to_lkg(self, registry_id: str, device_id: str, subsystem: str):
         data = self._read_model()
         reg = data["registries"].get(registry_id, {})

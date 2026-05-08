@@ -94,7 +94,8 @@ def main():
                                     device_id: {
                                         subsystem: {
                                             "current_version": current_version,
-                                            "lkg_version": state_data.get('lkg_version')
+                                            "lkg_version": state_data.get('lkg_version'),
+                                            "status": state
                                         }
                                     }
                                 }
@@ -139,7 +140,8 @@ def main():
                                     "devices": {
                                         device_id: {
                                             subsystem: {
-                                                "target_version": lkg
+                                                "target_version": lkg,
+                                                "status": state
                                             }
                                         }
                                     }
@@ -228,7 +230,8 @@ def main():
                                                 "devices": {
                                                     device_id: {
                                                         subsystem: {
-                                                            "target_version": lkg
+                                                            "target_version": lkg,
+                                                            "status": state_data.get('state', 'quiescent')
                                                         }
                                                     }
                                                 }
@@ -236,7 +239,7 @@ def main():
                                         }
                                     }
                                 }
-                                transport.publish(topic_model, wrap_message(model_update, principal=transport.principal))
+                                transport.publish(topic_model, wrap_message(model_update, principal=transport.principal, source=transport.principal))
 
             time.sleep(1)
     except KeyboardInterrupt:
