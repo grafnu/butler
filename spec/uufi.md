@@ -196,6 +196,7 @@ The `CloudModel` object used in these operations contains:
 - Set `subFolder: cloud` and `subType: model`.
 - **Payload:** A `CloudModel` object specifying the `operation` (e.g., `CREATE`, `UPDATE`, `DELETE`, `BIND`, `UNBIND`) and the target `devices` map.
 - **Mandatory Status:** When updating device subsystems, the `status` field SHOULD be included to reflect the current operational state.
+- **Partial Merge Update:** The `UPDATE` operation for the `cloud` subfolder MUST be treated as a partial merge at the device subsystem level. Components processing this message MUST update the specified fields without overwriting or deleting any existing fields that are not included in the payload. If `target_version` is omitted, it remains unchanged.
 
 ## 6. Mapping UDMI to UUFI Envelopes
 
