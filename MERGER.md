@@ -2,7 +2,9 @@
 
 The goal is to test multiple different implementations of the `butler`
 spec, as defined in `spec/`, and if there are failure or significant
-inconsistencies update the specs in `spec/` accordingly.  If
+inconsistencies update the specs in `spec/` accordingly. Spec compliance
+is defined as successfully passing the `smokeit` test across all cross-implementation
+pairs with zero verification failures and consistent behavioral logs. If
 everything is spec compliant then there is nothing to do except report
 success. It is NOT necessary to fix the implementations (except as a
 means to figure out what the correct `spec/` would be).

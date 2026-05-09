@@ -20,6 +20,13 @@ brew install mosquitto
 brew services start mosquitto
 ```
 
+## Project Structure
+
+- `spec/`: Contains the core architectural and protocol specifications (e.g., `uufi.md`).
+- `butler/`: The primary Python implementation of the system.
+- `bin/`: Executable scripts for interacting with and testing the system.
+- `impl/`: (Internal/Testing) Used during cross-implementation testing to hold clones of other implementation branches.
+
 ## Local Development Setup
 
 ### 1. Initialize Virtual Environment
