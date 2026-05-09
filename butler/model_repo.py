@@ -49,7 +49,23 @@ class ModelRepository:
 
     def get_device_subsystems(self, registry_id, device_id):
         reg = self.get_registry(registry_id)
-        return reg.get(device_id, {})
+        subsystems = reg.get(device_id, {})
+        if "main" not in subsystems:
+            data = {
+                "registry_id": registry_id,
+                "device_id": device_id,
+                "target_version": "1.0",
+                "current_version": "1.0",
+                "lkg_version": "1.0",
+                "state": "quiescent",
+                "make": "default",
+                "model": "default",
+                "subsystem": "main"
+            }
+            self.save_subsystem(registry_id, device_id, "main", data)
+            reg = self.get_registry(registry_id)
+            subsystems = reg.get(device_id, {})
+        return subsystems
 
     def get_subsystem(self, registry_id, device_id, subsystem_id="main"):
         subsystems = self.get_device_subsystems(registry_id, device_id)

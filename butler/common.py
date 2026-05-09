@@ -115,9 +115,12 @@ class ButlerBusBase:
         if sub_type == "config" and sub_folder == "udmi":
             udmi_block = udmi_payload.get("udmi", {})
             reply = udmi_block.get("reply")
-            if reply and reply.get("transaction_id") == self.handshake_transaction_id:
-                self.handshake_complete = True
-                print(f"[{self.source}] Handshake complete!")
+            if reply:
+                if reply.get("transaction_id") == self.handshake_transaction_id:
+                    self.handshake_complete = True
+                    print(f"[{self.source}] Handshake complete!")
+                else:
+                    return # Ignore handshake replies with mismatched transaction ID
 
         self.on_message(topic, device_id, sub_type, sub_folder, udmi_payload)
 

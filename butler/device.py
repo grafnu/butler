@@ -185,9 +185,11 @@ class MocketDevice:
 
     def report_state(self):
         payload = {
-            "current_version": self.current_version,
-            "lkg_version": self.lkg_version,
-            "status": self.status
+            "main": {
+                "current_version": self.current_version,
+                "lkg_version": self.lkg_version,
+                "status": self.status
+            }
         }
         self.publish_uufi(self.device_id, "state", payload, "update", registry_id=self.registry_id)
 

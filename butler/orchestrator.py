@@ -75,69 +75,73 @@ class ButlerOrchestrator:
     def handle_device_state(self, device_id, data):
         # Look inside the 'update' subfolder for the device state
         update_state = data.get("update", {})
-        current_version = update_state.get("current_version") or ""
-        lkg_version = update_state.get("lkg_version")
-        status = update_state.get("status", "quiescent")
         registry_id = data.get("deviceRegistryId")
         
         if not registry_id:
             return
 
-        subsystem = "main" # Default subsystem for now
-        sub_key = f"{registry_id}/{device_id}/{subsystem}"
-        print(f"[butler] Received device state for {sub_key}: {status} (v{current_version}, lkg: {lkg_version})")
-        
-        device_info = self.known_devices.get(sub_key)
-        if not device_info:
-            # If we don't know the device, query the model
-            print(f"[butler] Unknown device {sub_key}, querying model...")
-            self.known_devices[sub_key] = {"registry_id": registry_id, "device_id": device_id, "subsystem": subsystem}
-            self.query_model(registry_id, device_id)
-            return
+        for subsystem, sub_data in update_state.items():
+            if not isinstance(sub_data, dict):
+                continue
 
-        updates = {}
+            current_version = sub_data.get("current_version") or ""
+            lkg_version = sub_data.get("lkg_version")
+            status = sub_data.get("status", "quiescent")
 
-        # Always trust and persist LKG if reported
-        if lkg_version and lkg_version != device_info.get("lkg_version"):
-            print(f"[butler] Updating LKG for {sub_key} to {lkg_version}")
-            updates["lkg_version"] = lkg_version
+            sub_key = f"{registry_id}/{device_id}/{subsystem}"
+            print(f"[butler] Received device state for {sub_key}: {status} (v{current_version}, lkg: {lkg_version})")
 
-        old_status = device_info.get("state")
-        if status != old_status:
-            self.last_action_time[sub_key] = time.time()
+            device_info = self.known_devices.get(sub_key)
+            if not device_info:
+                # If we don't know the device, query the model
+                print(f"[butler] Unknown device {sub_key}, querying model...")
+                self.known_devices[sub_key] = {"registry_id": registry_id, "device_id": device_id, "subsystem": subsystem}
+                self.query_model(registry_id, device_id)
+                continue
 
-        if status == "pending":
-            if sub_key not in self.devices_pending:
-                print(f"[butler] Device {sub_key} entered pending state. Starting timeout timer.")
-                self.devices_pending[sub_key] = time.time()
-        
-        elif status == "quiescent":
-            target_version = device_info.get("target_version")
-            if current_version != target_version:
-                self.reconcile_device(registry_id, device_id, subsystem)
-            else:
-                if device_info.get("state") != "quiescent" or device_info.get("current_version") != current_version:
-                    print(f"[butler] Device {sub_key} is quiescent and compliant.")
-                    updates["current_version"] = current_version
-                    updates["state"] = "quiescent"
-        
-        elif status == "success":
-            if device_info.get("current_version") != current_version or device_info.get("state") != "quiescent":
-                print(f"[butler] Device {sub_key} success reported. Requesting model update.")
-                updates["current_version"] = current_version
+            updates = {}
+
+            # Always trust and persist LKG if reported
+            if lkg_version and lkg_version != device_info.get("lkg_version"):
+                print(f"[butler] Updating LKG for {sub_key} to {lkg_version}")
                 updates["lkg_version"] = lkg_version
-                updates["state"] = "quiescent"
-            if sub_key in self.devices_pending:
-                del self.devices_pending[sub_key]
-        
-        elif status == "failure":
-            print(f"[butler] Device {sub_key} failure reported. Triggering rollback.")
-            self.trigger_rollback(registry_id, device_id, device_info)
-            if sub_key in self.devices_pending:
-                del self.devices_pending[sub_key]
 
-        if updates:
-            self.update_model(registry_id, device_id, subsystem=subsystem, **updates)
+            old_status = device_info.get("state")
+            if status != old_status:
+                self.last_action_time[sub_key] = time.time()
+
+            if status == "pending":
+                if sub_key not in self.devices_pending:
+                    print(f"[butler] Device {sub_key} entered pending state. Starting timeout timer.")
+                    self.devices_pending[sub_key] = time.time()
+
+            elif status == "quiescent":
+                target_version = device_info.get("target_version")
+                if current_version != target_version:
+                    self.reconcile_device(registry_id, device_id, subsystem)
+                else:
+                    if device_info.get("state") != "quiescent" or device_info.get("current_version") != current_version:
+                        print(f"[butler] Device {sub_key} is quiescent and compliant.")
+                        updates["current_version"] = current_version
+                        updates["state"] = "quiescent"
+
+            elif status == "success":
+                if device_info.get("current_version") != current_version or device_info.get("state") != "quiescent":
+                    print(f"[butler] Device {sub_key} success reported. Requesting model update.")
+                    updates["current_version"] = current_version
+                    updates["lkg_version"] = lkg_version
+                    updates["state"] = "quiescent"
+                if sub_key in self.devices_pending:
+                    del self.devices_pending[sub_key]
+
+            elif status == "failure":
+                print(f"[butler] Device {sub_key} failure reported. Triggering rollback.")
+                self.trigger_rollback(registry_id, device_id, device_info)
+                if sub_key in self.devices_pending:
+                    del self.devices_pending[sub_key]
+
+            if updates:
+                self.update_model(registry_id, device_id, subsystem=subsystem, **updates)
 
     def query_model(self, registry_id=None, device_id=None):
         payload = {

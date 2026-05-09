@@ -154,11 +154,18 @@ MQTT topic paths follow a unified structure where registry and device segments a
 - **Constraint:** A device segment `d/` MUST NOT be present if the registry segment `r/` is absent.
 
 #### MQTT Message Wrap
-Since MQTT 3.1.1 does not support separate attributes, the envelope fields are included in the JSON payload alongside the actual UDMI message. **Crucially, the top-level JSON envelope fields MUST only include data NOT already encoded in the MQTT topic structure (e.g., omitting projectId, deviceId, etc.), and the UDMI message data MUST NOT be placed at the top level of the JSON document but MUST be strictly nested within the `payload` key.**
+Since MQTT 3.1.1 does not support separate attributes, the envelope fields are included in the JSON payload alongside the actual UDMI message. **Crucially, the top-level JSON envelope fields MUST only include data NOT already encoded in the MQTT topic structure, and the UDMI message data MUST NOT be placed at the top level of the JSON document but MUST be strictly nested within the `payload` key.**
+
+*   **Topic-Encoded Fields:** Fields like `subType`, `subFolder`, and (if present in the path) `deviceRegistryId` and `deviceId` MUST be omitted from the outer JSON envelope.
+*   **Non-Encoded Fields:** Fields like `projectId`, `transactionId`, `nonce`, `publishTime`, `source`, and `principal` MUST be included in the outer JSON envelope if they are required for the message context.
 
 ```json
 {
   "transactionId": "UUFI:sess123:002",
+  "nonce": "e5f6a7b8",
+  "publishTime": "2026-04-29T10:05:00Z",
+  "source": "my-user-id",
+  "principal": "my-user-id",
   "payload": {
     "version": "1.5.2",
     "timestamp": "2026-04-29T10:05:00Z",
@@ -189,6 +196,7 @@ The `CloudModel` object used in these operations contains:
 - Set `subFolder: cloud` and `subType: model`.
 - **Payload:** A `CloudModel` object specifying the `operation` (e.g., `CREATE`, `UPDATE`, `DELETE`, `BIND`, `UNBIND`) and the target `devices` map.
 - **Mandatory Status:** When updating device subsystems, the `status` field SHOULD be included to reflect the current operational state.
+- **Partial Merge Update:** The `UPDATE` operation for the `cloud` subfolder MUST be treated as a partial merge at the device subsystem level. Components processing this message MUST update the specified fields without overwriting or deleting any existing fields that are not included in the payload. If `target_version` is omitted, it remains unchanged.
 
 ## 6. Mapping UDMI to UUFI Envelopes
 
@@ -435,15 +443,17 @@ Every message's inner `payload` object MUST contain `timestamp` and `version` fi
     - **LKG Version:** Devices MUST report their most recent verified operational version using the `lkg_version` field.
     - **Operation Status:** Devices MUST report their operational state (e.g., `quiescent`, `pending`, `success`, `failure`) using the `status` field.
 - **Guidance:** Ensure `publishTime` is in the envelope and `timestamp` is in the inner payload. Ensure `current_version`, `lkg_version`, and `status` are present in the `update` subfolder of the `state` message. Use the subfolder wrapper for all UDMI fields.
+- **Subsystem Default:** Implementations MUST ensure that the `main` subsystem is always initialized and reported, even if no other subsystems are present.
 
-### 9.2. Handshake Addressing
-The registry-less `/uufi/c/` topic branch MUST be used for the initial handshake.
-- **Strict Prefix:** The handshake topic MUST exactly match the `/uufi/c/{subType}/{subFolder}` pattern (e.g. `/uufi/c/state/udmi`).
+### 9.2. Handshake and Identification
+- **Handshake Addressing:** The registry-less `/uufi/c/` topic branch MUST be used for the initial handshake.
+- **Transaction ID Consistency:** The `transactionId` in the message envelope SHOULD match the `udmi.setup.transaction_id` in the UDMI payload during the handshake to ensure consistent tracking across layers.
 - **Guidance:** Reserve `/uufi/r/` for post-handshake, registry-associated traffic. Ensure all clients use the same `c/` channel for handshakes and rely on envelope-based identification (e.g. `transactionId` and `principal`).
 
-### 9.3. Envelope Redundancy
-Top-level envelope fields MUST only include data NOT already encoded in the MQTT topic structure.
-- **Guidance:** Maintain a clean inner UDMI message by omitting redundant fields like `deviceId` or `subType` from the outer JSON wrap.
+### 9.3. Envelope Redundancy and Observation
+- **Redundancy Rule:** Top-level envelope fields MUST only include data NOT already encoded in the MQTT topic structure. For registry-based topics (`/uufi/r/reg1/d/dev1/...`), the `deviceRegistryId` and `deviceId` MUST be omitted from the envelope.
+- **Observer Transparency:** Observation tools (e.g., `bin/observe`) MUST output the **raw wire format** of messages received on the bus. While internal processing MAY flatten the `payload` wrapper for convenience, the output for human/automated monitoring MUST reflect the exact JSON structure as it exists on the transport layer to facilitate compliance verification.
+- **Guidance:** Maintain a clean inner UDMI message by omitting redundant fields like `subType` from the outer JSON wrap.
 
 ### 9.4. Timestamp Format
 All timestamps MUST follow RFC 3339 in the **minimal precision format** (e.g., `2026-05-01T22:32:17Z`). Implementations should use UTC to avoid ambiguity. Microseconds or numeric time zone offsets MUST NOT be used when generating messages. 

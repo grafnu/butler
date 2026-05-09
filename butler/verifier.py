@@ -72,6 +72,25 @@ class ButlerVerifier:
         if not registry_id or registry_id == "unknown":
             if sub_type == "state" and sub_folder == "udmi":
                 self.report_verification(registry_id, device_id or source, f"Handshake started by {source}")
+                # The system Verifier must actively respond to initial state/udmi handshakes
+                if source != self.source:
+                    udmi = data.get("udmi", {})
+                    setup = udmi.get("setup", {})
+                    transaction_id = setup.get("transaction_id")
+                    principal = data.get("principal")
+                    response_payload = {
+                        "setup": {
+                            "functions_min": 9,
+                            "functions_max": 9,
+                            "udmi_version": "1.5.2",
+                        },
+                        "reply": {
+                            "functions_ver": 9,
+                            "transaction_id": transaction_id,
+                            "msg_source": source
+                        }
+                    }
+                    self.publish_uufi(None, "config", response_payload, "udmi", transaction_id=transaction_id, target_principal=principal)
             
             if sub_type == "config" and sub_folder == "udmi":
                 udmi = data.get("udmi", {})
@@ -84,18 +103,21 @@ class ButlerVerifier:
         # State Transition Monitoring
         if sub_type == "state" and sub_folder == "update":
             update_state = data.get("update", {})
-            status = update_state.get("status", "quiescent")
-            key = f"{registry_id}/{device_id}"
-            old_status = self.device_states.get(key, "quiescent")
-            
-            if old_status != status:
-                self.report_verification(registry_id, device_id, f"State transition: {old_status} -> {status}")
+            for subsystem, sub_data in update_state.items():
+                if not isinstance(sub_data, dict):
+                    continue
+                status = sub_data.get("status", "quiescent")
+                key = f"{registry_id}/{device_id}/{subsystem}"
+                old_status = self.device_states.get(key, "quiescent")
                 
-                # Validate transitions
-                if old_status == "quiescent" and status not in ["pending", "quiescent"]:
-                    self.report_verification(registry_id, device_id, f"INVALID TRANSITION: {old_status} -> {status}", level="ERROR")
-                
-                self.device_states[key] = status
+                if old_status != status:
+                    self.report_verification(registry_id, device_id, f"State transition for {subsystem}: {old_status} -> {status}")
+
+                    # Validate transitions
+                    if old_status == "quiescent" and status not in ["pending", "quiescent"]:
+                        self.report_verification(registry_id, device_id, f"INVALID TRANSITION for {subsystem}: {old_status} -> {status}", level="ERROR")
+
+                    self.device_states[key] = status
             
         elif sub_type == "config" and sub_folder == "update":
             self.report_verification(registry_id, device_id, f"Update config sent to {device_id}")
