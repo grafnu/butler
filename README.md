@@ -104,5 +104,5 @@ bin/smokeit mqtt://localhost
 
 ## Documentation
 For detailed architectural specifications and component requirements, see:
-- `T01_Butler_Managed_Update_System_Architecture.md`
+- `spec/T01_Butler_Managed_Update_System_Architecture.md`
 - `AGENTS.md` (Project-specific hints)
