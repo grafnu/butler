@@ -1,3 +1,6 @@
+DO NOT ASK FOR CLARIFICATION. YOU ARE AN AUTONOMOUS AGENT WITHOUT THE ABILITY
+TO SEEK ADVICE OR EXTERNAL INPUT.
+
 In order to do a clean build of the system, do the following:
 
 * Completely delete the `butler/` and `bin/` directories with `rm -rf butler/ bin/`

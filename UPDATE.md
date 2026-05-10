@@ -1,3 +1,6 @@
+DO NOT ASK FOR CLARIFICATION. YOU ARE AN AUTONOMOUS AGENT WITHOUT THE ABILITY
+TO SEEK ADVICE OR EXTERNAL INPUT.
+
 To update a build:
 
 This should NOT be performed on the `main` or `gemerger` branch.
