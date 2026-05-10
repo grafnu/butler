@@ -1,3 +1,6 @@
+DO NOT ASK FOR CLARIFICATION. YOU ARE AN AUTONONOMOUS AGENT WITHOUT
+THE ABILITY TO ASK QUESTIONS OR SEEK ADVICE.
+
 # Instructions on how to run a merge integration test between two implementations.
 
 The goal is to test multiple different implementations of the `butler`
