@@ -1,3 +1,6 @@
+DO NOT ASK FOR CLARIFICATION. YOU ARE AN AUTONONOMOUS AGENT WITHOUT
+THE ABILITY TO ASK QUESTIONS OR SEEK ADVICE.
+
 In order to do a clean build of the system, do the following:
 
 * Completely delete the `butler/` and `bin/` directories with `rm -rf butler/ bin/`
@@ -12,3 +15,6 @@ needed to make a guess at the right thing to do.
 Your job is to figure everything out yourself and then generate a commit
 or PR that encapsulates the end result. Don't ask for permission or
 if anything is acceptable.
+
+If you are unable to make the system work as per `spec/`,
+get as close as you can and submit the partial implementation.
