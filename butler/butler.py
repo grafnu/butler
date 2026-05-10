@@ -71,65 +71,26 @@ def main():
 
         if subType == 'state' and subFolder == 'update':
             update = unwrapped.get('update', {})
-            state = update.get('status') or update.get('state') # Backward compatibility
-            current_version = update.get('current_version')
-            lkg_version = update.get('lkg_version')
-
-            # Assume 'main' if not specified
-            subsystem = "main" 
-            if subsystem not in device_states[state_key]:
-                device_states[state_key][subsystem] = {}
             
-            state_data = device_states[state_key][subsystem]
-            
-            # If current version changed, update model
-            if state == 'success' and current_version and current_version != state_data.get('current_version'):
-                topic_model = transport.format_topic("model", "cloud")
-                model_update = {
-                    "cloud": {
-                        "operation": "UPDATE",
-                        "registries": {
-                            registry_id: {
-                                "devices": {
-                                    device_id: {
-                                        subsystem: {
-                                            "current_version": current_version,
-                                            "lkg_version": state_data.get('lkg_version')
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                transport.publish(topic_model, wrap_message(model_update, principal=transport.principal, source=transport.principal))
+            if "status" in update or "current_version" in update:
+                # Fallback backward compatibility for unnested payload
+                update = {"main": update}
 
-            # Update internal tracking from device report
-            if state != state_data.get('state'):
-                settling_times[state_key + (subsystem,)] = time.time()
+            for subsystem, sub_update in update.items():
+                if not isinstance(sub_update, dict):
+                    continue
 
-            state_data['state'] = state
-            if current_version:
-                state_data['current_version'] = current_version
-            if lkg_version:
-                state_data['lkg_version'] = lkg_version
-            
-            # If we don't have a target version yet, we need to fetch it
-            if 'target_version' not in state_data:
-                fetch_model_state()
-                return
+                state = sub_update.get('status') or sub_update.get('state') # Backward compatibility
+                current_version = sub_update.get('current_version')
+                lkg_version = sub_update.get('lkg_version')
 
-            if state == 'success':
-                if 'pending_start' in state_data:
-                    del state_data['pending_start']
-            
-            elif state == 'failure':
-                if 'pending_start' in state_data:
-                    del state_data['pending_start']
+                if subsystem not in device_states[state_key]:
+                    device_states[state_key][subsystem] = {}
+
+                state_data = device_states[state_key][subsystem]
                 
-                # Trigger rollback to LKG
-                lkg = state_data.get('lkg_version')
-                if lkg:
+                # If current version changed, update model
+                if state == 'success' and current_version and current_version != state_data.get('current_version'):
                     topic_model = transport.format_topic("model", "cloud")
                     model_update = {
                         "cloud": {
@@ -139,7 +100,8 @@ def main():
                                     "devices": {
                                         device_id: {
                                             subsystem: {
-                                                "target_version": lkg
+                                                "current_version": current_version,
+                                                "lkg_version": state_data.get('lkg_version')
                                             }
                                         }
                                     }
@@ -148,6 +110,51 @@ def main():
                         }
                     }
                     transport.publish(topic_model, wrap_message(model_update, principal=transport.principal, source=transport.principal))
+
+                # Update internal tracking from device report
+                if state != state_data.get('state'):
+                    settling_times[state_key + (subsystem,)] = time.time()
+
+                state_data['state'] = state
+                if current_version:
+                    state_data['current_version'] = current_version
+                if lkg_version:
+                    state_data['lkg_version'] = lkg_version
+
+                # If we don't have a target version yet, we need to fetch it
+                if 'target_version' not in state_data:
+                    fetch_model_state()
+                    continue
+
+                if state == 'success':
+                    if 'pending_start' in state_data:
+                        del state_data['pending_start']
+
+                elif state == 'failure':
+                    if 'pending_start' in state_data:
+                        del state_data['pending_start']
+
+                    # Trigger rollback to LKG
+                    lkg = state_data.get('lkg_version')
+                    if lkg:
+                        topic_model = transport.format_topic("model", "cloud")
+                        model_update = {
+                            "cloud": {
+                                "operation": "UPDATE",
+                                "registries": {
+                                    registry_id: {
+                                        "devices": {
+                                            device_id: {
+                                                subsystem: {
+                                                    "target_version": lkg
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        transport.publish(topic_model, wrap_message(model_update, principal=transport.principal, source=transport.principal))
 
     transport.set_on_message(on_message)
     transport.connect()
@@ -196,9 +203,11 @@ def main():
                             topic_update = transport.format_topic("config", "update", registry_id, device_id)
                             msg = wrap_message({
                                 "update": {
-                                    "url": blob_info['url'],
-                                    "sha256": blob_info['hash'],
-                                    "version": target
+                                    subsystem: {
+                                        "url": blob_info['url'],
+                                        "sha256": blob_info['hash'],
+                                        "version": target
+                                    }
                                 }
                             }, principal=transport.principal)
                             transport.publish(topic_update, msg)

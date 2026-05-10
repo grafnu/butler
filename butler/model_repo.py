@@ -97,3 +97,17 @@ class ModelRepo:
         if sub and "lkg_version" in sub:
             sub["target_version"] = sub["lkg_version"]
             self._write_model(data)
+
+    def update_subsystem(self, registry_id: str, device_id: str, subsystem: str, updates: dict):
+        data = self._read_model()
+        reg = data["registries"].setdefault(registry_id, {"devices": {}})
+        devices = reg.setdefault("devices", {})
+        device = devices.setdefault(device_id, {})
+        sub = device.setdefault(subsystem, {})
+
+        for k, v in updates.items():
+            sub[k] = v
+            if k == "current_version":
+                sub["lkg_version"] = v
+
+        self._write_model(data)

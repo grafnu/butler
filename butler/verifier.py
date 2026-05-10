@@ -99,30 +99,40 @@ def main():
             unwrapped = unwrap_message(payload)
             update = unwrapped.get('update', {})
             
-            # Section 9.1: Mandatory fields in update state
-            if 'status' not in update or 'current_version' not in update or 'lkg_version' not in update:
-                 publish_verification("INVALID SCHEMA: Missing mandatory fields in update state (status/current_version/lkg_version)", registry_id, device_id)
+            if "status" in update or "current_version" in update:
+                # Fallback backward compatibility for unnested payload
+                update = {"main": update}
 
-            # Use 'status' as per spec 9.1
-            state = update.get('status') or update.get('state')
+            if 'main' not in update:
+                publish_verification("INVALID SCHEMA: 'main' subsystem missing from update state", registry_id, device_id)
 
-            if state:
-                subsystem = "main"
-                state_key = (registry_id, device_id)
-                if state_key not in device_states:
-                    device_states[state_key] = {}
+            for subsystem, sub_update in update.items():
+                if not isinstance(sub_update, dict):
+                    continue
 
-                prev_state = device_states[state_key].get(subsystem, 'quiescent')
+                # Section 9.1: Mandatory fields in update state
+                if 'status' not in sub_update or 'current_version' not in sub_update or 'lkg_version' not in sub_update:
+                     publish_verification(f"INVALID SCHEMA: Missing mandatory fields in update state (status/current_version/lkg_version) for subsystem {subsystem}", registry_id, device_id)
 
-                if state != prev_state:
-                    publish_verification(f"State transition: {prev_state} -> {state}", registry_id, device_id)
+                # Use 'status' as per spec 9.1
+                state = sub_update.get('status') or sub_update.get('state')
 
-                    if state == 'success' and prev_state != 'pending':
-                        publish_verification(f"INVALID TRANSITION: Went to success without pending", registry_id, device_id)
-                    if state == 'failure' and prev_state != 'pending':
-                        publish_verification(f"INVALID TRANSITION: Went to failure without pending", registry_id, device_id)
+                if state:
+                    state_key = (registry_id, device_id)
+                    if state_key not in device_states:
+                        device_states[state_key] = {}
 
-                    device_states[state_key][subsystem] = state
+                    prev_state = device_states[state_key].get(subsystem, 'quiescent')
+
+                    if state != prev_state:
+                        publish_verification(f"State transition: {prev_state} -> {state}", registry_id, device_id)
+
+                        if state == 'success' and prev_state != 'pending':
+                            publish_verification(f"INVALID TRANSITION: Went to success without pending", registry_id, device_id)
+                        if state == 'failure' and prev_state != 'pending':
+                            publish_verification(f"INVALID TRANSITION: Went to failure without pending", registry_id, device_id)
+
+                        device_states[state_key][subsystem] = state
 
     transport.set_on_message(on_message)
     transport.connect()
