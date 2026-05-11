@@ -28,37 +28,37 @@ with open("impl_test_summary.txt", "w") as f_out:
         env["BUTLER_BLOBS_DIR"] = os.path.abspath(blobs_dir)
         env["BUTLER_CONN_SPEC"] = conn_spec
 
-        butler_venv = f"impl/{butler_impl.split("_")[1]}/venv/bin/python3"
-        verifier_venv = f"impl/{verifier_impl.split("_")[1]}/venv/bin/python3"
+        butler_venv = f"{butler_impl}/venv/bin/python3"
+        verifier_venv = f"{verifier_impl}/venv/bin/python3"
 
         # In reality, testing across worktrees requires checking them out. Assuming they exist in ./impl/
-        if not os.path.exists(f"./impl/{butler_impl.split("_")[1]}/bin/setup") or not os.path.exists(f"./impl/{verifier_impl.split("_")[1]}/bin/setup"):
+        if not os.path.exists(f"./impl/{butler_impl}/bin/setup") or not os.path.exists(f"./impl/{verifier_impl}/bin/setup"):
             print("FAIL (setup script missing)")
             f_out.write(f"{verifier_impl} verifies {butler_impl}: FAIL\n")
             continue
 
-        obs1 = subprocess.Popen([butler_venv, f"./impl/{butler_impl.split("_")[1]}/bin/observe", conn_spec], env=env, stdout=open(f"{butler_impl}.log", "a"), stderr=subprocess.STDOUT)
-        obs2 = subprocess.Popen([verifier_venv, f"./impl/{verifier_impl.split("_")[1]}/bin/observe", conn_spec], env=env, stdout=open(f"{verifier_impl}.log", "a"), stderr=subprocess.STDOUT)
+        obs1 = subprocess.Popen([butler_venv, f"./impl/{butler_impl}/bin/observe", conn_spec], env=env, stdout=open(f"{butler_impl}.log", "a"), stderr=subprocess.STDOUT)
+        obs2 = subprocess.Popen([verifier_venv, f"./impl/{verifier_impl}/bin/observe", conn_spec], env=env, stdout=open(f"{verifier_impl}.log", "a"), stderr=subprocess.STDOUT)
 
-        subprocess.run([butler_venv, f"./impl/{butler_impl.split("_")[1]}/bin/setup", conn_spec], env=env, check=True)
+        subprocess.run([butler_venv, f"./impl/{butler_impl}/bin/setup", conn_spec], env=env, check=True)
 
-        mocket = subprocess.Popen([butler_venv, f"./impl/{butler_impl.split("_")[1]}/bin/mocket", conn_spec, "smoke-reg", "smoke-dev"], env=env)
+        mocket = subprocess.Popen([butler_venv, f"./impl/{butler_impl}/bin/mocket", conn_spec, "smoke-reg", "smoke-dev"], env=env)
         time.sleep(2)
 
-        butler = subprocess.Popen([butler_venv, f"./impl/{butler_impl.split("_")[1]}/bin/butler", conn_spec], env=env)
+        butler = subprocess.Popen([butler_venv, f"./impl/{butler_impl}/bin/butler", conn_spec], env=env)
         time.sleep(2)
 
-        verifier = subprocess.Popen([verifier_venv, f"./impl/{verifier_impl.split("_")[1]}/bin/verifier", conn_spec], env=env)
+        verifier = subprocess.Popen([verifier_venv, f"./impl/{verifier_impl}/bin/verifier", conn_spec], env=env)
         time.sleep(2)
 
         try:
-            subprocess.run([verifier_venv, f"./impl/{verifier_impl.split("_")[1]}/bin/register", "smoke-reg", "smoke-dev"], env=env, check=True)
+            subprocess.run([verifier_venv, f"./impl/{verifier_impl}/bin/register", "smoke-reg", "smoke-dev"], env=env, check=True)
 
             dummy_blob = os.path.join(test_dir, "dummy.bin")
             with open(dummy_blob, "wb") as f:
                 f.write(b"NEW_VERSION_CONTENT")
 
-            subprocess.run([verifier_venv, f"./impl/{verifier_impl.split("_")[1]}/bin/trigger", "smoke-reg", "smoke-dev", "1.1.0", os.path.abspath(dummy_blob)], env=env, check=True)
+            subprocess.run([verifier_venv, f"./impl/{verifier_impl}/bin/trigger", "smoke-reg", "smoke-dev", "1.1.0", os.path.abspath(dummy_blob)], env=env, check=True)
 
             time.sleep(5)
             import json
