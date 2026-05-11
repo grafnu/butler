@@ -22,10 +22,19 @@ brew services start mosquitto
 
 ## Project Structure
 
-- `spec/`: Contains the core architectural and protocol specifications (e.g., `uufi.md`).
-- `butler/`: The primary Python implementation of the system.
-- `bin/`: Executable scripts for interacting with and testing the system.
-- `impl/`: (Internal/Testing) Used during cross-implementation testing to hold clones of other implementation branches.
+The Butler system is organized as follows:
+
+- **spec/**: Formal architectural and protocol specifications (e.g., `uufi.md`).
+- **bin/**: Operational executables and tooling for the system.
+- **butler/**: Core implementation logic (Python).
+- **README.md**: This overview document.
+- **AGENTS.md**: Mandatory instructions and constraints for agentic systems.
+- **REBUILD.md/UPDATE.md/MERGER.md/WORKFLOW.md**: System procedures and workflows.
+- **test_summary.txt**: Results from verification and testing runs.
+- **impl/**: Cross-implementation testing workspace.
+- **testing/**: Test assets and simulation environments.
+- **tmp/**: Ephemeral workspace for temporary files.
+- **venv/**: Python virtual environment.
 
 ## Local Development Setup
 
