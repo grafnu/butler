@@ -96,11 +96,13 @@ Upon connection, the Client must perform a handshake to synchronize with the Sys
  The Client publishes a UDMI `state` message to the UUFI topic. This message must include a `udmi` subfolder with a `setup` block (see `state_udmi.json`).
     -   `functions_ver`: The version of the UDMI functions the Client expects.
     -   `transaction_id`: A unique ID for the handshake transaction.
+    -   `msg_source`: Included to reflect the state structure.
+    -   `user`: Included to reflect the state structure.
     -   **Addressing:** The Client MUST use the registry-less `/uufi/c/state/udmi` topic and include its unique identity in the `source` field in the envelope.
 
 2.  **Configuration Confirmation:** The System responds via the reply channel by updating the Client's `config`. This message includes a `udmi` subfolder (see `config_udmi.json`) containing:
-    -   `setup`: System version information (min/max supported function versions).
-    -   `reply`: A copy of the Client's setup block to confirm receipt.
+    -   `setup`: System version information (`functions_min`, `functions_max`, and `udmi_version`).
+    -   `reply`: A copy of the Client's setup block to confirm receipt (`functions_ver`, `transaction_id`, and `msg_source`).
     -   **Addressing:** The System MUST publish the reply to the `/uufi/c/config/udmi` topic. The reply envelope MUST use the Client's principal in the `principal` field, as it represents the Session Owner. Clients filter incoming messages by `transactionId` or by matching their own `principal` in the envelope.
 
 The Client is considered **Active** only after receiving a configuration reply where the `transaction_id` inside the `udmi.reply` block matches the `transaction_id` sent in the original `state` message.
@@ -140,6 +142,8 @@ The following fields are available in the envelope to provide context for the me
 - `transactionId`: A unique string used to track requests and responses.
 - `publishTime`: RFC 3339 timestamp of when the message was wrapped.
 - `source`: An identifier for the Client's session/context (distinct from the identity used in the UDMI payload).
+- `principal`: The identity of the Session Owner.
+- `nonce`: A value used to identify the specific message instance.
 
 ### Transport Mapping
 
@@ -183,8 +187,8 @@ UUFI supports direct operations on the Cloud Model by setting specific attribute
 ### 5.1. Cloud Model Schema
 The `CloudModel` object used in these operations contains:
 - `operation`: The action to perform (`READ`, `CREATE`, `UPDATE`, `DELETE`, `BIND`, `UNBIND`).
-- `registries`: A map where keys are `registry_id`, values are maps of `device_id` to subsystem states.
-  - *Example structure:* `{"registries": {"reg-A": {"devices": {"dev-001": {"main": {"target_version": "1.1.0", "current_version": "1.0.0", "status": "quiescent", "lkg_version": "1.0.0"}}}}}}`
+- `registries`: A map where keys are `registry_id`, values are maps of `device_id` to state.
+  - *Example structure:* `{"registries": {"reg-A": {"devices": {"dev-001": {"target_version": "1.1.0", "current_version": "1.0.0", "status": "quiescent", "lkg_version": "1.0.0"}}}}}`
 - `detail`: (Optional) Additional parameters specific to the operation.
 
 ### 5.2. Cloud Model Queries
@@ -470,3 +474,182 @@ While internal storage format is an implementation detail, tools sharing a Model
 All components MUST support multi-registry environments. 
 - **Keys:** State tracking MUST use a composite key of `registry_id` and `device_id`.
 - **Flat Structures:** Implementations MUST NOT use a flat `devices` map at the root of the model, as this prevents supporting devices with the same ID in different registries.
+
+## 10. Schema Definitions
+
+To facilitate integration and ensure proper message construction, the following JSON schemas define the exact structures required for key UUFI message types. These schemas provide a precise template that external applications can reference to produce the necessary message structures without guessing.
+
+### 10.1. UUFI Message Envelope
+
+The envelope wraps the inner UDMI payload and provides context for the message.
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "UufiEnvelope",
+  "type": "object",
+  "properties": {
+    "projectId": { "type": "string" },
+    "deviceRegistryId": { "type": "string" },
+    "deviceId": { "type": "string" },
+    "subFolder": { "type": "string" },
+    "subType": { "type": "string" },
+    "transactionId": { "type": "string" },
+    "publishTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": { "type": "string" },
+    "principal": { "type": "string" },
+    "nonce": { "type": "string" },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "version": { "type": "string" }
+      },
+      "required": ["timestamp", "version"]
+    }
+  },
+  "required": ["payload"]
+}
+```
+
+### 10.2. Handshake State Payload
+
+The payload used by the Client to initiate a handshake and declare state.
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HandshakeStatePayload",
+  "type": "object",
+  "properties": {
+    "version": { "type": "string" },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "udmi": {
+      "type": "object",
+      "properties": {
+        "setup": {
+          "type": "object",
+          "properties": {
+            "functions_ver": { "type": "integer" },
+            "transaction_id": { "type": "string" },
+            "msg_source": { "type": "string" },
+            "user": { "type": "string" }
+          },
+          "required": ["functions_ver", "transaction_id"]
+        }
+      },
+      "required": ["setup"]
+    }
+  },
+  "required": ["version", "timestamp", "udmi"]
+}
+```
+
+### 10.3. Handshake Config Payload
+
+The payload used by the System to reply to a handshake and confirm configuration.
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HandshakeConfigPayload",
+  "type": "object",
+  "properties": {
+    "version": { "type": "string" },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "udmi": {
+      "type": "object",
+      "properties": {
+        "setup": {
+          "type": "object",
+          "properties": {
+            "functions_min": { "type": "integer" },
+            "functions_max": { "type": "integer" },
+            "udmi_version": { "type": "string" }
+          }
+        },
+        "reply": {
+          "type": "object",
+          "properties": {
+            "functions_ver": { "type": "integer" },
+            "transaction_id": { "type": "string" },
+            "msg_source": { "type": "string" }
+          },
+          "required": ["transaction_id"]
+        }
+      },
+      "required": ["setup", "reply"]
+    }
+  },
+  "required": ["version", "timestamp", "udmi"]
+}
+```
+
+### 10.4. Cloud Model Payload
+
+The payload used for Cloud Model discovery and updates.
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CloudModelPayload",
+  "type": "object",
+  "properties": {
+    "version": { "type": "string" },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "cloud": {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": ["READ", "CREATE", "UPDATE", "DELETE", "BIND", "UNBIND"]
+        },
+        "registries": {
+          "type": "object",
+          "patternProperties": {
+            "^[a-zA-Z0-9_-]+$": {
+              "type": "object",
+              "properties": {
+                "devices": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^[a-zA-Z0-9_-]+$": {
+                      "type": "object",
+                      "properties": {
+                        "target_version": { "type": "string" },
+                        "current_version": { "type": "string" },
+                        "status": { "type": "string" },
+                        "lkg_version": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "detail": {
+          "type": "object"
+        }
+      },
+      "required": ["operation", "registries"]
+    }
+  },
+  "required": ["version", "timestamp", "cloud"]
+}
+```
