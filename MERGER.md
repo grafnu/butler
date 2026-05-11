@@ -15,6 +15,9 @@ the file `test_summary.txt` with the results of the testing
 results in the form (e.g.) `impl_A verifies impl_B: PASS` sorted in
 lexagraphical order (e.g. using `sort` on the file).
 
+First merge `origin/main` into this branch to make sure all specs and
+other details are up to date.
+
 There are (should be) multiple working subdirectories, each one
 containing a different version of an implementation.  Check the remote
 branches of the form `impl_ID`. Each one is a different implementation
