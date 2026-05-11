@@ -16,19 +16,31 @@ the specification, where `<branchname>` is the current git branch (defaulting to
 * For `pubsub` connections, it can be assumed that the necessary authentication and cloud resources will already be setup.
   * The tools should perform a connectivity check but not try to change anything in the cloud.
 
-These top-level files should not be removed or altered:
-* AGENTS.md
-* REBUILD.md
-* MERGER.md
-* WORKFLOW.md
-* UPDATE.md
-* SPLITIT.md
-* .wincolor
-* .gitignore
+These top-level files/directories MUST NOT be removed or altered:
+* AGENTS.md: Agent-specific instructions and mandates.
+* REBUILD.md: System rebuild procedures.
+* UPDATE.md: Maintenance and update procedures.
+* MERGER.md: Specification merge logic.
+* WORKFLOW.md: Operational workflow definitions.
+* spec/: Formal system specifications (e.g., uufi.md).
+* .wincolor: Terminal configuration.
+* .gitignore: Git exclusion patterns.
 
+<<<<<<< HEAD
 The result of all work should be contained within the following files/directories:
 
 * bin/ -- user executables
 * butler/ -- core python code
 * README.md -- overview
 * impl_test_summary.txt -- sorted result of testing runs
+=======
+All functional work and output MUST be contained within:
+* bin/: Operational executables.
+* butler/: Core Python implementation logic.
+* README.md: System overview and documentation.
+* test_summary.txt: Verification and testing results.
+* impl/: Cross-implementation testing workspace.
+* tmp/: Temporary workspace (ephemeral).
+* testing/: Test assets and environment.
+* venv/: Python virtual environment.
+>>>>>>> origin/main
