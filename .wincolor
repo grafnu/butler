@@ -1,6 +1,9 @@
 #FFA
 main       #FAA
 impl_A     #AFA
-impl_B     #AAF
-impl_C     #FAF
+impl_B     #AFA
+impl_C     #AFA
+impl_D     #AFA
+impl_E     #AFA
+impl_F     #AFA
 gemerger   #AFF
