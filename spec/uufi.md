@@ -89,7 +89,7 @@ Inner JSON `payload` object MUST include:
 
 ### 5.1. Schema
 - **Operation:** `READ`, `CREATE`, `UPDATE`, `DELETE`, `BIND`, `UNBIND`.
-- **Registries:** Map of `{registry_id}` to a map of `{device_id}` to subsystem state.
+- **Registries:** Map of `{registry_id}` to a map of `{device_id}` to a map of `{subsystem_id}` to subsystem state.
 - **Detail:** Optional parameters.
 
 ### 5.2. Update Semantics (Partial Merge)
@@ -314,12 +314,18 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
                   "patternProperties": {
                     "^[a-zA-Z0-9_-]+$": {
                       "type": "object",
-                      "description": "Device subsystem state",
-                      "properties": {
-                        "target_version": { "type": "string" },
-                        "current_version": { "type": "string" },
-                        "status": { "type": "string" },
-                        "lkg_version": { "type": "string" }
+                      "description": "Map of subsystem_id to subsystem state",
+                      "patternProperties": {
+                        "^[a-zA-Z0-9_-]+$": {
+                          "type": "object",
+                          "description": "Device subsystem state",
+                          "properties": {
+                            "target_version": { "type": "string" },
+                            "current_version": { "type": "string" },
+                            "status": { "type": "string" },
+                            "lkg_version": { "type": "string" }
+                          }
+                        }
                       }
                     }
                   }
