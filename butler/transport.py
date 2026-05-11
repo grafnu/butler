@@ -50,14 +50,15 @@ class MqttTransport(Transport):
 
         data = parse_message(msg.payload)
         
+        if not data or not isinstance(data, dict) or "payload" not in data:
+            return
+
         env = {}
-        payload = None
-        if data:
-            payload = data.get("payload", data)
-            # Envelope fields from JSON if present
-            for field in ["transactionId", "nonce", "publishTime", "source", "projectId", "principal"]:
-                if field in data: env[field] = data[field]
-        
+        payload = data.get("payload", data)
+        # Envelope fields from JSON if present
+        for field in ["transactionId", "nonce", "publishTime", "source", "projectId", "principal"]:
+            if field in data: env[field] = data[field]
+
         # Parse topic to extract envelope
         # Structure: /{prefix}/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}
         parts = msg.topic.strip('/').split('/')
@@ -73,8 +74,12 @@ class MqttTransport(Transport):
             c_idx = rem.index("c")
             if c_idx >= 2:
                 if rem[0] == "r":
+                    if "deviceRegistryId" in data:
+                        return # Reject redundant envelope field
                     env["deviceRegistryId"] = rem[1]
                     if c_idx >= 4 and rem[2] == "d":
+                        if "deviceId" in data:
+                            return # Reject redundant envelope field
                         env["deviceId"] = rem[3]
             
             if len(rem) > c_idx + 2:
@@ -157,7 +162,13 @@ class PubSubTransport(Transport):
         
         def wrapped_callback(message):
             env = dict(message.attributes)
-            payload = parse_message(message.data)
+            data = parse_message(message.data)
+
+            if not data or not isinstance(data, dict) or "payload" not in data:
+                message.ack()
+                return
+
+            payload = data.get("payload", data)
             
             # Filtering: Only include messages that have matching principal or attribute missing
             msg_principal = env.get("principal")
