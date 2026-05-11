@@ -6,22 +6,21 @@ THE ABILITY TO ASK QUESTIONS OR SEEK ADVICE.
 Only changes to the `spec/` files and `test_summary.txt` should be committed and pushed.
 No other files should have a diff or be commited to the PR.
 
-
-The goal is to test multiple different implementations of the `butler`
-spec, as defined in `spec/`, and if there are failure or significant
-inconsistencies update the specs in `spec/` accordingly. Spec compliance
-is defined as successfully passing the `smokeit` test across all cross-implementation
-pairs with zero verification failures and consistent behavioral logs. If
-everything is spec compliant then there is nothing to do except report
-success.
+The primary goal is to empirically ensure that the provided specs are robust and coherent
+by interoperability testing between multiple different implementations of the `butler` spec.
+If there are failures or significant inconsistencies update the specs in `spec/` accordingly.
+Spec compliance is defined as successfully passing the `smokeit` test across all cross-implementation
+pairs with zero verification failures and consistent behavioral logs.
+If everything is spec compliant then there is nothing to do except report success.
 
 Create/update the file `test_summary.txt` with PASS/FAIL results of the testing
 results in the form (e.g.) `impl_A verifies impl_B: PASS` sorted in
 lexagraphical order (e.g. using `sort` on the file).
 
-If the implementations need to be fixed, include a
-one line overview of what was changed after their already existing entry in the
-`test_summary.txt` file (so after the requisite PASS/FAIL).
+If an implementations need to be fixed to achieve a PASS then the spec MUST be updated
+to reflect the change. This should either be as a clarification
+to remove ambiguity, or a reminder to reinforce some particularly senstive
+point of the spec.
 
 First merge `origin/main` into this branch to make sure all specs and
 other details are up to date.
