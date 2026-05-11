@@ -1,7 +1,7 @@
 DO NOT ASK FOR CLARIFICATION OR DIRECTION. YOU ARE AN AUTONONOMOUS AGENT WITHOUT
 THE ABILITY TO ASK QUESTIONS OR SEEK ADVICE.
 
-# Instructions on how to run a merge integration test between two implementations.
+# Instructions on how to run a merge integration test between multiple implementations.
 
 The goal is to test multiple different implementations of the `butler`
 spec, as defined in `spec/`, and if there are failure or significant
@@ -9,11 +9,15 @@ inconsistencies update the specs in `spec/` accordingly. Spec compliance
 is defined as successfully passing the `smokeit` test across all cross-implementation
 pairs with zero verification failures and consistent behavioral logs. If
 everything is spec compliant then there is nothing to do except report
-success. It is NOT necessary to fix the implementations (except as a
-means to figure out what the correct `spec/` would be). Create/update
-the file `test_summary.txt` with the results of the testing
+success.
+
+Create/update the file `test_summary.txt` with PASS/FAIL results of the testing
 results in the form (e.g.) `impl_A verifies impl_B: PASS` sorted in
 lexagraphical order (e.g. using `sort` on the file).
+
+If the implementations need to be fixed, include a
+one line overview of what was changed after their already existing entry in the
+`test_summary.txt` file (so after the requisite PASS/FAIL).
 
 First merge `origin/main` into this branch to make sure all specs and
 other details are up to date.
