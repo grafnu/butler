@@ -22,6 +22,7 @@ These top-level files should not be removed or altered:
 * UPDATE.md
 * MERGER.md
 * WORKFLOW.md
+* SPLITIT.md
 * .wincolor
 * .gitignore
 
