@@ -96,11 +96,13 @@ Upon connection, the Client must perform a handshake to synchronize with the Sys
  The Client publishes a UDMI `state` message to the UUFI topic. This message must include a `udmi` subfolder with a `setup` block (see `state_udmi.json`).
     -   `functions_ver`: The version of the UDMI functions the Client expects.
     -   `transaction_id`: A unique ID for the handshake transaction.
+    -   `msg_source`: Included to reflect the state structure.
+    -   `user`: Included to reflect the state structure.
     -   **Addressing:** The Client MUST use the registry-less `/uufi/c/state/udmi` topic and include its unique identity in the `source` field in the envelope.
 
 2.  **Configuration Confirmation:** The System responds via the reply channel by updating the Client's `config`. This message includes a `udmi` subfolder (see `config_udmi.json`) containing:
-    -   `setup`: System version information (min/max supported function versions).
-    -   `reply`: A copy of the Client's setup block to confirm receipt.
+    -   `setup`: System version information (`functions_min`, `functions_max`, and `udmi_version`).
+    -   `reply`: A copy of the Client's setup block to confirm receipt (`functions_ver`, `transaction_id`, and `msg_source`).
     -   **Addressing:** The System MUST publish the reply to the `/uufi/c/config/udmi` topic. The reply envelope MUST use the Client's principal in the `principal` field, as it represents the Session Owner. Clients filter incoming messages by `transactionId` or by matching their own `principal` in the envelope.
 
 The Client is considered **Active** only after receiving a configuration reply where the `transaction_id` inside the `udmi.reply` block matches the `transaction_id` sent in the original `state` message.
@@ -140,6 +142,8 @@ The following fields are available in the envelope to provide context for the me
 - `transactionId`: A unique string used to track requests and responses.
 - `publishTime`: RFC 3339 timestamp of when the message was wrapped.
 - `source`: An identifier for the Client's session/context (distinct from the identity used in the UDMI payload).
+- `principal`: The identity of the Session Owner.
+- `nonce`: A value used to identify the specific message instance.
 
 ### Transport Mapping
 
@@ -183,8 +187,8 @@ UUFI supports direct operations on the Cloud Model by setting specific attribute
 ### 5.1. Cloud Model Schema
 The `CloudModel` object used in these operations contains:
 - `operation`: The action to perform (`READ`, `CREATE`, `UPDATE`, `DELETE`, `BIND`, `UNBIND`).
-- `registries`: A map where keys are `registry_id`, values are maps of `device_id` to subsystem states.
-  - *Example structure:* `{"registries": {"reg-A": {"devices": {"dev-001": {"main": {"target_version": "1.1.0", "current_version": "1.0.0", "status": "quiescent", "lkg_version": "1.0.0"}}}}}}`
+- `registries`: A map where keys are `registry_id`, values are maps of `device_id` to state.
+  - *Example structure:* `{"registries": {"reg-A": {"devices": {"dev-001": {"target_version": "1.1.0", "current_version": "1.0.0", "status": "quiescent", "lkg_version": "1.0.0"}}}}}`
 - `detail`: (Optional) Additional parameters specific to the operation.
 
 ### 5.2. Cloud Model Queries
@@ -626,16 +630,11 @@ The payload used for Cloud Model discovery and updates.
                   "patternProperties": {
                     "^[a-zA-Z0-9_-]+$": {
                       "type": "object",
-                      "patternProperties": {
-                        "^[a-zA-Z0-9_-]+$": {
-                          "type": "object",
-                          "properties": {
-                            "target_version": { "type": "string" },
-                            "current_version": { "type": "string" },
-                            "status": { "type": "string" },
-                            "lkg_version": { "type": "string" }
-                          }
-                        }
+                      "properties": {
+                        "target_version": { "type": "string" },
+                        "current_version": { "type": "string" },
+                        "status": { "type": "string" },
+                        "lkg_version": { "type": "string" }
                       }
                     }
                   }
