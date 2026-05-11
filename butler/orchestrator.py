@@ -44,12 +44,10 @@ class Orchestrator:
         registry_id = env.get("deviceRegistryId")
         principal = env.get("principal")
 
-        # Filtering by principal for registry-less messages
-        if not registry_id and principal and principal != self.principal:
-            return
-        
-        # Handshake reply
+        # Filtering by principal for Handshake replies
         if sub_type == "config" and sub_folder == "udmi" and not device_id:
+            if principal and principal != self.principal:
+                return
             self.handle_handshake_reply(payload, env.get("transactionId"))
             return
 
@@ -58,7 +56,16 @@ class Orchestrator:
             cloud = payload.get("cloud", payload)
             registries = cloud.get("registries", {})
             for reg_id, reg_data in registries.items():
-                self.models[reg_id] = reg_data.get("devices", {})
+                if reg_id not in self.models:
+                    self.models[reg_id] = {}
+                devices = reg_data.get("devices", {})
+                for dev_id, dev_data in devices.items():
+                    if dev_id not in self.models[reg_id]:
+                        self.models[reg_id][dev_id] = {}
+                    for sub, sub_data in dev_data.items():
+                        if sub not in self.models[reg_id][dev_id]:
+                            self.models[reg_id][dev_id][sub] = {}
+                        self.models[reg_id][dev_id][sub].update(sub_data)
                 print(f"[butler] Received model update for registry {reg_id}", flush=True)
             return
 
