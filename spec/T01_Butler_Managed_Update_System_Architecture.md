@@ -29,7 +29,8 @@ The system MUST use a message-based communication layer (e.g., MQTT, PubSub) tha
 
 ### UDMI Binding
 
-See `uufi.md` for the binding of the communication substrate to UDMI.
+See `uufi.md` for the binding of the communication substrate to UDMI. All messages should be structured in accordance with
+the schemas defined by UUFI.
 
 #### Debug differentiation
 
