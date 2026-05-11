@@ -38,11 +38,28 @@ def main():
     transport.connect()
 
     env = create_envelope(
-        sub_type="config",
+        sub_type="model",
         sub_folder="cloud",
         source="cli"
     )
-    payload = create_payload("cloud", repo.data)
+
+    # Construct the partial merge update payload
+    update_data = {
+        "operation": "UPDATE",
+        "registries": {
+            args.registry_id: {
+                "devices": {
+                    args.device_id: {
+                        "main": {
+                            "target_version": args.blob_version
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    payload = create_payload("cloud", update_data)
     transport.publish(env, payload)
     transport.loop_stop()
 
