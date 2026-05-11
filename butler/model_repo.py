@@ -62,52 +62,47 @@ class ModelRepo:
         if device_id not in devices:
             devices[device_id] = {
                 "make": make,
-                "model": model,
-                "main": {} # Default subsystem
+                "model": model
             }
             self._write_model(data)
 
-    def update_target_version(self, registry_id: str, device_id: str, subsystem: str, target_version: str):
+    def update_target_version(self, registry_id: str, device_id: str, target_version: str):
         data = self._read_model()
         reg = data["registries"].setdefault(registry_id, {"devices": {}})
         devices = reg.setdefault("devices", {})
         device = devices.setdefault(device_id, {})
-        sub = device.setdefault(subsystem, {})
 
-        sub["target_version"] = target_version
+        device["target_version"] = target_version
         self._write_model(data)
 
-    def update_current_version(self, registry_id: str, device_id: str, subsystem: str, current_version: str):
+    def update_current_version(self, registry_id: str, device_id: str, current_version: str):
         data = self._read_model()
         reg = data["registries"].setdefault(registry_id, {"devices": {}})
         devices = reg.setdefault("devices", {})
         device = devices.setdefault(device_id, {})
-        sub = device.setdefault(subsystem, {})
 
-        sub["current_version"] = current_version
-        sub["lkg_version"] = current_version
+        device["current_version"] = current_version
+        device["lkg_version"] = current_version
         self._write_model(data)
 
-    def revert_to_lkg(self, registry_id: str, device_id: str, subsystem: str):
+    def revert_to_lkg(self, registry_id: str, device_id: str):
         data = self._read_model()
         reg = data["registries"].get(registry_id, {})
         devices = reg.get("devices", {})
         device = devices.get(device_id, {})
-        sub = device.get(subsystem)
-        if sub and "lkg_version" in sub:
-            sub["target_version"] = sub["lkg_version"]
+        if device and "lkg_version" in device:
+            device["target_version"] = device["lkg_version"]
             self._write_model(data)
 
-    def update_subsystem(self, registry_id: str, device_id: str, subsystem: str, updates: dict):
+    def update_subsystem(self, registry_id: str, device_id: str, updates: dict):
         data = self._read_model()
         reg = data["registries"].setdefault(registry_id, {"devices": {}})
         devices = reg.setdefault("devices", {})
         device = devices.setdefault(device_id, {})
-        sub = device.setdefault(subsystem, {})
 
         for k, v in updates.items():
-            sub[k] = v
+            device[k] = v
             if k == "current_version":
-                sub["lkg_version"] = v
+                device["lkg_version"] = v
 
         self._write_model(data)

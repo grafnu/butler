@@ -17,8 +17,8 @@ def main():
 
     transport = MqttTransport(conn_spec, tag="butler")
     blob_repo = BlobRepo()
-    device_states = {} # (registry_id, device_id) -> {subsystem: state_data}
-    settling_times = {} # (registry_id, device_id, subsystem) -> float
+    device_states = {} # (registry_id, device_id) -> state_data
+    settling_times = {} # (registry_id, device_id) -> float
 
     def fetch_model_state():
         topic = transport.format_topic("query", "cloud") # Registry-less
@@ -44,17 +44,14 @@ def main():
                     if state_key not in device_states:
                         device_states[state_key] = {}
                     
-                    for subsystem, data in dev_data.items():
-                        if subsystem not in device_states[state_key]:
-                            device_states[state_key][subsystem] = {}
-                        state_data = device_states[state_key][subsystem]
-                        
-                        if 'target_version' in data:
-                            state_data['target_version'] = data.get('target_version')
-                        if 'current_version' in data:
-                            state_data['current_version'] = data.get('current_version')
-                        if 'lkg_version' in data:
-                            state_data['lkg_version'] = data.get('lkg_version')
+                    state_data = device_states[state_key]
+
+                    if 'target_version' in dev_data:
+                        state_data['target_version'] = dev_data.get('target_version')
+                    if 'current_version' in dev_data:
+                        state_data['current_version'] = dev_data.get('current_version')
+                    if 'lkg_version' in dev_data:
+                        state_data['lkg_version'] = dev_data.get('lkg_version')
                         
                         state_data.setdefault('state', 'quiescent')
             return
@@ -71,26 +68,50 @@ def main():
 
         if subType == 'state' and subFolder == 'update':
             update = unwrapped.get('update', {})
-            
-            if "status" in update or "current_version" in update:
-                # Fallback backward compatibility for unnested payload
-                update = {"main": update}
 
-            for subsystem, sub_update in update.items():
-                if not isinstance(sub_update, dict):
-                    continue
+            state = update.get('status') or update.get('state') # Backward compatibility
+            current_version = update.get('current_version')
+            lkg_version = update.get('lkg_version')
 
-                state = sub_update.get('status') or sub_update.get('state') # Backward compatibility
-                current_version = sub_update.get('current_version')
-                lkg_version = sub_update.get('lkg_version')
+            if state_key not in device_states:
+                device_states[state_key] = {}
 
-                if subsystem not in device_states[state_key]:
-                    device_states[state_key][subsystem] = {}
+            state_data = device_states[state_key]
 
-                state_data = device_states[state_key][subsystem]
+            # If current version changed, update model
+            if state == 'success' and current_version and current_version != state_data.get('current_version'):
+                topic_model = transport.format_topic("model", "cloud")
+                model_update = {
+                    "cloud": {
+                        "operation": "UPDATE",
+                        "registries": {
+                            registry_id: {
+                                "devices": {
+                                    device_id: {
+                                        "current_version": current_version,
+                                        "lkg_version": state_data.get('lkg_version')
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                transport.publish(topic_model, wrap_message(model_update, principal=transport.principal, source=transport.principal))
+
+            # Update internal tracking from device report
+            if state != state_data.get('state'):
+                settling_times[state_key] = time.time()
+
+            state_data['state'] = state
+            if current_version:
+                state_data['current_version'] = current_version
+            if lkg_version:
+                state_data['lkg_version'] = lkg_version
                 
-                # If current version changed, update model
-                if state == 'success' and current_version and current_version != state_data.get('current_version'):
+            if state == 'failure' and 'pending_version' in state_data:
+                # Rollback logic: if a failure happened, we should revert the model
+                lkg = state_data.get('lkg_version')
+                if lkg:
                     topic_model = transport.format_topic("model", "cloud")
                     model_update = {
                         "cloud": {
@@ -99,10 +120,7 @@ def main():
                                 registry_id: {
                                     "devices": {
                                         device_id: {
-                                            subsystem: {
-                                                "current_version": current_version,
-                                                "lkg_version": state_data.get('lkg_version')
-                                            }
+                                            "target_version": lkg
                                         }
                                     }
                                 }
@@ -177,75 +195,70 @@ def main():
                 fetch_model_state()
                 last_model_fetch = now
 
-            for (registry_id, device_id), subsystems in list(device_states.items()):
-                for subsystem, state_data in subsystems.items():
-                    target = state_data.get('target_version')
-                    current = state_data.get('current_version') or "" # Initial provisioning (null == "")
-                    state = state_data.get('state', 'quiescent')
-                    pending_version = state_data.get('pending_version')
+            for (registry_id, device_id), state_data in list(device_states.items()):
+                target = state_data.get('target_version')
+                current = state_data.get('current_version') or "" # Initial provisioning (null == "")
+                state = state_data.get('state', 'quiescent')
+                pending_version = state_data.get('pending_version')
 
-                    # Trigger if target != current AND (not pending OR target changed while pending)
-                    if target and target != current:
-                        if args.fail:
-                            continue
+                # Trigger if target != current AND (not pending OR target changed while pending)
+                if target and target != current:
+                    if args.fail:
+                        continue
 
-                        # Re-triggering logic: only if target changed to something else if already pending
-                        if state == 'pending' and target == pending_version:
-                            continue
+                    # Re-triggering logic: only if target changed to something else if already pending
+                    if state == 'pending' and target == pending_version:
+                        continue
 
-                        # Settling Time: 5s
-                        last_change = settling_times.get((registry_id, device_id, subsystem), 0)
-                        if now - last_change < 5.0:
-                            continue
-                        
-                        blob_info = blob_repo.get_blob_info("default", "default", subsystem, target)
-                        if blob_info:
-                            topic_update = transport.format_topic("config", "update", registry_id, device_id)
-                            msg = wrap_message({
-                                "update": {
-                                    subsystem: {
-                                        "url": blob_info['url'],
-                                        "sha256": blob_info['hash'],
-                                        "version": target
-                                    }
-                                }
-                            }, principal=transport.principal)
-                            transport.publish(topic_update, msg)
-                            state_data['pending_start'] = now
-                            state_data['state'] = 'pending'
-                            state_data['pending_version'] = target
-                            settling_times[(registry_id, device_id, subsystem)] = now
+                    # Settling Time: 5s
+                    last_change = settling_times.get((registry_id, device_id), 0)
+                    if now - last_change < 5.0:
+                        continue
 
-                    elif state == 'pending' and 'pending_start' in state_data:
-                        # Timeout: 60s
-                        if now - state_data['pending_start'] > 60:
-                            state_data['state'] = 'failure'
-                            del state_data['pending_start']
-                            if 'pending_version' in state_data:
-                                del state_data['pending_version']
-                            
-                            # Log error and potentially trigger rollback (already handled in on_message failure state if device reports it, 
-                            # but here we timeout)
-                            lkg = state_data.get('lkg_version')
-                            if lkg:
-                                topic_model = transport.format_topic("model", "cloud", registry_id, device_id)
-                                model_update = {
-                                    "cloud": {
-                                        "operation": "UPDATE",
-                                        "registries": {
-                                            registry_id: {
-                                                "devices": {
-                                                    device_id: {
-                                                        subsystem: {
-                                                            "target_version": lkg
-                                                        }
-                                                    }
+                    blob_info = blob_repo.get_blob_info("default", "default", "main", target)
+                    if blob_info:
+                        topic_update = transport.format_topic("config", "update", registry_id, device_id)
+                        msg = wrap_message({
+                            "update": {
+                                "url": blob_info['url'],
+                                "sha256": blob_info['hash'],
+                                "version": target
+                            }
+                        }, principal=transport.principal)
+                        transport.publish(topic_update, msg)
+                        state_data['pending_start'] = now
+                        state_data['state'] = 'pending'
+                        state_data['pending_version'] = target
+                        settling_times[(registry_id, device_id)] = now
+
+                elif state == 'pending' and 'pending_start' in state_data:
+                    # Timeout: 60s
+                    if now - state_data['pending_start'] > 60:
+                        state_data['state'] = 'failure'
+                        del state_data['pending_start']
+                        if 'pending_version' in state_data:
+                            del state_data['pending_version']
+
+                        # Log error and potentially trigger rollback (already handled in on_message failure state if device reports it,
+                        # but here we timeout)
+                        lkg = state_data.get('lkg_version')
+                        if lkg:
+                            topic_model = transport.format_topic("model", "cloud", registry_id, device_id)
+                            model_update = {
+                                "cloud": {
+                                    "operation": "UPDATE",
+                                    "registries": {
+                                        registry_id: {
+                                            "devices": {
+                                                device_id: {
+                                                    "target_version": lkg
                                                 }
                                             }
                                         }
                                     }
                                 }
-                                transport.publish(topic_model, wrap_message(model_update, principal=transport.principal))
+                            }
+                            transport.publish(topic_model, wrap_message(model_update, principal=transport.principal))
 
             time.sleep(1)
     except KeyboardInterrupt:
