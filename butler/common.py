@@ -257,6 +257,18 @@ class ButlerMQTTBase(ButlerBusBase):
                 sub_type = remaining[curr+1]
                 sub_folder = remaining[curr+2] if len(remaining) > curr + 2 else None
 
+                if "payload" not in data:
+                    self.on_raw_message(msg.topic, payload_str)
+                    return
+
+                if registry_id and "deviceRegistryId" in data:
+                    self.on_raw_message(msg.topic, payload_str)
+                    return
+
+                if device_id and "deviceId" in data:
+                    self.on_raw_message(msg.topic, payload_str)
+                    return
+
                 udmi_payload = data.get("payload", {})
                 for k, v in data.items():
                     if k != "payload":
