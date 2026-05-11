@@ -235,6 +235,18 @@ class MqttTransport:
         except json.JSONDecodeError:
             payload = msg.payload.decode('utf-8')
 
+        if not self.passive and isinstance(payload, dict):
+            # Check for payload structure
+            if 'payload' not in payload:
+                return
+
+            # Check for envelope redundancy
+            parsed_topic = self.parse_topic(msg.topic)
+            if 'registryId' in parsed_topic and 'deviceRegistryId' in payload:
+                return
+            if 'deviceId' in parsed_topic and 'deviceId' in payload:
+                return
+
         if not self.passive and isinstance(payload, dict) and 'nonce' in payload:
             nonce = payload['nonce']
             if any(n['nonce'] == nonce for n in self.seen_nonces):
