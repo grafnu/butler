@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+import sys
+import os
+
+# Self-activate venv
+venv_python = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'venv', 'bin', 'python3'))
+if os.path.exists(venv_python) and sys.executable != venv_python:
+    os.execv(venv_python, [venv_python, "-u"] + sys.argv)
+
+# Ensure we can import butler
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from butler.model_repo import ModelRepository
+from butler.common import get_default_conn_spec
+
+def main():
+    # Usage: bin/register registry_id device_id
+    if len(sys.argv) < 3:
+        print("Usage: bin/register registry_id device_id")
+        sys.exit(1)
+
+    registry_id = sys.argv[1]
+    device_id = sys.argv[2]
+
+    print(f"Registering device {device_id} in registry {registry_id}...")
+    model_repo = ModelRepository()
+    # Updated signature: set_device_info(registry_id, device_id, make, model, subsystem)
+    model_repo.set_device_info(registry_id, device_id, "vibrant", "butler-v1", "main")
+    print(f"Registered device {device_id} in model.")
+
+if __name__ == "__main__":
+    main()

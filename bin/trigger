@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+import sys
+import os
+
+# Self-activate venv
+venv_python = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'venv', 'bin', 'python3'))
+if os.path.exists(venv_python) and sys.executable != venv_python:
+    os.execv(venv_python, [venv_python, "-u"] + sys.argv)
+
+# Ensure we can import butler
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from butler.model_repo import ModelRepository
+from butler.blob_repo import BlobRepository
+from butler.common import get_default_conn_spec
+
+def main():
+    # Usage: bin/trigger registry_id device_id blob_version blob_path
+    if len(sys.argv) < 5:
+        print("Usage: bin/trigger registry_id device_id blob_version blob_path")
+        sys.exit(1)
+
+    registry_id = sys.argv[1]
+    device_id = sys.argv[2]
+    blob_version = sys.argv[3]
+    blob_path = sys.argv[4]
+
+    print(f"Triggering update for {device_id} in registry {registry_id}...")
+    subsystem = "main"
+
+    model_repo = ModelRepository()
+    device_state = model_repo.get_subsystem(registry_id, device_id, subsystem_id="main")
+    if not device_state:
+        print(f"Error: Device {device_id} in registry {registry_id} not found in model.")
+        sys.exit(1)
+
+    make = device_state["make"]
+    model = device_state["model"]
+    subsystem = device_state["subsystem"]
+
+    if not os.path.exists(blob_path):
+        print(f"Error: Blob path {blob_path} does not exist.")
+        sys.exit(1)
+
+    with open(blob_path, "rb") as f:
+        content = f.read()
+
+    blob_repo = BlobRepository()
+    path, sha256 = blob_repo.store_blob(make, model, subsystem, blob_version, content)
+    print(f"Stored blob at {path} with SHA256: {sha256}")
+
+    model_repo.set_target_version(registry_id, device_id, blob_version)
+    print(f"Triggered update for {device_id} to {blob_version}")
+
+if __name__ == "__main__":
+    main()
