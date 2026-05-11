@@ -53,10 +53,14 @@ class MqttTransport(Transport):
         env = {}
         payload = None
         if data:
-            payload = data.get("payload", data)
+            if "payload" not in data:
+                return  # Reject message lacking nested 'payload' key
+            payload = data.get("payload")
             # Envelope fields from JSON if present
             for field in ["transactionId", "nonce", "publishTime", "source", "projectId", "principal"]:
                 if field in data: env[field] = data[field]
+        else:
+            return  # Reject non-JSON or missing payload
         
         # Parse topic to extract envelope
         # Structure: /{prefix}/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}
@@ -69,17 +73,25 @@ class MqttTransport(Transport):
 
         rem = parts[uufi_idx + 1:]
         
+        topic_env = {}
         if "c" in rem:
             c_idx = rem.index("c")
             if c_idx >= 2:
                 if rem[0] == "r":
-                    env["deviceRegistryId"] = rem[1]
+                    topic_env["deviceRegistryId"] = rem[1]
                     if c_idx >= 4 and rem[2] == "d":
-                        env["deviceId"] = rem[3]
+                        topic_env["deviceId"] = rem[3]
             
             if len(rem) > c_idx + 2:
-                env["subType"] = rem[c_idx + 1]
-                env["subFolder"] = rem[c_idx + 2]
+                topic_env["subType"] = rem[c_idx + 1]
+                topic_env["subFolder"] = rem[c_idx + 2]
+
+        # Reject redundant envelope fields per spec 9.3
+        for field in ["deviceRegistryId", "deviceId", "subType", "subFolder"]:
+            if field in data and field in topic_env:
+                return  # Reject message containing redundant envelope fields
+
+        env.update(topic_env)
 
         self.callback(env, payload, msg.topic, raw_payload)
 
