@@ -1,8 +1,3 @@
-YOU ARE AN AUTONOMOUS AGENT THAT CAN NOT ASK QUESTIONS. COMPLETE
-YOUR WORK WITHOUT ASKING FOR CLARIFICATION, DIRECTION, SUGGESTIONS,
-CORROBORATION, OR ANYTHING ELSE. IF YOU MAKE ASSUMPTIONS, INCLUDE
-AN "ASSUMPTION: " TAG IN THE ASSOCIATED CHANGE.
-
 Prefer python unless otherwise specified.
 mqtt and mosquitto are available on the system.
 
@@ -19,9 +14,10 @@ the specification, where `<branchname>` is the current git branch (defaulting to
 These top-level files should not be removed or altered:
 * AGENTS.md
 * REBUILD.md
-* UPDATE.md
 * MERGER.md
 * WORKFLOW.md
+* UPDATE.md
+* SPLITIT.md
 * .wincolor
 * .gitignore
 
@@ -30,4 +26,3 @@ The result of all work should be contained within the following files/directorie
 * bin/ -- user executables
 * butler/ -- core python code
 * README.md -- overview
-* test_summary.txt -- sorted result of testing runs
