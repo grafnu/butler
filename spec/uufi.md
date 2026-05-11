@@ -55,6 +55,8 @@ The System publishes a UDMI `config` message to `/uufi/c/config/udmi`.
 - **Payload:** Must include `udmi.setup` and `udmi.reply` (see Schema 10.3).
 - **Addressing:** Envelope `principal` MUST match Client's identity.
 
+**Retries:** The Client SHOULD periodically republish the Step 1 state message (e.g., every 5 seconds) if a valid Step 2 confirmation has not been received, until the 60-second timeout.
+
 **Activation:** The Client is **Active** when `udmi.reply.transaction_id` matches the original `state.udmi.setup.transaction_id`.
 
 ### Registry ID Discovery
@@ -175,9 +177,25 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 
 ### 9.1. Payload Structure
 - **Nesting:** The `payload` object MUST contain exactly one top-level key matching the `subFolder` name.
+- **Subsystem Nesting:** For `update` config and state payloads, data SHOULD be nested within a subsystem-id key (e.g., `main`). Implementations SHOULD handle unnested (flat) payloads for single-subsystem devices for backward compatibility.
 - **Mandatory Fields:** `timestamp` and `version` MUST be at the root of the `payload` object.
 
 ### 9.2. Timestamp Format
+...
+## 11. Local Repository Structure (Standardized)
+
+To ensure that tools from different implementations (e.g., a Trigger from Impl A and an Orchestrator from Impl B) can interoperate within the same local workspace, the following directory and file structures are standardized.
+
+### 11.1. Blob Repository
+Blobs MUST be stored in a directory structure following this pattern:
+`{base_dir}/{make}/{model}/{subsystem}/{version}/`
+
+Each version directory MUST contain:
+- `bundle.bin`: The binary blob content.
+- `sha256.txt`: A text file containing the hex-encoded SHA-256 hash of `bundle.bin`.
+
+### 11.2. Model Repository
+The cloud model, when stored as a local JSON file, MUST use the 3-level nesting defined in Section 10.4 (Registries -> Devices -> Subsystems).
 - **Format:** RFC 3339 minimal precision (e.g., `2026-05-01T22:32:17Z`).
 - **Timezone:** UTC required.
 - **Precision:** No microseconds.
