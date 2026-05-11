@@ -96,11 +96,13 @@ Upon connection, the Client must perform a handshake to synchronize with the Sys
  The Client publishes a UDMI `state` message to the UUFI topic. This message must include a `udmi` subfolder with a `setup` block (see `state_udmi.json`).
     -   `functions_ver`: The version of the UDMI functions the Client expects.
     -   `transaction_id`: A unique ID for the handshake transaction.
+    -   `msg_source`: Included to reflect the state structure.
+    -   `user`: Included to reflect the state structure.
     -   **Addressing:** The Client MUST use the registry-less `/uufi/c/state/udmi` topic and include its unique identity in the `source` field in the envelope.
 
 2.  **Configuration Confirmation:** The System responds via the reply channel by updating the Client's `config`. This message includes a `udmi` subfolder (see `config_udmi.json`) containing:
-    -   `setup`: System version information (min/max supported function versions).
-    -   `reply`: A copy of the Client's setup block to confirm receipt.
+    -   `setup`: System version information (`functions_min`, `functions_max`, and `udmi_version`).
+    -   `reply`: A copy of the Client's setup block to confirm receipt (`functions_ver`, `transaction_id`, and `msg_source`).
     -   **Addressing:** The System MUST publish the reply to the `/uufi/c/config/udmi` topic. The reply envelope MUST use the Client's principal in the `principal` field, as it represents the Session Owner. Clients filter incoming messages by `transactionId` or by matching their own `principal` in the envelope.
 
 The Client is considered **Active** only after receiving a configuration reply where the `transaction_id` inside the `udmi.reply` block matches the `transaction_id` sent in the original `state` message.
@@ -140,6 +142,8 @@ The following fields are available in the envelope to provide context for the me
 - `transactionId`: A unique string used to track requests and responses.
 - `publishTime`: RFC 3339 timestamp of when the message was wrapped.
 - `source`: An identifier for the Client's session/context (distinct from the identity used in the UDMI payload).
+- `principal`: The identity of the Session Owner.
+- `nonce`: A value used to identify the specific message instance.
 
 ### Transport Mapping
 
@@ -183,8 +187,8 @@ UUFI supports direct operations on the Cloud Model by setting specific attribute
 ### 5.1. Cloud Model Schema
 The `CloudModel` object used in these operations contains:
 - `operation`: The action to perform (`READ`, `CREATE`, `UPDATE`, `DELETE`, `BIND`, `UNBIND`).
-- `registries`: A map where keys are `registry_id`, values are maps of `device_id` to subsystem states.
-  - *Example structure:* `{"registries": {"reg-A": {"devices": {"dev-001": {"main": {"target_version": "1.1.0", "current_version": "1.0.0", "status": "quiescent", "lkg_version": "1.0.0"}}}}}}`
+- `registries`: A map where keys are `registry_id`, values are maps of `device_id` to state.
+  - *Example structure:* `{"registries": {"reg-A": {"devices": {"dev-001": {"target_version": "1.1.0", "current_version": "1.0.0", "status": "quiescent", "lkg_version": "1.0.0"}}}}}`
 - `detail`: (Optional) Additional parameters specific to the operation.
 
 ### 5.2. Cloud Model Queries
@@ -437,7 +441,7 @@ Integration testing between different implementations has identified common area
 
 ### 9.1. Mandatory Payload Fields
 Every message's inner `payload` object MUST contain `timestamp` and `version` fields.
-- **Payload Structure:** The `payload` object MUST contain exactly one top-level key matching the `subFolder` name (e.g., `system`, `pointset`, `update`, `cloud`, `validation`), which contains the UDMI data, in addition to the mandatory `timestamp` and `version` fields at the same level. The actual UDMI message data MUST NOT be placed at the top level of the JSON document alongside the envelope fields, but MUST be strictly nested within this `payload` key.
+- **Payload Structure:** The `payload` object MUST contain exactly one top-level key matching the `subFolder` name (e.g., `system`, `pointset`, `update`, `cloud`, `validation`), which contains the UDMI data, in addition to the mandatory `timestamp` and `version` fields at the same level. The actual UDMI message data MUST NOT be placed at the top level of the JSON document alongside the envelope fields, but MUST be strictly nested within this `payload` key. Implementations MUST enforce this and reject messages lacking the nested `payload` key.
 - **Field Consistency:**
     - **Current Version:** Devices MUST report their active firmware version using the `current_version` field within the inner `state` data.
     - **LKG Version:** Devices MUST report their most recent verified operational version using the `lkg_version` field.
@@ -451,7 +455,7 @@ Every message's inner `payload` object MUST contain `timestamp` and `version` fi
 - **Guidance:** Reserve `/uufi/r/` for post-handshake, registry-associated traffic. Ensure all clients use the same `c/` channel for handshakes and rely on envelope-based identification (e.g. `transactionId` and `principal`).
 
 ### 9.3. Envelope Redundancy and Observation
-- **Redundancy Rule:** Top-level envelope fields MUST only include data NOT already encoded in the MQTT topic structure. For registry-based topics (`/uufi/r/reg1/d/dev1/...`), the `deviceRegistryId` and `deviceId` MUST be omitted from the envelope.
+- **Redundancy Rule:** Top-level envelope fields MUST only include data NOT already encoded in the MQTT topic structure. For registry-based topics (`/uufi/r/reg1/d/dev1/...`), the `deviceRegistryId` and `deviceId` MUST be omitted from the envelope. Implementations MUST reject messages that contain redundant envelope fields already present in the topic.
 - **Observer Transparency:** Observation tools (e.g., `bin/observe`) MUST output the **raw wire format** of messages received on the bus. While internal processing MAY flatten the `payload` wrapper for convenience, the output for human/automated monitoring MUST reflect the exact JSON structure as it exists on the transport layer to facilitate compliance verification.
 - **Guidance:** Maintain a clean inner UDMI message by omitting redundant fields like `subType` from the outer JSON wrap.
 
@@ -470,3 +474,182 @@ While internal storage format is an implementation detail, tools sharing a Model
 All components MUST support multi-registry environments. 
 - **Keys:** State tracking MUST use a composite key of `registry_id` and `device_id`.
 - **Flat Structures:** Implementations MUST NOT use a flat `devices` map at the root of the model, as this prevents supporting devices with the same ID in different registries.
+
+## 10. Schema Definitions
+
+To facilitate integration and ensure proper message construction, the following JSON schemas define the exact structures required for key UUFI message types. These schemas provide a precise template that external applications can reference to produce the necessary message structures without guessing.
+
+### 10.1. UUFI Message Envelope
+
+The envelope wraps the inner UDMI payload and provides context for the message.
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "UufiEnvelope",
+  "type": "object",
+  "properties": {
+    "projectId": { "type": "string" },
+    "deviceRegistryId": { "type": "string" },
+    "deviceId": { "type": "string" },
+    "subFolder": { "type": "string" },
+    "subType": { "type": "string" },
+    "transactionId": { "type": "string" },
+    "publishTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": { "type": "string" },
+    "principal": { "type": "string" },
+    "nonce": { "type": "string" },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "version": { "type": "string" }
+      },
+      "required": ["timestamp", "version"]
+    }
+  },
+  "required": ["payload"]
+}
+```
+
+### 10.2. Handshake State Payload
+
+The payload used by the Client to initiate a handshake and declare state.
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HandshakeStatePayload",
+  "type": "object",
+  "properties": {
+    "version": { "type": "string" },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "udmi": {
+      "type": "object",
+      "properties": {
+        "setup": {
+          "type": "object",
+          "properties": {
+            "functions_ver": { "type": "integer" },
+            "transaction_id": { "type": "string" },
+            "msg_source": { "type": "string" },
+            "user": { "type": "string" }
+          },
+          "required": ["functions_ver", "transaction_id"]
+        }
+      },
+      "required": ["setup"]
+    }
+  },
+  "required": ["version", "timestamp", "udmi"]
+}
+```
+
+### 10.3. Handshake Config Payload
+
+The payload used by the System to reply to a handshake and confirm configuration.
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HandshakeConfigPayload",
+  "type": "object",
+  "properties": {
+    "version": { "type": "string" },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "udmi": {
+      "type": "object",
+      "properties": {
+        "setup": {
+          "type": "object",
+          "properties": {
+            "functions_min": { "type": "integer" },
+            "functions_max": { "type": "integer" },
+            "udmi_version": { "type": "string" }
+          }
+        },
+        "reply": {
+          "type": "object",
+          "properties": {
+            "functions_ver": { "type": "integer" },
+            "transaction_id": { "type": "string" },
+            "msg_source": { "type": "string" }
+          },
+          "required": ["transaction_id"]
+        }
+      },
+      "required": ["setup", "reply"]
+    }
+  },
+  "required": ["version", "timestamp", "udmi"]
+}
+```
+
+### 10.4. Cloud Model Payload
+
+The payload used for Cloud Model discovery and updates.
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CloudModelPayload",
+  "type": "object",
+  "properties": {
+    "version": { "type": "string" },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "cloud": {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": ["READ", "CREATE", "UPDATE", "DELETE", "BIND", "UNBIND"]
+        },
+        "registries": {
+          "type": "object",
+          "patternProperties": {
+            "^[a-zA-Z0-9_-]+$": {
+              "type": "object",
+              "properties": {
+                "devices": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^[a-zA-Z0-9_-]+$": {
+                      "type": "object",
+                      "properties": {
+                        "target_version": { "type": "string" },
+                        "current_version": { "type": "string" },
+                        "status": { "type": "string" },
+                        "lkg_version": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "detail": {
+          "type": "object"
+        }
+      },
+      "required": ["operation", "registries"]
+    }
+  },
+  "required": ["version", "timestamp", "cloud"]
+}
+```
