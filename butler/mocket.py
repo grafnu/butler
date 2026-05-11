@@ -26,7 +26,6 @@ def main():
     state = "quiescent"
     current_version = None
     lkg_version = None
-    subsystem = "main"
 
     def handle_handshake(topic, payload):
         # If we see a state/udmi, we should respond with config/udmi to confirm the handshake
@@ -93,9 +92,9 @@ def main():
             devices = reg_data.get('devices', {})
             dev_data = devices.get(device_id, {})
             
-            for sub_name, data in dev_data.items():
-                model_repo.update_subsystem(registry_id, device_id, sub_name, data)
-                # lkg_version update if needed? Usually butler does this.
+            # Since dev_data is no longer partitioned by sub_name:
+            model_repo.update_subsystem(registry_id, device_id, dev_data)
+            # lkg_version update if needed? Usually butler does this.
 
     def verify_blob(url, expected_hash):
         try:
@@ -114,33 +113,28 @@ def main():
             return False
 
     def handle_update(topic, payload):
-        nonlocal state, current_version, subsystem
+        nonlocal state, current_version
         unwrapped = unwrap_message(payload)
         update_wrap = unwrapped.get('update', {})
 
-        for sub_name, sub_update in update_wrap.items():
-            if not isinstance(sub_update, dict):
-                continue
+        if 'url' in update_wrap and 'sha256' in update_wrap:
+            state = "pending"
+            publish_status()
 
-            subsystem = sub_name
-            if 'url' in sub_update and 'sha256' in sub_update:
-                state = "pending"
+            if args.fail:
+                time.sleep(1)
+                state = "failure"
                 publish_status()
+                return
 
-                if args.fail:
-                    time.sleep(1)
-                    state = "failure"
-                    publish_status()
-                    return
+            time.sleep(2)
+            if verify_blob(update_wrap['url'], update_wrap['sha256']):
+                state = "success"
+                current_version = update_wrap.get('version')
+            else:
+                state = "failure"
 
-                time.sleep(2)
-                if verify_blob(sub_update['url'], sub_update['sha256']):
-                    state = "success"
-                    current_version = sub_update.get('version')
-                else:
-                    state = "failure"
-
-                publish_status()
+            publish_status()
 
     def on_message(topic, payload):
         parsed = transport.parse_topic(topic)
@@ -164,11 +158,9 @@ def main():
         topic = transport.format_topic("state", "update", registry_id, device_id)
         msg = wrap_message({
             "update": {
-                subsystem: {
-                    "status": state,
-                    "current_version": current_version,
-                    "lkg_version": lkg_version
-                }
+                "status": state,
+                "current_version": current_version,
+                "lkg_version": lkg_version
             }
         }, principal=transport.principal, source=transport.principal)
         transport.publish(topic, msg)
@@ -204,12 +196,11 @@ def main():
                 model = model_repo.get_model()
                 reg = model.get('registries', {}).get(registry_id, {})
                 dev = reg.get('devices', {}).get(device_id, {})
-                sub_data = dev.get(subsystem, {})
                 
                 if current_version is None:
-                    current_version = sub_data.get('current_version')
+                    current_version = dev.get('current_version')
                 if lkg_version is None:
-                    lkg_version = sub_data.get('lkg_version')
+                    lkg_version = dev.get('lkg_version')
 
                 publish_status()
                 publish_model()

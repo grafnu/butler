@@ -53,6 +53,14 @@ def main():
         if not check_timestamp(inner_payload['timestamp']):
             return False
         
+        # Section 9.3: Envelope Redundancy and Observation
+        if registry_id != 'default' and 'deviceRegistryId' in payload:
+            publish_verification("INVALID SCHEMA: Redundant envelope field 'deviceRegistryId' present when encoded in topic", registry_id, device_id)
+            return False
+        if device_id != 'unknown' and 'deviceId' in payload:
+            publish_verification("INVALID SCHEMA: Redundant envelope field 'deviceId' present when encoded in topic", registry_id, device_id)
+            return False
+
         # Section 9.1: payload MUST contain exactly one top-level key matching the subFolder name
         if sub_folder:
             # Filters out timestamp and version
@@ -98,41 +106,30 @@ def main():
         if subType == 'state' and subFolder == 'update' and device_id and registry_id:
             unwrapped = unwrap_message(payload)
             update = unwrapped.get('update', {})
-            
-            if "status" in update or "current_version" in update:
-                # Fallback backward compatibility for unnested payload
-                update = {"main": update}
 
-            if 'main' not in update:
-                publish_verification("INVALID SCHEMA: 'main' subsystem missing from update state", registry_id, device_id)
+            # Section 9.1: Mandatory fields in update state
+            if 'status' not in update or 'current_version' not in update or 'lkg_version' not in update:
+                 publish_verification(f"INVALID SCHEMA: Missing mandatory fields in update state (status/current_version/lkg_version)", registry_id, device_id)
 
-            for subsystem, sub_update in update.items():
-                if not isinstance(sub_update, dict):
-                    continue
+            # Use 'status' as per spec 9.1
+            state = update.get('status') or update.get('state')
 
-                # Section 9.1: Mandatory fields in update state
-                if 'status' not in sub_update or 'current_version' not in sub_update or 'lkg_version' not in sub_update:
-                     publish_verification(f"INVALID SCHEMA: Missing mandatory fields in update state (status/current_version/lkg_version) for subsystem {subsystem}", registry_id, device_id)
+            if state:
+                state_key = (registry_id, device_id)
+                if state_key not in device_states:
+                    device_states[state_key] = 'quiescent'
 
-                # Use 'status' as per spec 9.1
-                state = sub_update.get('status') or sub_update.get('state')
+                prev_state = device_states[state_key]
 
-                if state:
-                    state_key = (registry_id, device_id)
-                    if state_key not in device_states:
-                        device_states[state_key] = {}
+                if state != prev_state:
+                    publish_verification(f"State transition: {prev_state} -> {state}", registry_id, device_id)
 
-                    prev_state = device_states[state_key].get(subsystem, 'quiescent')
+                    if state == 'success' and prev_state != 'pending':
+                        publish_verification(f"INVALID TRANSITION: Went to success without pending", registry_id, device_id)
+                    if state == 'failure' and prev_state != 'pending':
+                        publish_verification(f"INVALID TRANSITION: Went to failure without pending", registry_id, device_id)
 
-                    if state != prev_state:
-                        publish_verification(f"State transition: {prev_state} -> {state}", registry_id, device_id)
-
-                        if state == 'success' and prev_state != 'pending':
-                            publish_verification(f"INVALID TRANSITION: Went to success without pending", registry_id, device_id)
-                        if state == 'failure' and prev_state != 'pending':
-                            publish_verification(f"INVALID TRANSITION: Went to failure without pending", registry_id, device_id)
-
-                        device_states[state_key][subsystem] = state
+                    device_states[state_key] = state
 
     transport.set_on_message(on_message)
     transport.connect()

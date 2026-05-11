@@ -23,14 +23,13 @@ def main():
 
     make = device.get("make", "default")
     model_name = device.get("model", "default")
-    subsystem = "main"
 
     blob_repo = BlobRepo()
-    hash_hex = blob_repo.store_blob(make, model_name, subsystem, blob_version, blob_path)
+    hash_hex = blob_repo.store_blob(make, model_name, "main", blob_version, blob_path) # Blobs might still need subsystem folder locally, or we can just use "main"
     print(f"Stored blob with hash {hash_hex}.")
 
-    model_repo.update_target_version(registry_id, device_id, subsystem, blob_version)
-    print(f"Updated target_version to {blob_version} for {device_id} in {registry_id} subsystem {subsystem}.")
+    model_repo.update_target_version(registry_id, device_id, blob_version)
+    print(f"Updated target_version to {blob_version} for {device_id} in {registry_id}.")
 
 if __name__ == '__main__':
     main()
