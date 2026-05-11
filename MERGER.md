@@ -12,7 +12,8 @@ everything is spec compliant then there is nothing to do except report
 success. It is NOT necessary to fix the implementations (except as a
 means to figure out what the correct `spec/` would be). Create/update
 the top-level file `impl_test_summary.txt` with the results of the testing
-results in the form (e.g.) `impl_A verifies impl_B: PASS`.
+results in the form (e.g.) `impl_A verifies impl_B: PASS` sorted in
+lexagraphical order (e.g. using `sort` on the file).
 
 There are (should be) multiple working subdirectories, each one
 containing a different version of an implementation.  Check the remote
