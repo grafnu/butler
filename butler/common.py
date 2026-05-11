@@ -257,6 +257,18 @@ class ButlerMQTTBase(ButlerBusBase):
                 sub_type = remaining[curr+1]
                 sub_folder = remaining[curr+2] if len(remaining) > curr + 2 else None
 
+                if "payload" not in data:
+                    self.on_raw_message(msg.topic, payload_str)
+                    return
+
+                if registry_id and "deviceRegistryId" in data:
+                    self.on_raw_message(msg.topic, payload_str)
+                    return
+
+                if device_id and "deviceId" in data:
+                    self.on_raw_message(msg.topic, payload_str)
+                    return
+
                 udmi_payload = data.get("payload", {})
                 for k, v in data.items():
                     if k != "payload":
@@ -374,7 +386,11 @@ class ButlerPubSubBase(ButlerBusBase):
 
     def _callback(self, message):
         try:
-            udmi_payload = json.loads(message.data.decode("utf-8"))
+            data = json.loads(message.data.decode("utf-8"))
+            if "payload" not in data:
+                message.nack()
+                return
+            udmi_payload = data.get("payload", {})
             attributes = dict(message.attributes)
             
             # Merge attributes for compatibility
