@@ -1,0 +1,4 @@
+# Sample log for impl_A observing its own butler and verifier traffic, or traffic from verifier B
+[observe] Observer connected, tapping into message stream...
+/uufi/c/state/udmi: {"timestamp": "2026-05-10T23:43:30Z", "version": "1.5.2", "udmi": {"setup": {"functions_ver": 9, "transaction_id": "UUFI:butler:e747008c", "msg_source": "butler", "user": "unknown"}}, "projectId": "vibrant", "transactionId": "UUFI:butler:e747008c", "publishTime": "2026-05-10T23:43:30Z", "source": "butler", "nonce": "db1529b8", "principal": "unknown"}
+/uufi/r/smoke-reg/d/smoke-dev/c/state/update: {"timestamp": "2026-05-10T23:43:35Z", "version": "1.5.2", "update": {"current_version": "1.0", "lkg_version": "1.0", "status": "pending"}, "projectId": "vibrant", "transactionId": "UUFI:mocket:cd7bb39c", "publishTime": "2026-05-10T23:43:35Z", "source": "mocket", "nonce": "cd7bb39c", "principal": "unknown.mocket", "deviceRegistryId": "smoke-reg", "deviceId": "smoke-dev"}

@@ -437,7 +437,7 @@ Integration testing between different implementations has identified common area
 
 ### 9.1. Mandatory Payload Fields
 Every message's inner `payload` object MUST contain `timestamp` and `version` fields.
-- **Payload Structure:** The `payload` object MUST contain exactly one top-level key matching the `subFolder` name (e.g., `system`, `pointset`, `update`, `cloud`, `validation`), which contains the UDMI data, in addition to the mandatory `timestamp` and `version` fields at the same level. The actual UDMI message data MUST NOT be placed at the top level of the JSON document alongside the envelope fields, but MUST be strictly nested within this `payload` key.
+- **Payload Structure:** The `payload` object MUST contain exactly one top-level key matching the `subFolder` name (e.g., `system`, `pointset`, `update`, `cloud`, `validation`), which contains the UDMI data, in addition to the mandatory `timestamp` and `version` fields at the same level. The actual UDMI message data MUST NOT be placed at the top level of the JSON document alongside the envelope fields, but MUST be strictly nested within this `payload` key. Implementations MUST enforce this and reject messages lacking the nested `payload` key.
 - **Field Consistency:**
     - **Current Version:** Devices MUST report their active firmware version using the `current_version` field within the inner `state` data.
     - **LKG Version:** Devices MUST report their most recent verified operational version using the `lkg_version` field.
@@ -451,7 +451,7 @@ Every message's inner `payload` object MUST contain `timestamp` and `version` fi
 - **Guidance:** Reserve `/uufi/r/` for post-handshake, registry-associated traffic. Ensure all clients use the same `c/` channel for handshakes and rely on envelope-based identification (e.g. `transactionId` and `principal`).
 
 ### 9.3. Envelope Redundancy and Observation
-- **Redundancy Rule:** Top-level envelope fields MUST only include data NOT already encoded in the MQTT topic structure. For registry-based topics (`/uufi/r/reg1/d/dev1/...`), the `deviceRegistryId` and `deviceId` MUST be omitted from the envelope.
+- **Redundancy Rule:** Top-level envelope fields MUST only include data NOT already encoded in the MQTT topic structure. For registry-based topics (`/uufi/r/reg1/d/dev1/...`), the `deviceRegistryId` and `deviceId` MUST be omitted from the envelope. Implementations MUST reject messages that contain redundant envelope fields already present in the topic.
 - **Observer Transparency:** Observation tools (e.g., `bin/observe`) MUST output the **raw wire format** of messages received on the bus. While internal processing MAY flatten the `payload` wrapper for convenience, the output for human/automated monitoring MUST reflect the exact JSON structure as it exists on the transport layer to facilitate compliance verification.
 - **Guidance:** Maintain a clean inner UDMI message by omitting redundant fields like `subType` from the outer JSON wrap.
 
