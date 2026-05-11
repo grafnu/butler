@@ -66,7 +66,7 @@ Responsible for tracking the "source of truth" for the fleet. The internal struc
 - **Composite Primary Keys:** State tracking for all device subsystems MUST utilize a composite primary key consisting of both the `registry_id` and `device_id`. This ensures absolute uniqueness across multi-registry environments. 
 - **Internal Storage Schema:** To ensure interoperability between tools (e.g. `register` from one implementation and `mocket` from another), the internal storage file (e.g. `model.json`) MUST mirror the nested `"registries"` hierarchy defined for MQTT messages. Flat `devices` maps or omitting the `"registries"` root key is non-compliant.
 - **MQTT Representation:** While internal storage is an implementation detail, the representation of the model on the communication substrate (via UUFI `cloud` messages) MUST be strictly standardized to ensure interoperability. When replying to a model query, the `cloud` payload MUST follow the nested structure: `{"registries": { "registry_id": { "devices": { "device_id": { "subsystem": { "target_version": "...", "current_version": "...", "lkg_version": "..." } } } } } }` (wrapped in the mandatory UUFI `cloud` subfolder).
-- **Partial Merge Update:** When processing a Cloud Model `UPDATE` operation, the update MUST be treated as a partial merge at the device subsystem level. Only specified fields should be updated, and existing fields should not be overwritten.
+- **Partial Merge Update:** When processing a Cloud Model `UPDATE` operation, the update MUST be treated as a partial merge at the device subsystem level. Only specified fields should be updated, and existing fields should not be overwritten. The orchestrator MUST omit the `target_version` field when publishing state updates (like `current_version`, `status` and `lkg_version`) to avoid accidentally rolling back or looping the update process.
 
 ### 3.3 Butler Orchestrator (Control Logic)
 The central engine that manages the update lifecycle state machine:
@@ -100,7 +100,7 @@ The implementation on the device must adhere to this state flow:
 3. Orchestrator detects mismatch from `mocket` messages and fetches metadata from Blob Repository.
 4. Orchestrator publishes `update_payload` to the device.
 5. Device reports `pending`, applies update, then reports `success` and updated `lkg_version`.
-6. Orchestrator sends a model update request to `mocket` to reflect the new `current_version` and `lkg_version`.
+6. Orchestrator sends a model update request to `mocket` to reflect the new `current_version` and `lkg_version`. The Orchestrator MUST NOT send `target_version` in this request.
 7. `mocket` updates the Model Repository and confirms the change.
 
 ### 4.2 Rollback Sequence
