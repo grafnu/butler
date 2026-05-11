@@ -1,0 +1,21 @@
+{
+  "registries": {
+    "smoke-reg": {
+      "devices": {
+        "smoke-dev": {
+          "main": {
+            "registry_id": "smoke-reg",
+            "device_id": "smoke-dev",
+            "target_version": "1.1.0",
+            "current_version": "1.0",
+            "lkg_version": "1.0",
+            "state": "quiescent",
+            "make": "vibrant",
+            "model": "butler-v1",
+            "subsystem": "main"
+          }
+        }
+      }
+    }
+  }
+}
