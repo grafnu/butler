@@ -13,6 +13,8 @@ Only execute this if the `butler` directory already exists (and has code in it).
 * Update the code with any recent changes in `spec/`
 * `git push`
 
+The files in `spec/` should be considered immutable and not changed.
+
 Do not ask how to complete the task, and do not check if you should proceed.
 Do not ask for clarification on any missing elements. If necessary,
 add a "ASSUMED:" tag in the spec file where it was ambigous and you
