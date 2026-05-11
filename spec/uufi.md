@@ -470,3 +470,187 @@ While internal storage format is an implementation detail, tools sharing a Model
 All components MUST support multi-registry environments. 
 - **Keys:** State tracking MUST use a composite key of `registry_id` and `device_id`.
 - **Flat Structures:** Implementations MUST NOT use a flat `devices` map at the root of the model, as this prevents supporting devices with the same ID in different registries.
+
+## 10. Schema Definitions
+
+To facilitate integration and ensure proper message construction, the following JSON schemas define the exact structures required for key UUFI message types. These schemas provide a precise template that external applications can reference to produce the necessary message structures without guessing.
+
+### 10.1. UUFI Message Envelope
+
+The envelope wraps the inner UDMI payload and provides context for the message.
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "UufiEnvelope",
+  "type": "object",
+  "properties": {
+    "projectId": { "type": "string" },
+    "deviceRegistryId": { "type": "string" },
+    "deviceId": { "type": "string" },
+    "subFolder": { "type": "string" },
+    "subType": { "type": "string" },
+    "transactionId": { "type": "string" },
+    "publishTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": { "type": "string" },
+    "principal": { "type": "string" },
+    "nonce": { "type": "string" },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "version": { "type": "string" }
+      },
+      "required": ["timestamp", "version"]
+    }
+  },
+  "required": ["payload"]
+}
+```
+
+### 10.2. Handshake State Payload
+
+The payload used by the Client to initiate a handshake and declare state.
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HandshakeStatePayload",
+  "type": "object",
+  "properties": {
+    "version": { "type": "string" },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "udmi": {
+      "type": "object",
+      "properties": {
+        "setup": {
+          "type": "object",
+          "properties": {
+            "functions_ver": { "type": "integer" },
+            "transaction_id": { "type": "string" },
+            "msg_source": { "type": "string" },
+            "user": { "type": "string" }
+          },
+          "required": ["functions_ver", "transaction_id"]
+        }
+      },
+      "required": ["setup"]
+    }
+  },
+  "required": ["version", "timestamp", "udmi"]
+}
+```
+
+### 10.3. Handshake Config Payload
+
+The payload used by the System to reply to a handshake and confirm configuration.
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HandshakeConfigPayload",
+  "type": "object",
+  "properties": {
+    "version": { "type": "string" },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "udmi": {
+      "type": "object",
+      "properties": {
+        "setup": {
+          "type": "object",
+          "properties": {
+            "functions_min": { "type": "integer" },
+            "functions_max": { "type": "integer" },
+            "udmi_version": { "type": "string" }
+          }
+        },
+        "reply": {
+          "type": "object",
+          "properties": {
+            "functions_ver": { "type": "integer" },
+            "transaction_id": { "type": "string" },
+            "msg_source": { "type": "string" }
+          },
+          "required": ["transaction_id"]
+        }
+      },
+      "required": ["setup", "reply"]
+    }
+  },
+  "required": ["version", "timestamp", "udmi"]
+}
+```
+
+### 10.4. Cloud Model Payload
+
+The payload used for Cloud Model discovery and updates.
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CloudModelPayload",
+  "type": "object",
+  "properties": {
+    "version": { "type": "string" },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "cloud": {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": ["READ", "CREATE", "UPDATE", "DELETE", "BIND", "UNBIND"]
+        },
+        "registries": {
+          "type": "object",
+          "patternProperties": {
+            "^[a-zA-Z0-9_-]+$": {
+              "type": "object",
+              "properties": {
+                "devices": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^[a-zA-Z0-9_-]+$": {
+                      "type": "object",
+                      "patternProperties": {
+                        "^[a-zA-Z0-9_-]+$": {
+                          "type": "object",
+                          "properties": {
+                            "target_version": { "type": "string" },
+                            "current_version": { "type": "string" },
+                            "status": { "type": "string" },
+                            "lkg_version": { "type": "string" }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "detail": {
+          "type": "object"
+        }
+      },
+      "required": ["operation", "registries"]
+    }
+  },
+  "required": ["version", "timestamp", "cloud"]
+}
+```
