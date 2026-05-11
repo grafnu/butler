@@ -235,11 +235,27 @@ class MqttTransport:
         except json.JSONDecodeError:
             payload = msg.payload.decode('utf-8')
 
-        if not self.passive and isinstance(payload, dict) and 'nonce' in payload:
-            nonce = payload['nonce']
-            if any(n['nonce'] == nonce for n in self.seen_nonces):
+        if not self.passive:
+            if not isinstance(payload, dict):
                 return
-            self.seen_nonces.append({'nonce': nonce, 'time': now})
+
+            if 'nonce' in payload:
+                nonce = payload['nonce']
+                if any(n['nonce'] == nonce for n in self.seen_nonces):
+                    return
+                self.seen_nonces.append({'nonce': nonce, 'time': now})
+
+            # Spec 9.1: reject messages lacking the nested `payload` key.
+            if 'payload' not in payload:
+                return
+
+            # Spec 9.3: reject messages that contain redundant envelope fields
+            parsed_topic = self.parse_topic(msg.topic)
+            if 'registryId' in parsed_topic:
+                if 'deviceRegistryId' in payload or 'registryId' in payload:
+                    return
+            if 'deviceId' in parsed_topic and 'deviceId' in payload:
+                return
 
         if self.on_message_callback:
             self.on_message_callback(msg.topic, payload)
