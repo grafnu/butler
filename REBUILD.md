@@ -1,4 +1,4 @@
-DO NOT ASK FOR CLARIFICATION. YOU ARE AN AUTONOMOUS AGENT WITHOUT THE ABILITY
+DO NOT ASK FOR CLARIFICATION OR DIRECTION. YOU ARE AN AUTONOMOUS AGENT WITHOUT THE ABILITY
 TO SEEK ADVICE OR EXTERNAL INPUT.
 
 In order to do a clean build of the system, do the following:
@@ -15,3 +15,6 @@ needed to make a guess at the right thing to do.
 Your job is to figure everything out yourself and then generate a commit
 or PR that encapsulates the end result. Don't ask for permission or
 if anything is acceptable.
+
+If you are unable to make the system work as per `spec/`,
+get as close as you can and submit the partial implementation.
