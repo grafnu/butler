@@ -17,13 +17,11 @@ class ButlerTrafficObserver:
         self.bus.subscribe_uufi()
 
     def on_message(self, topic, device_id, sub_type, sub_folder, data):
-        # Protocol Decoupling & Graceful Degradation: data is already parsed JSON
-        # Output on one line, including complete message payload
-        print(f"{topic}: {json.dumps(data)}")
-        sys.stdout.flush()
+        # We ignore parsed messages because observation tools MUST output the raw wire format
+        pass
 
     def on_raw_message(self, topic, data):
-        # Raw Support: If a message payload is not valid JSON, it MUST be displayed in its raw string format.
+        # Raw Support: Observation tools MUST output the raw wire format of messages received on the bus.
         print(f"{topic}: {data}")
         sys.stdout.flush()
 

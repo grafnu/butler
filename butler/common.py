@@ -222,6 +222,7 @@ class ButlerMQTTBase(ButlerBusBase):
     def _on_mqtt_message(self, client, userdata, msg):
         try:
             payload_str = msg.payload.decode()
+            self.on_raw_message(msg.topic, payload_str)
             try:
                 data = json.loads(payload_str)
                 parts = msg.topic.strip("/").split('/')
@@ -230,7 +231,6 @@ class ButlerMQTTBase(ButlerBusBase):
                     uufi_idx = parts.index("uufi")
                 except ValueError:
                     # Non-UUFI JSON message
-                    self.on_raw_message(msg.topic, payload_str)
                     return
 
                 # Unified Structure: /uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}
@@ -239,7 +239,6 @@ class ButlerMQTTBase(ButlerBusBase):
                 device_id = None
                 
                 if not remaining:
-                    self.on_raw_message(msg.topic, payload_str)
                     return
 
                 curr = 0
@@ -251,22 +250,18 @@ class ButlerMQTTBase(ButlerBusBase):
                         curr += 2
                 
                 if len(remaining) <= curr or remaining[curr] != "c":
-                    self.on_raw_message(msg.topic, payload_str)
                     return
                 
                 sub_type = remaining[curr+1]
                 sub_folder = remaining[curr+2] if len(remaining) > curr + 2 else None
 
                 if "payload" not in data:
-                    self.on_raw_message(msg.topic, payload_str)
                     return
 
                 if registry_id and "deviceRegistryId" in data:
-                    self.on_raw_message(msg.topic, payload_str)
                     return
 
                 if device_id and "deviceId" in data:
-                    self.on_raw_message(msg.topic, payload_str)
                     return
 
                 udmi_payload = data.get("payload", {})
@@ -283,7 +278,7 @@ class ButlerMQTTBase(ButlerBusBase):
 
                 self._handle_received_message(msg.topic, device_id, sub_type, sub_folder, udmi_payload)
             except (json.JSONDecodeError, IndexError):
-                self.on_raw_message(msg.topic, payload_str)
+                pass
         except Exception:
             pass
 
@@ -386,7 +381,9 @@ class ButlerPubSubBase(ButlerBusBase):
 
     def _callback(self, message):
         try:
-            data = json.loads(message.data.decode("utf-8"))
+            decoded_data = message.data.decode("utf-8")
+            self.on_raw_message(self.topic_path, decoded_data)
+            data = json.loads(decoded_data)
             if "payload" not in data:
                 message.nack()
                 return
