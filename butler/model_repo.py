@@ -12,7 +12,7 @@ class ModelRepo:
             os.makedirs(os.path.dirname(os.path.abspath(self.model_file)), exist_ok=True)
             self._write_model({"registries": {}})
         else:
-            # Migration/Normalization: ensure 'registries' key exists and remove 'subsystems' nesting
+            # Migration/Normalization: ensure 'registries' key exists
             data = self._read_model()
             changed = False
             if "registries" not in data:
@@ -21,15 +21,6 @@ class ModelRepo:
                 else:
                     data["registries"] = {}
                 changed = True
-            
-            # Remove subsystems nesting if it exists
-            for reg_id, reg_data in data.get("registries", {}).items():
-                devices = reg_data.get("devices", {})
-                for dev_id, dev_data in devices.items():
-                    if "subsystems" in dev_data:
-                        subs = dev_data.pop("subsystems")
-                        dev_data.update(subs)
-                        changed = True
             
             if changed:
                 self._write_model(data)
@@ -71,8 +62,9 @@ class ModelRepo:
         reg = data["registries"].setdefault(registry_id, {"devices": {}})
         devices = reg.setdefault("devices", {})
         device = devices.setdefault(device_id, {})
+        main_sub = device.setdefault("main", {})
 
-        device["target_version"] = target_version
+        main_sub["target_version"] = target_version
         self._write_model(data)
 
     def update_current_version(self, registry_id: str, device_id: str, current_version: str):
@@ -80,9 +72,10 @@ class ModelRepo:
         reg = data["registries"].setdefault(registry_id, {"devices": {}})
         devices = reg.setdefault("devices", {})
         device = devices.setdefault(device_id, {})
+        main_sub = device.setdefault("main", {})
 
-        device["current_version"] = current_version
-        device["lkg_version"] = current_version
+        main_sub["current_version"] = current_version
+        main_sub["lkg_version"] = current_version
         self._write_model(data)
 
     def revert_to_lkg(self, registry_id: str, device_id: str):
@@ -90,19 +83,21 @@ class ModelRepo:
         reg = data["registries"].get(registry_id, {})
         devices = reg.get("devices", {})
         device = devices.get(device_id, {})
-        if device and "lkg_version" in device:
-            device["target_version"] = device["lkg_version"]
+        main_sub = device.get("main", {})
+        if main_sub and "lkg_version" in main_sub:
+            main_sub["target_version"] = main_sub["lkg_version"]
             self._write_model(data)
 
-    def update_subsystem(self, registry_id: str, device_id: str, updates: dict):
+    def update_subsystem(self, registry_id: str, device_id: str, subsystem: str, updates: dict):
         data = self._read_model()
         reg = data["registries"].setdefault(registry_id, {"devices": {}})
         devices = reg.setdefault("devices", {})
         device = devices.setdefault(device_id, {})
+        sub_data = device.setdefault(subsystem, {})
 
         for k, v in updates.items():
-            device[k] = v
+            sub_data[k] = v
             if k == "current_version":
-                device["lkg_version"] = v
+                sub_data["lkg_version"] = v
 
         self._write_model(data)
