@@ -3,6 +3,10 @@ THE ABILITY TO ASK QUESTIONS OR SEEK ADVICE.
 
 # Instructions on how to run a merge integration test between multiple implementations.
 
+Only changes to the `spec/` files and `test_summary.txt` should be committed and pushed.
+No other files should have a diff or be commited to the PR.
+
+
 The goal is to test multiple different implementations of the `butler`
 spec, as defined in `spec/`, and if there are failure or significant
 inconsistencies update the specs in `spec/` accordingly. Spec compliance
@@ -67,7 +71,3 @@ least twice, once as `butler` and the other as `observe`.  * The graph
 of connected components should be a connected graph (e.g., if you have
 A, B, and C, you might test A-B and B-C).
 
-Only changes to the `spec/` files and `test_summary.txt` should be committed and pushed.
-
-Do not ask any questions or seek clarification. Your goal is to simply
-test, recommand changes, and report results.
