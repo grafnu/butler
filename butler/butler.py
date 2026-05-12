@@ -40,27 +40,28 @@ def main():
             for reg_id, reg_data in registries.items():
                 devices = reg_data.get('devices', {})
                 for dev_id, dev_data in devices.items():
-                    state_key = (reg_id, dev_id)
-                    if state_key not in device_states:
-                        device_states[state_key] = {}
-                    
-                    state_data = device_states[state_key]
-
-                    if 'target_version' in dev_data:
-                        state_data['target_version'] = dev_data.get('target_version')
-                    if 'current_version' in dev_data:
-                        state_data['current_version'] = dev_data.get('current_version')
-                    if 'lkg_version' in dev_data:
-                        state_data['lkg_version'] = dev_data.get('lkg_version')
+                    for subsystem, sub_data in dev_data.items():
+                        state_key = (reg_id, dev_id, subsystem)
+                        if state_key not in device_states:
+                            device_states[state_key] = {}
                         
-                        state_data.setdefault('state', 'quiescent')
+                        state_data = device_states[state_key]
+
+                        if 'target_version' in sub_data:
+                            state_data['target_version'] = sub_data.get('target_version')
+                        if 'current_version' in sub_data:
+                            state_data['current_version'] = sub_data.get('current_version')
+                        if 'lkg_version' in sub_data:
+                            state_data['lkg_version'] = sub_data.get('lkg_version')
+
+                            state_data.setdefault('state', 'quiescent')
             return
 
         # For other messages, we still need registry_id and device_id from topic
         if not registry_id or not device_id:
             return
 
-        state_key = (registry_id, device_id)
+        state_key = (registry_id, device_id, "main")
         if state_key not in device_states:
             device_states[state_key] = {}
             # Try to fetch full model state
@@ -88,8 +89,10 @@ def main():
                             registry_id: {
                                 "devices": {
                                     device_id: {
-                                        "current_version": current_version,
-                                        "lkg_version": state_data.get('lkg_version')
+                                        "main": {
+                                            "current_version": current_version,
+                                            "lkg_version": state_data.get('lkg_version')
+                                        }
                                     }
                                 }
                             }
@@ -120,7 +123,9 @@ def main():
                                 registry_id: {
                                     "devices": {
                                         device_id: {
-                                            "target_version": lkg
+                                            "main": {
+                                                "target_version": lkg
+                                            }
                                         }
                                     }
                                 }
@@ -131,7 +136,7 @@ def main():
 
                 # Update internal tracking from device report
                 if state != state_data.get('state'):
-                    settling_times[state_key + (subsystem,)] = time.time()
+                    settling_times[state_key] = time.time()
 
                 state_data['state'] = state
                 if current_version:
@@ -142,7 +147,7 @@ def main():
                 # If we don't have a target version yet, we need to fetch it
                 if 'target_version' not in state_data:
                     fetch_model_state()
-                    continue
+                    return
 
                 if state == 'success':
                     if 'pending_start' in state_data:
@@ -163,7 +168,7 @@ def main():
                                     registry_id: {
                                         "devices": {
                                             device_id: {
-                                                subsystem: {
+                                                "main": {
                                                     "target_version": lkg
                                                 }
                                             }
@@ -195,7 +200,7 @@ def main():
                 fetch_model_state()
                 last_model_fetch = now
 
-            for (registry_id, device_id), state_data in list(device_states.items()):
+            for (registry_id, device_id, subsystem), state_data in list(device_states.items()):
                 target = state_data.get('target_version')
                 current = state_data.get('current_version') or "" # Initial provisioning (null == "")
                 state = state_data.get('state', 'quiescent')
@@ -211,7 +216,7 @@ def main():
                         continue
 
                     # Settling Time: 5s
-                    last_change = settling_times.get((registry_id, device_id), 0)
+                    last_change = settling_times.get((registry_id, device_id, subsystem), 0)
                     if now - last_change < 5.0:
                         continue
 
@@ -229,7 +234,7 @@ def main():
                         state_data['pending_start'] = now
                         state_data['state'] = 'pending'
                         state_data['pending_version'] = target
-                        settling_times[(registry_id, device_id)] = now
+                        settling_times[(registry_id, device_id, subsystem)] = now
 
                 elif state == 'pending' and 'pending_start' in state_data:
                     # Timeout: 60s
@@ -251,7 +256,9 @@ def main():
                                         registry_id: {
                                             "devices": {
                                                 device_id: {
-                                                    "target_version": lkg
+                                                    subsystem: {
+                                                        "target_version": lkg
+                                                    }
                                                 }
                                             }
                                         }

@@ -92,8 +92,8 @@ def main():
             devices = reg_data.get('devices', {})
             dev_data = devices.get(device_id, {})
             
-            # Since dev_data is no longer partitioned by sub_name:
-            model_repo.update_subsystem(registry_id, device_id, dev_data)
+            for subsystem, sub_data in dev_data.items():
+                model_repo.update_subsystem(registry_id, device_id, subsystem, sub_data)
             # lkg_version update if needed? Usually butler does this.
 
     def verify_blob(url, expected_hash):
@@ -196,11 +196,12 @@ def main():
                 model = model_repo.get_model()
                 reg = model.get('registries', {}).get(registry_id, {})
                 dev = reg.get('devices', {}).get(device_id, {})
+                main_sub = dev.get('main', {})
                 
                 if current_version is None:
-                    current_version = dev.get('current_version')
+                    current_version = main_sub.get('current_version')
                 if lkg_version is None:
-                    lkg_version = dev.get('lkg_version')
+                    lkg_version = main_sub.get('lkg_version')
 
                 publish_status()
                 publish_model()
