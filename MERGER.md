@@ -74,10 +74,10 @@ Any test files should be generated in directories covered by
 end of the testing, there should not be any artifacts left that are
 visible by `git status`.
 
-Run the setup and tests multiple times, once for each impl N as
-`butler` connecting to N-1 as the `verifier`. If there are N
-implementations then there should be exactly N test runs,
-determinstically ordered. A should verify B, B verify C, etc...
+Run the setup and tests multiple times, once for each impl as
+`butler` with another impl as `verifier`. If there are N
+implementations then there should be exactly N*(N-1) test runs.
+Every combination of `butler` & `verifier` should be tested.
 
 Run the tests all in parallel at the same time, using different
 prefixes to disamiguate the working sets.
