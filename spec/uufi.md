@@ -185,12 +185,14 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 - **Standard:** RFC 3339 minimal precision (e.g., `2026-05-01T22:32:17Z`).
 - **Timezone:** UTC required (`Z` suffix).
 - **Precision:** System-originated messages SHOULD NOT include fractional seconds. Clients MAY include fractional seconds (microseconds), and all implementations MUST handle them gracefully by ignoring extra precision if necessary.
+- **Type Safety:** Mandatory version strings (`current_version`, `target_version`, etc.) MUST NOT be `null`. If a version is unknown, use a placeholder string like `"0.0.0"`.
 
 ### 9.3. Redundancy Rule
 - **MQTT:** Implementations MUST reject messages where envelope fields duplicate topic-encoded data.
 
 ### 9.4. MQTT Topic Formatting
 - **Leading Slash:** For MQTT transport, all UUFI topics MUST start with a leading slash `/`. Implementations MUST NOT accept or publish to topics lacking the leading slash.
+- **Wildcards:** Subscription wildcards (e.g., `/#`) MUST also adhere to the leading slash rule to ensure consistent topic matching across the prefix tree.
 
 ## 10. Schemas
 
@@ -330,8 +332,11 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
                             "target_version": { "type": "string" },
                             "current_version": { "type": "string" },
                             "status": { "type": "string" },
-                            "lkg_version": { "type": "string" }
+                            "lkg_version": { "type": "string" },
+                            "make": { "type": "string", "description": "Device manufacturer" },
+                            "model": { "type": "string", "description": "Device model" }
                           }
+
                         }
                       }
                     }
