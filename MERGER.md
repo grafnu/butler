@@ -9,7 +9,8 @@ committed and pushed.  No other files should have a diff or be
 commited to the PR.
 
 The primary goal is to empirically ensure that the provided specs are
-robust and coherent by interoperability testing between multiple
+robust, coherent, and comply to the spec,
+by interoperability testing between multiple
 different implementations of the `butler` spec.  If there are failures
 or significant inconsistencies update the specs in `spec/`
 accordingly.  Spec compliance is defined as successfully passing the
@@ -24,10 +25,12 @@ file). PASS means it passed unmodified, FAIL means it failed and could
 not easily be fixed, and FIXED means that it passed after
 modifications.
 
-If an implementations need to be fixed in order to pass the tests,
+If an implementations need to be fixed in order to be spec compliant,
 then the result should be FIXED and the spec updated accordingly.
 This should either be as a clarification to remove ambiguity, or a
 reminder to reinforce some particularly senstive point of the spec.
+
+The goal is to be spec compliant, not to just pass the tests.
 
 First merge `origin/main` into this branch to make sure all specs and
 other details are up to date.
