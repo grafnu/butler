@@ -34,11 +34,12 @@ Format: `scheme://[user@]host[:port][/path]`
 
 #### MQTT (`mqtt://`)
 - **Host/Port:** Standard network mapping.
-- **Topic Structure:** `/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
+- **Topic Structure:** `[/{prefix}]/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
+  - The `prefix` is the optional path component of the connection string.
 - **Topic Isolation:** The `principal` identifier MUST be included in the JSON envelope.
 - **Cloud Model Service:**
-  - **Discovery:** Clients publish a `query/cloud` message to `/uufi/c/query/cloud`.
-  - **Response:** System publishes the model to `/uufi/c/config/cloud`.
+  - **Discovery:** Clients publish a `query/cloud` message to `[/{prefix}]/uufi/c/query/cloud`.
+  - **Response:** System publishes the model to `[/{prefix}]/uufi/c/config/cloud`.
   - **Structure:** Uses nested **Registries** (Section 5.1).
 
 ## 3. Handshake Protocol

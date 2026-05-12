@@ -66,7 +66,7 @@ The system utilizes a message-based transport (MQTT or PubSub) as defined in `uu
 - **Handshake:** MUST complete UUFI handshake within 60s or Fail-fast.
 - **Rollback:** On critical failure, revert `target_version` to `lkg_version` via `mocket`.
 - **LKG Management:** Butler MUST persist the `lkg_version` reported by the device.
-- **Discovery:** Dynamically discover registries/devices via `/uufi/c/...` messages.
+- **Discovery:** Dynamically discover registries/devices via `[/{prefix}]/uufi/c/...` messages.
 
 ### 2.4 Device Conduit (Client-side)
 - **Reporting:** Periodically publish `current_version`, `status`, and `lkg_version`.
@@ -99,7 +99,7 @@ The system utilizes a message-based transport (MQTT or PubSub) as defined in `uu
 ### 5.1 Verifier (Active Observer)
 - **Handshake:** MUST complete UUFI handshake.
 - **Monitoring:** Track state transitions in `update` subfolder.
-- **Reporting:** Publish to `/uufi/r/{reg_id}/d/{dev_id}/validation`.
+- **Reporting:** Publish to `[/{prefix}]/uufi/r/{reg_id}/d/{dev_id}/validation`.
 - **Timestamp:** Enforce RFC 3339 minimal precision for Butler messages.
 
 ### 5.2 Observer (Passive Observer)
