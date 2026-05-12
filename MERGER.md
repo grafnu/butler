@@ -30,8 +30,8 @@ containing a different version of an implementation.  Check the remote
 branches of the form `impl_ID`. Each one is a different implementation
 of the butler spec. Clone each one into the `impl/ID` directory
 (replacing the `_` with the file separator `/`). If they already
-exist, make sure they are up to date with the remote origin (`git
-pull`).
+exist, do a fetch and hard reset to make sure they are exact copies of
+the remote origin branch.
 
 The `venv` based off of `requirements.txt` needs to be setup for each
 subdirectory independently.
