@@ -1,26 +1,33 @@
-DO NOT ASK FOR CLARIFICATION OR DIRECTION. YOU ARE AN AUTONONOMOUS AGENT WITHOUT
-THE ABILITY TO ASK QUESTIONS OR SEEK ADVICE.
+DO NOT ASK FOR CLARIFICATION OR DIRECTION. YOU ARE AN AUTONONOMOUS
+AGENT WITHOUT THE ABILITY TO ASK QUESTIONS OR SEEK ADVICE.
 
-# Instructions on how to run a merge integration test between multiple implementations.
+# Instructions on how to run a merge integration test between multiple
+  implementations.
 
-Only changes to the `spec/` files and `test_summary.txt` should be committed and pushed.
-No other files should have a diff or be commited to the PR.
+Only changes to the `spec/` files and `test_summary.txt` should be
+committed and pushed.  No other files should have a diff or be
+commited to the PR.
 
-The primary goal is to empirically ensure that the provided specs are robust and coherent
-by interoperability testing between multiple different implementations of the `butler` spec.
-If there are failures or significant inconsistencies update the specs in `spec/` accordingly.
-Spec compliance is defined as successfully passing the `smokeit` test across all cross-implementation
-pairs with zero verification failures and consistent behavioral logs.
-If everything is spec compliant then there is nothing to do except report success.
+The primary goal is to empirically ensure that the provided specs are
+robust and coherent by interoperability testing between multiple
+different implementations of the `butler` spec.  If there are failures
+or significant inconsistencies update the specs in `spec/`
+accordingly.  Spec compliance is defined as successfully passing the
+`smokeit` test across all cross-implementation pairs with zero
+verification failures and consistent behavioral logs.  If everything
+is spec compliant then there is nothing to do except report success.
 
-Create/update the file `test_summary.txt` with PASS/FAIL results of the testing
-results in the form (e.g.) `impl_A verifies impl_B: PASS` sorted in
-lexagraphical order (e.g. using `sort` on the file).
+Create/update the file `test_summary.txt` with PASS/FAIL/FIXED results
+of the testing results in the form (e.g.) `impl_A verifies impl_B:
+PASS` sorted in lexagraphical order (e.g. using `sort` on the
+file). PASS means it passed unmodified, FAIL means it failed and could
+not easily be fixed, and FIXED means that it passed after
+modifications.
 
-If an implementations need to be fixed to achieve a PASS then the spec MUST be updated
-to reflect the change. This should either be as a clarification
-to remove ambiguity, or a reminder to reinforce some particularly senstive
-point of the spec.
+If an implementations need to be fixed in order to pass the tests,
+then the result should be FIXED and the spec updated accordingly.
+This should either be as a clarification to remove ambiguity, or a
+reminder to reinforce some particularly senstive point of the spec.
 
 First merge `origin/main` into this branch to make sure all specs and
 other details are up to date.
@@ -65,6 +72,6 @@ end of the testing, there should not be any artifacts left that are
 visible by `git status`.
 
 Run the setup and tests multiple times, once for each impl N as
-`butler` connecting to N+1 as the `verifier`. If there are N
+`butler` connecting to N-1 as the `verifier`. If there are N
 implementations then there should be exactly N test runs,
-determinstically ordered.
+determinstically ordered. A should verify B, B verify C, etc...
