@@ -13,7 +13,11 @@ Only execute this if the `butler` directory already exists (and has code in it).
 * Update the code with any recent changes in `spec/`
 * `git push`
 
-The files in `spec/` should be considered immutable and not changed.
+The files in `spec/` should be considered immutable and not changed. All files
+not explicitly indicated to be functional work zones should be immutable.
+
+Do NOT check out any other branch implementations, assume that they do not exist
+or are off limits.
 
 Do not ask how to complete the task, and do not check if you should proceed.
 Do not ask for clarification on any missing elements. If necessary,

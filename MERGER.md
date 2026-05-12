@@ -64,9 +64,7 @@ Any test files should be generated in directories covered by
 end of the testing, there should not be any artifacts left that are
 visible by `git status`.
 
-Run the setup and tests multiple times, exactly just enough iterations
-to satisfy the following constraints: * Every branch (ID) is run at
-least twice, once as `butler` and the other as `observe`.  * The graph
-of connected components should be a connected graph (e.g., if you have
-A, B, and C, you might test A-B and B-C).
-
+Run the setup and tests multiple times, once for each impl N as
+`butler` connecting to N+1 as the `verifier`. If there are N
+implementations then there should be exactly N test runs,
+determinstically ordered.
