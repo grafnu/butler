@@ -182,27 +182,15 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 - **Mandatory Fields:** `timestamp` and `version` MUST be at the root of the `payload` object.
 
 ### 9.2. Timestamp Format
-...
-## 11. Local Repository Structure (Standardized)
-
-To ensure that tools from different implementations (e.g., a Trigger from Impl A and an Orchestrator from Impl B) can interoperate within the same local workspace, the following directory and file structures are standardized.
-
-### 11.1. Blob Repository
-Blobs MUST be stored in a directory structure following this pattern:
-`{base_dir}/{make}/{model}/{subsystem}/{version}/`
-
-Each version directory MUST contain:
-- `bundle.bin`: The binary blob content.
-- `sha256.txt`: A text file containing the hex-encoded SHA-256 hash of `bundle.bin`.
-
-### 11.2. Model Repository
-The cloud model, when stored as a local JSON file, MUST use the 3-level nesting defined in Section 10.4 (Registries -> Devices -> Subsystems).
-- **Format:** RFC 3339 minimal precision (e.g., `2026-05-01T22:32:17Z`).
-- **Timezone:** UTC required.
-- **Precision:** No microseconds.
+- **Standard:** RFC 3339 minimal precision (e.g., `2026-05-01T22:32:17Z`).
+- **Timezone:** UTC required (`Z` suffix).
+- **Precision:** No microseconds or fractional seconds allowed for System-originated messages. Clients MAY include fractional seconds, but Systems MUST handle them gracefully.
 
 ### 9.3. Redundancy Rule
 - **MQTT:** Implementations MUST reject messages where envelope fields duplicate topic-encoded data.
+
+### 9.4. MQTT Topic Formatting
+- **Leading Slash:** For MQTT transport, all UUFI topics MUST start with a leading slash `/`. Implementations MUST NOT accept or publish to topics lacking the leading slash.
 
 ## 10. Schemas
 
@@ -361,4 +349,22 @@ The cloud model, when stored as a local JSON file, MUST use the 3-level nesting 
   "required": ["version", "timestamp", "cloud"]
 }
 ```
+
+## 11. Local Repository Structure (Standardized)
+
+To ensure that tools from different implementations (e.g., a Trigger from Impl A and an Orchestrator from Impl B) can interoperate within the same local workspace, the following directory and file structures are standardized.
+
+### 11.1. Blob Repository
+Blobs MUST be stored in a directory structure following this pattern:
+`{base_dir}/{make}/{model}/{subsystem}/{version}/`
+
+Each version directory MUST contain:
+- `bundle.bin`: The binary blob content.
+- `sha256.txt`: A text file containing the hex-encoded SHA-256 hash of `bundle.bin`.
+
+### 11.2. Model Repository
+The cloud model, when stored as a local JSON file, MUST use the 3-level nesting defined in Section 10.4 (Registries -> Devices -> Subsystems).
+- **Format:** RFC 3339 minimal precision (e.g., `2026-05-01T22:32:17Z`).
+- **Timezone:** UTC required.
+- **Precision:** No microseconds.
 

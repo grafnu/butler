@@ -53,7 +53,7 @@ The system utilizes a message-based transport (MQTT or PubSub) as defined in `uu
 - **Access:** Direct access restricted to `mocket`, `register`, and `trigger`.
 - **Primary Key:** Composite of `registry_id` and `device_id`.
 - **Internal Storage:** MUST mirror the nested `registries` hierarchy (Section 5.1 of `uufi.md`).
-- **Cloud Interface:** Model representation on the bus MUST use the nested structure: `{"registries": { "reg_id": { "devices": { "dev_id": { "target_version": "...", "current_version": "...", "status": "...", "lkg_version": "..." } } } } }` (wrapped in `cloud` subfolder).
+- **Cloud Interface:** Model representation on the bus MUST use the nested structure: `{"registries": { "reg_id": { "devices": { "dev_id": { "subsystem_id": { "target_version": "...", "current_version": "...", "status": "...", "lkg_version": "..." } } } } } }` (wrapped in `cloud` subfolder).
 
 ### 2.3 Butler Orchestrator (Control Logic)
 - **State Machine:**
