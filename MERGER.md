@@ -75,3 +75,6 @@ Run the setup and tests multiple times, once for each impl N as
 `butler` connecting to N-1 as the `verifier`. If there are N
 implementations then there should be exactly N test runs,
 determinstically ordered. A should verify B, B verify C, etc...
+
+Run the tests all in parallel at the same time, using different
+prefixes to disamiguate the working sets.
