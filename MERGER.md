@@ -80,4 +80,7 @@ implementations then there should be exactly N*(N-1) test runs.
 Every combination of `butler` & `verifier` should be tested.
 
 Run the tests all in parallel at the same time, using different
-prefixes to disamiguate the working sets.
+prefixes to disamiguate the working sets. All trial runs should
+take about the same amount of time to complete, so if some runs
+are taking more than twice as long as the passing runs, then it
+should be aborted and considered a failure.
