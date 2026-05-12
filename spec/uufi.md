@@ -178,13 +178,13 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 
 ### 9.1. Payload Structure
 - **Nesting:** The `payload` object MUST contain exactly one top-level key matching the `subFolder` name.
-- **Subsystem Nesting:** For `update` config and state payloads, data SHOULD be nested within a subsystem-id key (e.g., `main`). Implementations SHOULD handle unnested (flat) payloads for single-subsystem devices for backward compatibility.
+- **Subsystem Nesting:** For `update` config and state payloads, data MUST be nested within a subsystem-id key (e.g., `main`) to support multi-subsystem devices. Implementations MUST handle both nested and unnested (flat) payloads for backward compatibility and robust interoperability.
 - **Mandatory Fields:** `timestamp` and `version` MUST be at the root of the `payload` object.
 
 ### 9.2. Timestamp Format
 - **Standard:** RFC 3339 minimal precision (e.g., `2026-05-01T22:32:17Z`).
 - **Timezone:** UTC required (`Z` suffix).
-- **Precision:** No microseconds or fractional seconds allowed for System-originated messages. Clients MAY include fractional seconds, but Systems MUST handle them gracefully.
+- **Precision:** System-originated messages SHOULD NOT include fractional seconds. Clients MAY include fractional seconds (microseconds), and all implementations MUST handle them gracefully by ignoring extra precision if necessary.
 
 ### 9.3. Redundancy Rule
 - **MQTT:** Implementations MUST reject messages where envelope fields duplicate topic-encoded data.
