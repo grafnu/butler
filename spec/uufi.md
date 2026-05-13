@@ -383,3 +383,31 @@ To ensure robust interoperability, the System Orchestrator (Butler) MUST adhere 
 - **Model Update Robustness:** Upon receiving a device report indicating a successful update (status `success` or `quiescent`) where the `current_version` differs from the known model state, the Orchestrator SHOULD update the cloud model's `current_version`. Relying solely on the transient `success` state is discouraged; any terminal state reporting the new version SHOULD trigger a model synchronization.
 - **Identity Differentiators:** Implementations SHOULD NOT detect or reject identities with multiple components (e.g., `user.toolname`) as "manual differentiators" if they are part of a standardized naming scheme for tool identification.
 
+## 12. Standard Tooling CLI Interface
+
+To support interoperability testing and shared orchestration scripts, the following command-line interfaces are standardized for the core tools. All implementations MUST support these positional argument patterns:
+
+### 12.1. bin/setup
+- **Usage:** `bin/setup <conn_spec>`
+- **Behavior:** Ensures the local environment (e.g., MQTT broker) is ready for the given connection specification.
+
+### 12.2. bin/register
+- **Usage:** `bin/register <registry_id> <device_id> [make] [model]`
+- **Behavior:** Registers a device in the local model and optionally publishes the updated model to the system.
+
+### 12.3. bin/mocket
+- **Usage:** `bin/mocket <conn_spec> <registry_id> <device_id>`
+- **Behavior:** Starts a mock device client that responds to UUFI handshakes and update configurations.
+
+### 12.4. bin/butler
+- **Usage:** `bin/butler <conn_spec>`
+- **Behavior:** Starts the system orchestrator (Butler).
+
+### 12.5. bin/verifier
+- **Usage:** `bin/verifier <conn_spec>`
+- **Behavior:** Starts the independent verification tool.
+
+### 12.6. bin/trigger
+- **Usage:** `bin/trigger <registry_id> <device_id> <version> <blob_path>`
+- **Behavior:** Initiates an update process by updating the target version in the model and notifying the system.
+
