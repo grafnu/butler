@@ -180,6 +180,7 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 - **Nesting:** The `payload` object MUST contain exactly one top-level key matching the `subFolder` name.
 - **Subsystem Nesting:** For `update` config and state payloads, data MUST be nested within a subsystem-id key (e.g., `main`) to support multi-subsystem devices. Implementations MUST handle both nested and unnested (flat) payloads for backward compatibility and robust interoperability.
 - **Mandatory Fields:** `timestamp` and `version` MUST be at the root of the `payload` object.
+- **Metadata:** The `make` and `model` fields are mandatory for all `update` subfolder payloads (state and config) within the subsystem nesting. These fields are essential for the Butler (System) to locate the correct blob in the repository (Section 11.1) and MUST be included in every subsystem entry subject to reconciliation.
 
 ### 9.2. Timestamp Format
 - **Standard:** RFC 3339 minimal precision (e.g., `2026-05-01T22:32:17Z`).
