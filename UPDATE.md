@@ -16,6 +16,12 @@ Only execute this if the `butler` directory already exists (and has code in it).
 The files in `spec/` should be considered immutable and not changed. All files
 not explicitly indicated to be functional work zones should be immutable.
 
+At the end of the run, the _only_ changes should be to code in the `butler/` and
+`bin/` directories. There should NOT be any other stray files or changes made.
+It is OK to have files that are ignored by `.gitignore` (but it is NOT OK to change
+`.gitignore` itself). If there are no code changes made then there should be an
+"empty" commit that just has a log message that says "Update process made no changes".
+
 Do NOT check out any other branch implementations, assume that they do not exist
 or are off limits.
 
