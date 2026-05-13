@@ -204,8 +204,8 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
   "type": "object",
   "properties": {
     "projectId": { "type": "string", "description": "GCP Project ID" },
-    "deviceRegistryId": { "type": "string", "description": "Managed Registry ID" },
-    "deviceId": { "type": "string", "description": "Target/Source Device ID" },
+    "deviceRegistryId": { "type": "string", "description": "Managed Registry ID (MUST NOT be used in MQTT)" },
+    "deviceId": { "type": "string", "description": "Target/Source Device ID (MUST NOT be used in MQTT)" },
     "subFolder": { "type": "string", "description": "UDMI subFolder" },
     "subType": { "type": "string", "description": "UDMI subType" },
     "transactionId": { "type": "string", "description": "Tracking identifier" },
