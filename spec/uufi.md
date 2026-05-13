@@ -185,12 +185,14 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 - **Standard:** RFC 3339 minimal precision (e.g., `2026-05-01T22:32:17Z`).
 - **Timezone:** UTC required (`Z` suffix).
 - **Precision:** System-originated messages SHOULD NOT include fractional seconds. Clients MAY include fractional seconds (microseconds), and all implementations MUST handle them gracefully by ignoring extra precision if necessary.
+- **Type Safety:** Mandatory version strings (`current_version`, `target_version`, etc.) MUST NOT be `null`. If a version is unknown, use a placeholder string like `"0.0.0"`.
 
 ### 9.3. Redundancy Rule
 - **MQTT:** Implementations MUST reject messages where envelope fields duplicate topic-encoded data.
 
 ### 9.4. MQTT Topic Formatting
 - **Leading Slash:** For MQTT transport, all UUFI topics MUST start with a leading slash `/`. Implementations MUST NOT accept or publish to topics lacking the leading slash.
+- **Wildcards:** Subscription wildcards (e.g., `/#`) MUST also adhere to the leading slash rule to ensure consistent topic matching across the prefix tree.
 
 ## 10. Schemas
 
@@ -202,8 +204,8 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
   "type": "object",
   "properties": {
     "projectId": { "type": "string", "description": "GCP Project ID" },
-    "deviceRegistryId": { "type": "string", "description": "Managed Registry ID" },
-    "deviceId": { "type": "string", "description": "Target/Source Device ID" },
+    "deviceRegistryId": { "type": "string", "description": "Managed Registry ID (MUST NOT be used in MQTT)" },
+    "deviceId": { "type": "string", "description": "Target/Source Device ID (MUST NOT be used in MQTT)" },
     "subFolder": { "type": "string", "description": "UDMI subFolder" },
     "subType": { "type": "string", "description": "UDMI subType" },
     "transactionId": { "type": "string", "description": "Tracking identifier" },
@@ -330,8 +332,11 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
                             "target_version": { "type": "string" },
                             "current_version": { "type": "string" },
                             "status": { "type": "string" },
-                            "lkg_version": { "type": "string" }
+                            "lkg_version": { "type": "string" },
+                            "make": { "type": "string", "description": "Device manufacturer" },
+                            "model": { "type": "string", "description": "Device model" }
                           }
+
                         }
                       }
                     }
@@ -367,4 +372,5 @@ The cloud model, when stored as a local JSON file, MUST use the 3-level nesting 
 - **Format:** RFC 3339 minimal precision (e.g., `2026-05-01T22:32:17Z`).
 - **Timezone:** UTC required.
 - **Precision:** No microseconds.
+- **Metadata:** The `make` and `model` fields are essential for the Butler (System) to locate the correct blob in the repository (Section 11.1). These fields SHOULD be populated during device registration and included in the model entry for every subsystem subject to reconciliation.
 
