@@ -180,6 +180,7 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 - **Nesting:** The `payload` object MUST contain exactly one top-level key matching the `subFolder` name.
 - **Subsystem Nesting:** For `update` config and state payloads, data MUST be nested within a subsystem-id key (e.g., `main`) to support multi-subsystem devices. Implementations MUST handle both nested and unnested (flat) payloads for backward compatibility and robust interoperability.
 - **Mandatory Fields:** `timestamp` and `version` MUST be at the root of the `payload` object.
+- **Metadata:** The `make` and `model` fields are mandatory for all `update` subfolder payloads (state and config) within the subsystem nesting. These fields are essential for the Butler (System) to locate the correct blob in the repository (Section 11.1) and MUST be included in every subsystem entry subject to reconciliation.
 
 ### 9.2. Timestamp Format
 - **Standard:** RFC 3339 minimal precision (e.g., `2026-05-01T22:32:17Z`).
@@ -381,4 +382,32 @@ To ensure robust interoperability, the System Orchestrator (Butler) MUST adhere 
 - **Principal Filtering Exception:** While Section 2.2 defines principal filtering for general messages, the Orchestrator MUST NOT filter out `state` messages from devices based on the envelope `principal`. Device reports correctly use the device's own identity (e.g., `user.mocket`), and the Orchestrator MUST process them to maintain system state.
 - **Model Update Robustness:** Upon receiving a device report indicating a successful update (status `success` or `quiescent`) where the `current_version` differs from the known model state, the Orchestrator SHOULD update the cloud model's `current_version`. Relying solely on the transient `success` state is discouraged; any terminal state reporting the new version SHOULD trigger a model synchronization.
 - **Identity Differentiators:** Implementations SHOULD NOT detect or reject identities with multiple components (e.g., `user.toolname`) as "manual differentiators" if they are part of a standardized naming scheme for tool identification.
+
+## 12. Standard Tooling CLI Interface
+
+To support interoperability testing and shared orchestration scripts, the following command-line interfaces are standardized for the core tools. All implementations MUST support these positional argument patterns:
+
+### 12.1. bin/setup
+- **Usage:** `bin/setup <conn_spec>`
+- **Behavior:** Ensures the local environment (e.g., MQTT broker) is ready for the given connection specification.
+
+### 12.2. bin/register
+- **Usage:** `bin/register <registry_id> <device_id> [make] [model]`
+- **Behavior:** Registers a device in the local model and optionally publishes the updated model to the system.
+
+### 12.3. bin/mocket
+- **Usage:** `bin/mocket <conn_spec> <registry_id> <device_id>`
+- **Behavior:** Starts a mock device client that responds to UUFI handshakes and update configurations.
+
+### 12.4. bin/butler
+- **Usage:** `bin/butler <conn_spec>`
+- **Behavior:** Starts the system orchestrator (Butler).
+
+### 12.5. bin/verifier
+- **Usage:** `bin/verifier <conn_spec>`
+- **Behavior:** Starts the independent verification tool.
+
+### 12.6. bin/trigger
+- **Usage:** `bin/trigger <registry_id> <device_id> <version> <blob_path>`
+- **Behavior:** Initiates an update process by updating the target version in the model and notifying the system.
 
