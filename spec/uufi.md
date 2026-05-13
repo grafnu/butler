@@ -374,3 +374,11 @@ The cloud model, when stored as a local JSON file, MUST use the 3-level nesting 
 - **Precision:** No microseconds.
 - **Metadata:** The `make` and `model` fields are essential for the Butler (System) to locate the correct blob in the repository (Section 11.1). These fields SHOULD be populated during device registration and included in the model entry for every subsystem subject to reconciliation.
 
+### 11.3. Orchestrator Behavior
+
+To ensure robust interoperability, the System Orchestrator (Butler) MUST adhere to the following behavioral requirements:
+
+- **Principal Filtering Exception:** While Section 2.2 defines principal filtering for general messages, the Orchestrator MUST NOT filter out `state` messages from devices based on the envelope `principal`. Device reports correctly use the device's own identity (e.g., `user.mocket`), and the Orchestrator MUST process them to maintain system state.
+- **Model Update Robustness:** Upon receiving a device report indicating a successful update (status `success` or `quiescent`) where the `current_version` differs from the known model state, the Orchestrator SHOULD update the cloud model's `current_version`. Relying solely on the transient `success` state is discouraged; any terminal state reporting the new version SHOULD trigger a model synchronization.
+- **Identity Differentiators:** Implementations SHOULD NOT detect or reject identities with multiple components (e.g., `user.toolname`) as "manual differentiators" if they are part of a standardized naming scheme for tool identification.
+
