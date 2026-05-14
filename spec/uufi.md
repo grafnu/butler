@@ -373,7 +373,7 @@ The cloud model, when stored as a local JSON file, MUST use the 3-level nesting 
 - **Format:** RFC 3339 minimal precision (e.g., `2026-05-01T22:32:17Z`).
 - **Timezone:** UTC required.
 - **Precision:** No microseconds.
-- **Metadata:** The `make` and `model` fields are essential for the Butler (System) to locate the correct blob in the repository (Section 11.1). These fields SHOULD be populated during device registration and included in the model entry for every subsystem subject to reconciliation.
+- **Metadata:** The `make` and `model` fields are mandatory for the Butler (System) to locate the correct blob in the repository (Section 11.1). These fields MUST be populated during device registration and MUST be included in the model entry for every subsystem subject to reconciliation.
 
 ### 11.3. Orchestrator Behavior
 
