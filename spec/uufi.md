@@ -36,8 +36,8 @@ Format: `scheme://[user@]host[:port][/path]`
 - **Host/Port:** Standard network mapping.
 - **Topic Structure:** `[/{prefix}]/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
   - The `prefix` is the optional path component of the connection string.
-- **Prefix Isolation:** The `prefix` MUST be used to isolate different environments sharing the same broker. If provided, it MUST be the first segment of the topic path. Implementations MUST NOT omit the prefix if provided in the connection string.
-- **Topic Isolation:** The `principal` identifier MUST be included in the JSON envelope.
+- **Prefix Isolation:** The `prefix` MUST be used to isolate different environments sharing the same broker. If provided, it MUST be the leading part of the topic path (e.g. matching all segments of the path provided in the connection string). Implementations MUST support multi-segment prefixes and MUST NOT omit the prefix if provided in the connection string.
+- **Identity Isolation:** The `principal` identifier MUST be included in the JSON envelope to distinguish between different clients within the same environment.
 - **Cloud Model Service:**
   - **Discovery:** Clients publish a `query/cloud` message to `[/{prefix}]/uufi/c/query/cloud`.
   - **Response:** System publishes the model to `[/{prefix}]/uufi/c/config/cloud`.
@@ -370,16 +370,17 @@ Each version directory MUST contain:
 - `sha256.txt`: A text file containing the hex-encoded SHA-256 hash of `bundle.bin`.
 
 ### 11.2. Model Repository
-The cloud model, when stored as a local JSON file, MUST use the 3-level nesting defined in Section 10.4 (Registries -> Devices -> Subsystems).
+The cloud model, when stored as a local JSON file, MUST follow the full schema defined in Section 10.4, including the top-level `cloud` wrapper and the 3-level nesting within it (Registries -> Devices -> Subsystems).
 - **Format:** RFC 3339 minimal precision (e.g., `2026-05-01T22:32:17Z`).
 - **Timezone:** UTC required.
 - **Precision:** No microseconds.
 - **Metadata:** The `make` and `model` fields are mandatory for the Butler (System) to locate the correct blob in the repository (Section 11.1). These fields MUST be populated during device registration and MUST be included in the model entry for every subsystem subject to reconciliation.
-- **Persistence:** The System (Butler) MUST update the local model file (if configured via `BUTLER_MODEL_FILE`) whenever the cloud model state changes (e.g., upon successful device update or model update command).
+- **Persistence:** The System (Butler) MUST update the local model file (if configured via `BUTLER_MODEL_FILE`) whenever the cloud model state changes (e.g., upon successful device update or model update command). Implementations SHOULD handle legacy formats (e.g. without the `cloud` wrapper) gracefully during migration but MUST write the compliant format.
 
 ### 11.3. Orchestrator Behavior
 ...
-- **Model Update Robustness:** Upon receiving a device report indicating a successful update (status `success` or `quiescent`) where the `current_version` differs from the known model state, the Orchestrator SHOULD update the cloud model's `current_version`. Relying solely on the transient `success` state is discouraged; any terminal state reporting the new version SHOULD trigger a model synchronization.
+- **Model Update Robustness:** Upon receiving a device report indicating a successful update (status `success` or `quiescent`) where the `current_version` differs from the known model state, the Orchestrator MUST update the cloud model's `current_version` along with the `lkg_version`. Relying solely on the transient `success` state is discouraged; any terminal state reporting the new version SHOULD trigger a model synchronization.
+- **Metadata Ingestion:** Orchestrators MUST ingest and cache `make` and `model` information from all available sources, including initial registration, cloud model updates, and device state reports. Failure to maintain accurate metadata for a known device is a protocol robustness violation.
 - **CLI Tool Robustness:** All CLI tools MUST handle optional arguments gracefully. For `bin/register` and `bin/trigger`, the `registry_id` should default to the `BUTLER_REGISTRY_ID` environment variable or `"default"`. Tools MUST NOT fail if extra/unknown arguments (like `--conn_spec`) are provided.
 - **Identity Differentiators:** Implementations SHOULD NOT detect or reject identities with multiple components (e.g., `user.toolname`) as "manual differentiators" if they are part of a standardized naming scheme for tool identification.
 
