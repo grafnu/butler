@@ -36,6 +36,7 @@ Format: `scheme://[user@]host[:port][/path]`
 - **Host/Port:** Standard network mapping.
 - **Topic Structure:** `[/{prefix}]/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
   - The `prefix` is the optional path component of the connection string.
+- **Prefix Isolation:** The `prefix` MUST be used to isolate different environments sharing the same broker. If provided, it MUST be the first segment of the topic path. Implementations MUST NOT omit the prefix if provided in the connection string.
 - **Topic Isolation:** The `principal` identifier MUST be included in the JSON envelope.
 - **Cloud Model Service:**
   - **Discovery:** Clients publish a `query/cloud` message to `[/{prefix}]/uufi/c/query/cloud`.
@@ -374,13 +375,12 @@ The cloud model, when stored as a local JSON file, MUST use the 3-level nesting 
 - **Timezone:** UTC required.
 - **Precision:** No microseconds.
 - **Metadata:** The `make` and `model` fields are mandatory for the Butler (System) to locate the correct blob in the repository (Section 11.1). These fields MUST be populated during device registration and MUST be included in the model entry for every subsystem subject to reconciliation.
+- **Persistence:** The System (Butler) MUST update the local model file (if configured via `BUTLER_MODEL_FILE`) whenever the cloud model state changes (e.g., upon successful device update or model update command).
 
 ### 11.3. Orchestrator Behavior
-
-To ensure robust interoperability, the System Orchestrator (Butler) MUST adhere to the following behavioral requirements:
-
-- **Principal Filtering Exception:** While Section 2.2 defines principal filtering for general messages, the Orchestrator MUST NOT filter out `state` messages from devices based on the envelope `principal`. Device reports correctly use the device's own identity (e.g., `user.mocket`), and the Orchestrator MUST process them to maintain system state.
+...
 - **Model Update Robustness:** Upon receiving a device report indicating a successful update (status `success` or `quiescent`) where the `current_version` differs from the known model state, the Orchestrator SHOULD update the cloud model's `current_version`. Relying solely on the transient `success` state is discouraged; any terminal state reporting the new version SHOULD trigger a model synchronization.
+- **CLI Tool Robustness:** All CLI tools MUST handle optional arguments gracefully. For `bin/register` and `bin/trigger`, the `registry_id` should default to the `BUTLER_REGISTRY_ID` environment variable or `"default"`. Tools MUST NOT fail if extra/unknown arguments (like `--conn_spec`) are provided.
 - **Identity Differentiators:** Implementations SHOULD NOT detect or reject identities with multiple components (e.g., `user.toolname`) as "manual differentiators" if they are part of a standardized naming scheme for tool identification.
 
 ## 12. Standard Tooling CLI Interface
@@ -392,8 +392,8 @@ To support interoperability testing and shared orchestration scripts, the follow
 - **Behavior:** Ensures the local environment (e.g., MQTT broker) is ready for the given connection specification.
 
 ### 12.2. bin/register
-- **Usage:** `bin/register <registry_id> <device_id> [make] [model]`
-- **Behavior:** Registers a device in the local model and optionally publishes the updated model to the system.
+- **Usage:** `bin/register [registry_id] <device_id> [make] [model]`
+- **Behavior:** Registers a device in the local model. If only one argument is provided, it MUST be treated as the `device_id`, with `registry_id` defaulting to `BUTLER_REGISTRY_ID` or `"default"`.
 
 ### 12.3. bin/mocket
 - **Usage:** `bin/mocket <conn_spec> <registry_id> <device_id>`
@@ -408,8 +408,8 @@ To support interoperability testing and shared orchestration scripts, the follow
 - **Behavior:** Starts the independent verification tool.
 
 ### 12.6. bin/trigger
-- **Usage:** `bin/trigger <registry_id> <device_id> <version> <blob_path>`
-- **Behavior:** Initiates an update process by updating the target version in the model and notifying the system.
+- **Usage:** `bin/trigger [registry_id] <device_id> <version> <blob_path>`
+- **Behavior:** Initiates an update process. Similar to `register`, it MUST support optional `registry_id`.
 
 ## 13. Standard Configuration Environment Variables
 
