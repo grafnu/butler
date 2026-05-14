@@ -62,10 +62,10 @@ The system utilizes a message-based transport (MQTT or PubSub) as defined in `uu
   - `pending`: Update in progress.
 - **Triggering:** Triggered by `mocket` status reports. Null `current_version` is treated as an empty string.
 - **Settling Time:** Minimum 5s delay after state changes before re-evaluation.
-- **Timeout:** 60s window for `pending` state transitions.
+- **Timeout:** 60s window for `pending` state transitions (respects `BUTLER_TIMEOUT`).
 - **Handshake:** MUST complete UUFI handshake within 60s or Fail-fast.
-- **Rollback:** On critical failure, revert `target_version` to `lkg_version` via `mocket`.
-- **LKG Management:** Butler MUST persist the `lkg_version` reported by the device.
+- **Rollback:** On critical failure, revert `target_version` to `lkg_version`.
+- **LKG Management:** Butler MUST maintain the Last Known Good (LKG) version. Upon successful update (status `success` or `quiescent` with new version), the Orchestrator MUST update the `lkg_version` in the cloud model.
 - **Discovery:** Dynamically discover registries/devices via `[/{prefix}]/uufi/c/...` messages.
 
 ### 2.4 Device Conduit (Client-side)
