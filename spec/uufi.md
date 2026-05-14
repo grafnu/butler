@@ -394,7 +394,7 @@ To support interoperability testing and shared orchestration scripts, the follow
 
 ### 12.2. bin/register
 - **Usage:** `bin/register [registry_id] <device_id> [make] [model]`
-- **Behavior:** Registers a device in the local model. If only one argument is provided, it MUST be treated as the `device_id`, with `registry_id` defaulting to `BUTLER_REGISTRY_ID` or `"default"`.
+- **Behavior:** Registers a device in the local model. If only one argument is provided, it MUST be treated as the `device_id`, with `registry_id` defaulting to `BUTLER_REGISTRY_ID` or `"default"`. If `make` or `model` are not provided, implementations SHOULD use `"default"` or `"unknown"` as placeholder values to ensure metadata consistency as required by Section 11.2.
 
 ### 12.3. bin/mocket
 - **Usage:** `bin/mocket <conn_spec> <registry_id> <device_id>`
