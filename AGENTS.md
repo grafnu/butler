@@ -30,8 +30,8 @@ All functional work and output MUST be contained within:
 * bin/: Operational executables.
 * butler/: Core Python implementation logic.
 * README.md: System overview and documentation.
-* test_summary.txt: Verification and testing results.
 * impl/: Cross-implementation testing workspace.
+* test_summary.txt: Results from MERGE tests.
 * tmp/: Temporary workspace (ephemeral).
 * testing/: Test assets and environment.
 * venv/: Python virtual environment.
