@@ -108,10 +108,8 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 | Config Update | `config` | *varies* | Publish |
 | State Event | `state` | *varies* | Receive |
 | Telemetry | `events` | `pointset` | Receive |
-| Discovery | events | discovery | Receive |
-| Validation Event | events | validation | Receive |
-| Model Query | query | cloud | Publish |
-
+| Discovery | `events` | `discovery` | Receive |
+| Model Query | `query` | `cloud` | Publish |
 | Model Update | `model` | `cloud` | Publish |
 | Model Reply | `config` | `cloud` | Receive |
 | Update Config | `config` | `update` | Publish |
@@ -377,7 +375,7 @@ The cloud model, when stored as a local JSON file, MUST follow the full schema d
 - **Timezone:** UTC required.
 - **Precision:** No microseconds.
 - **Metadata:** The `make` and `model` fields are mandatory for the Butler (System) to locate the correct blob in the repository (Section 11.1). These fields MUST be populated during device registration and MUST be included in the model entry for every subsystem subject to reconciliation.
-- **Persistence:** The System (Butler) MUST update the local model file (if configured via `BUTLER_MODEL_FILE`) whenever the cloud model state changes (e.g., upon successful device update or model update command). Implementations SHOULD handle legacy formats (e.g. without the `cloud` wrapper) gracefully during migration but MUST write the compliant format. All system tools and test utilities reading the model file directly MUST account for this standardized structure.
+- **Persistence:** The System (Butler) MUST update the local model file (if configured via `BUTLER_MODEL_FILE`) whenever the cloud model state changes (e.g., upon successful device update or model update command). Implementations SHOULD handle legacy formats (e.g. without the `cloud` wrapper) gracefully during migration but MUST write the compliant format.
 
 ### 11.3. Orchestrator Behavior
 ...
@@ -396,7 +394,7 @@ To support interoperability testing and shared orchestration scripts, the follow
 
 ### 12.2. bin/register
 - **Usage:** `bin/register [registry_id] <device_id> [make] [model]`
-- **Behavior:** Registers a device in the local model. If only one argument is provided, it MUST be treated as the `device_id`, with `registry_id` defaulting to `BUTLER_REGISTRY_ID` or `"default"`. If `make` or `model` are not provided, implementations SHOULD use `"default"` or `"unknown"` as placeholder values to ensure metadata consistency as required by Section 11.2.
+- **Behavior:** Registers a device in the local model. If only one argument is provided, it MUST be treated as the `device_id`, with `registry_id` defaulting to `BUTLER_REGISTRY_ID` or `"default"`.
 
 ### 12.3. bin/mocket
 - **Usage:** `bin/mocket <conn_spec> <registry_id> <device_id>`
