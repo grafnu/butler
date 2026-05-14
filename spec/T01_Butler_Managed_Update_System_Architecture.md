@@ -71,6 +71,7 @@ The system utilizes a message-based transport (MQTT or PubSub) as defined in `uu
 ### 2.4 Device Conduit (Client-side)
 - **Reporting:** Periodically publish `current_version`, `status`, and `lkg_version`.
 - **Lifecycle:** `quiescent` -> `pending` (download/verify) -> `success` or `failure`.
+- **Transitions:** Transitions to `success` or `failure` MUST only occur from the `pending` state. A direct transition from `quiescent` to `success` or `failure` is a protocol violation.
 
 ## 3. Operational Sequences
 
