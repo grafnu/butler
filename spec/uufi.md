@@ -108,8 +108,10 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 | Config Update | `config` | *varies* | Publish |
 | State Event | `state` | *varies* | Receive |
 | Telemetry | `events` | `pointset` | Receive |
-| Discovery | `events` | `discovery` | Receive |
-| Model Query | `query` | `cloud` | Publish |
+| Discovery | events | discovery | Receive |
+| Validation Event | events | validation | Receive |
+| Model Query | query | cloud | Publish |
+
 | Model Update | `model` | `cloud` | Publish |
 | Model Reply | `config` | `cloud` | Receive |
 | Update Config | `config` | `update` | Publish |
