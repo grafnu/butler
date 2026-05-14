@@ -36,7 +36,7 @@ Format: `scheme://[user@]host[:port][/path]`
 - **Host/Port:** Standard network mapping.
 - **Topic Structure:** `[/{prefix}]/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
   - The `prefix` is the optional path component of the connection string.
-- **Prefix Isolation:** The `prefix` MUST be used to isolate different environments sharing the same broker. If provided, it MUST be the first segment of the topic path. Implementations MUST NOT omit the prefix if provided in the connection string.
+- **Prefix Isolation:** The `prefix` MUST be used to isolate different environments sharing the same broker. If provided, it MUST be the leading part of the topic path (e.g. matching all segments of the path provided in the connection string). Implementations MUST support multi-segment prefixes and MUST NOT omit the prefix if provided in the connection string.
 - **Identity Isolation:** The `principal` identifier MUST be included in the JSON envelope to distinguish between different clients within the same environment.
 - **Cloud Model Service:**
   - **Discovery:** Clients publish a `query/cloud` message to `[/{prefix}]/uufi/c/query/cloud`.
@@ -370,12 +370,12 @@ Each version directory MUST contain:
 - `sha256.txt`: A text file containing the hex-encoded SHA-256 hash of `bundle.bin`.
 
 ### 11.2. Model Repository
-The cloud model, when stored as a local JSON file, MUST use the 3-level nesting defined in Section 10.4 (Registries -> Devices -> Subsystems).
+The cloud model, when stored as a local JSON file, MUST follow the full schema defined in Section 10.4, including the top-level `cloud` wrapper and the 3-level nesting within it (Registries -> Devices -> Subsystems).
 - **Format:** RFC 3339 minimal precision (e.g., `2026-05-01T22:32:17Z`).
 - **Timezone:** UTC required.
 - **Precision:** No microseconds.
 - **Metadata:** The `make` and `model` fields are mandatory for the Butler (System) to locate the correct blob in the repository (Section 11.1). These fields MUST be populated during device registration and MUST be included in the model entry for every subsystem subject to reconciliation.
-- **Persistence:** The System (Butler) MUST update the local model file (if configured via `BUTLER_MODEL_FILE`) whenever the cloud model state changes (e.g., upon successful device update or model update command).
+- **Persistence:** The System (Butler) MUST update the local model file (if configured via `BUTLER_MODEL_FILE`) whenever the cloud model state changes (e.g., upon successful device update or model update command). Implementations SHOULD handle legacy formats (e.g. without the `cloud` wrapper) gracefully during migration but MUST write the compliant format.
 
 ### 11.3. Orchestrator Behavior
 ...
