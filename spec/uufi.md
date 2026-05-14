@@ -375,7 +375,7 @@ The cloud model, when stored as a local JSON file, MUST follow the full schema d
 - **Timezone:** UTC required.
 - **Precision:** No microseconds.
 - **Metadata:** The `make` and `model` fields are mandatory for the Butler (System) to locate the correct blob in the repository (Section 11.1). These fields MUST be populated during device registration and MUST be included in the model entry for every subsystem subject to reconciliation.
-- **Persistence:** The System (Butler) MUST update the local model file (if configured via `BUTLER_MODEL_FILE`) whenever the cloud model state changes (e.g., upon successful device update or model update command). Implementations SHOULD handle legacy formats (e.g. without the `cloud` wrapper) gracefully during migration but MUST write the compliant format.
+- **Persistence:** The System (Butler) MUST update the local model file (if configured via `BUTLER_MODEL_FILE`) whenever the cloud model state changes (e.g., upon successful device update or model update command). Implementations SHOULD handle legacy formats (e.g. without the `cloud` wrapper) gracefully during migration but MUST write the compliant format. All system tools and test utilities reading the model file directly MUST account for this standardized structure.
 
 ### 11.3. Orchestrator Behavior
 ...
