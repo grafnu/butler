@@ -411,3 +411,13 @@ To support interoperability testing and shared orchestration scripts, the follow
 - **Usage:** `bin/trigger <registry_id> <device_id> <version> <blob_path>`
 - **Behavior:** Initiates an update process by updating the target version in the model and notifying the system.
 
+## 13. Standard Configuration Environment Variables
+
+To ensure interoperability between tools from different implementations (e.g., an Orchestrator from Impl A reading a model file created by a Register tool from Impl B), the following environment variables are standardized. All implementations MUST respect these variables if they support the corresponding functionality.
+
+- **`BUTLER_CONN_SPEC`**: The default connection specification URL (e.g., `mqtt://localhost:1883`).
+- **`BUTLER_MODEL_FILE`**: The path to the local JSON file representing the cloud model (default: `testing/model.json`).
+- **`BUTLER_BLOBS_DIR`**: The base directory for the blob repository (default: `testing/blobs`).
+- **`BUTLER_TIMEOUT`**: The timeout in seconds for the orchestrator to wait for a device to progress from the `pending` state before triggering a rollback (default: `60`).
+- **`BUTLER_REGISTRY_ID`**: The default registry ID to use when not specified (default: `default`).
+
