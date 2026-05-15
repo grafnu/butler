@@ -53,12 +53,12 @@ Handshake is **Client-initiated**. The **System MUST NOT initiate a handshake** 
 
 ### Step 1: State Declaration
 The Client publishes a UDMI `state` message to `/uufi/c/state/udmi`.
-- **Payload:** Must include `udmi.setup` (see Schema 10.2).
+- **Payload:** Must include `udmi.setup` (see Appendix A.2).
 - **Addressing:** Registry-less topic. `source` in envelope contains Client identity.
 
 ### Step 2: Configuration Confirmation
 The System publishes a UDMI `config` message to `/uufi/c/config/udmi`.
-- **Payload:** Must include `udmi.setup` and `udmi.reply` (see Schema 10.3).
+- **Payload:** Must include `udmi.setup` and `udmi.reply` (see Appendix A.3).
 - **Addressing:** Envelope `principal` MUST match Client's identity. For handshake replies, the System MUST use the `principal` or `source` from the received state message to ensure the reply reaches the correct client. If the received message has a `principal`, it SHOULD be used; otherwise, the `source` SHOULD be used as a fallback.
 
 **Retries:** The Client SHOULD periodically republish the Step 1 state message (e.g., every 5 seconds) if a valid Step 2 confirmation has not been received, until the 60-second timeout.
@@ -125,9 +125,108 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 | Update Config | `config` | `update` | Publish |
 | Update State | `state` | `update` | Receive |
 
-## 7. Examples
+## 7. Reliability
 
-### 7.1. Handshake (PubSub)
+### MQTT QoS
+- **Requirement:** QoS 1 (At Least Once) for all state and configuration messages.
+
+### Idempotency
+- **Nonce:** MUST use an 8-digit hex nonce for message identification.
+- **Deduplication:** Track nonces for 5 minutes.
+
+## 8. Payload and Formatting Rules
+
+### 8.1. Payload Structure
+- **Nesting:** The `payload` object MUST contain exactly one top-level key matching the `subFolder` name.
+- **Subsystem Nesting:** For `update` config and state payloads, data MUST be nested within a subsystem-id key (e.g., `main`) to support multi-subsystem devices. Implementations MUST handle both nested and unnested (flat) payloads for backward compatibility and robust interoperability.
+- **Mandatory Fields:** `timestamp` and `version` MUST be at the root of the `payload` object.
+- **Metadata:** The `make` and `model` fields are mandatory for all `update` subfolder payloads (state and config) within the subsystem nesting. These fields are essential for the Butler (System) to locate the correct blob in the repository (Section 9.1) and MUST be included in every subsystem entry subject to reconciliation.
+- **Update Config URL:** The `url` field in an `update` config payload MUST be a valid URI. Implementations MUST support the `file://` scheme for local file references. When a `file://` URI is provided, the recipient MUST strip the scheme and any leading slashes as appropriate for the local operating system to resolve the absolute or relative path.
+
+### 8.2. Timestamp Format
+- **Format:** RFC 3339 minimal precision (e.g., `2026-05-01T22:32:17Z`).
+- **Timezone:** UTC required (`Z` suffix).
+- **Precision:** System-originated messages SHOULD NOT include fractional seconds. Clients MAY include fractional seconds (microseconds), and all implementations MUST handle them gracefully by ignoring extra precision if necessary.
+
+### 8.3. Type Safety and Fallbacks
+- **Type Safety:** Mandatory version strings (`current_version`, `target_version`, etc.) MUST NOT be `null`. If a version is unknown, use a placeholder string like `"0.0.0"`. Implementations MUST treat `"0.0.0"` as an uninitialized or lower-precedence state; a non-zero version string MUST NEVER be overwritten by `"0.0.0"` during automated synchronization.
+- **Metadata Fallbacks:** For mandatory string fields like `make` and `model`, if the value is unknown or uninitialized, implementations SHOULD use `"unknown"` as a standard fallback value.
+
+### 8.4. MQTT Specific Rules
+- **Redundancy Rule:** Implementations MUST reject messages where envelope fields duplicate topic-encoded data.
+- **Leading Slash:** For MQTT transport, all UUFI topics MUST start with a leading slash `/`. Implementations MUST NOT accept or publish to topics lacking the leading slash.
+- **Wildcards:** Subscription wildcards (e.g., `/#`) MUST also adhere to the leading slash rule and MUST be scoped to the connection-defined prefix to ensure consistent topic matching across the prefix tree.
+
+## 9. Local Repository Structure (Standardized)
+
+To ensure that tools from different implementations (e.g., a Trigger from Impl A and an Orchestrator from Impl B) can interoperate within the same local workspace, the following directory and file structures are standardized.
+
+### 9.1. Blob Repository
+Blobs MUST be stored in a directory structure following this pattern:
+`{base_dir}/{make}/{model}/{subsystem}/{version}/`
+
+Each version directory MUST contain:
+- `bundle.bin`: The binary blob content.
+- `sha256.txt`: A text file containing the hex-encoded SHA-256 hash of `bundle.bin`.
+
+### 9.2. Model Repository
+The cloud model, when stored as a local JSON file, MUST follow the full schema defined in Appendix A.4, including the top-level `cloud` wrapper and the 3-level nesting within it (Registries -> Devices -> Subsystems).
+- **Persistence:** The System (Butler) MUST update the local model file (if configured via `BUTLER_MODEL_FILE`) whenever the cloud model state changes (e.g., upon successful device update or model update command). Implementations SHOULD handle legacy formats (e.g. without the `cloud` wrapper) gracefully during migration but MUST write the compliant format.
+
+### 9.3. Orchestrator Behavior
+- **LKG Management:** The Orchestrator is the primary authority for the `lkg_version` in the cloud model and SHOULD NOT trust a device-reported `lkg_version` if it conflicts with a previously validated state. Upon receiving a device report indicating a successful update (status `success` or `quiescent`) where the `current_version` differs from the known model state, the Orchestrator MUST update the cloud model's `current_version` along with the `lkg_version`. This promotion ensures that the newly validated version is established as the Last Known Good state for future rollbacks. Device simulators SHOULD similarly update their internal `lkg_version` to match the `current_version` upon successful application of an update.
+- **Model Update Robustness:** Relying solely on the transient `success` state is discouraged; any terminal state reporting the new version SHOULD trigger a model synchronization.
+- **Metadata Ingestion:** Orchestrators MUST ingest and cache `make` and `model` information from all available sources, including initial registration, cloud model updates, and device state reports. Failure to maintain accurate metadata for a known device is a protocol robustness violation. System components MUST NOT reject or skip operations (such as reconciliation) solely because metadata is set to the standard fallback value.
+- **CLI Tool Robustness:** All CLI tools MUST handle optional arguments gracefully. For `bin/register` and `bin/trigger`, the `registry_id` should default to the `BUTLER_REGISTRY_ID` environment variable or `"default"`. Tools MUST NOT fail if extra/unknown arguments are provided. To ensure robust argument parsing across different implementation environments, all tools MUST support the `--conn_spec` flag for explicitly passing the connection specification. Tools that modify the local model repository MUST also publish a corresponding `model/cloud` message to the MQTT transport to ensure active components remain synchronized. These published messages MUST have the `operation` field set to `UPDATE` to trigger synchronization in active System components.
+- **Identity Differentiators:** Implementations SHOULD NOT detect or reject identities with multiple components (e.g., `user.toolname`) as "manual differentiators" if they are part of a standardized naming scheme for tool identification. When performing identity or principal matching, implementations MUST account for these differentiators (e.g., by matching the prefix before the first dot).
+
+## 10. Standard Tooling CLI Interface
+
+To support interoperability testing and shared orchestration scripts, the following command-line interfaces are standardized for the core tools. All implementations MUST support these positional argument patterns:
+
+### 10.1. bin/setup
+- **Usage:** `bin/setup <conn_spec>`
+- **Behavior:** Ensures the local environment (e.g., MQTT broker) is ready for the given connection specification.
+
+### 10.2. bin/register
+- **Usage:** `bin/register [registry_id] <device_id> [make] [model]`
+- **Behavior:** Registers a device in the local model. If only one argument is provided, it MUST be treated as the `device_id`, with `registry_id` defaulting to `BUTLER_REGISTRY_ID` or `"default"`.
+
+### 10.3. bin/mocket
+- **Usage:** `bin/mocket <conn_spec> <registry_id> <device_id>`
+- **Behavior:** Starts a mock device client that responds to UUFI handshakes and update configurations.
+
+### 10.4. bin/butler
+- **Usage:** `bin/butler <conn_spec>`
+- **Behavior:** Starts the system orchestrator (Butler).
+
+### 10.5. bin/verifier
+- **Usage:** `bin/verifier <conn_spec>`
+- **Behavior:** Starts the independent verification tool.
+
+### 10.6. bin/trigger
+- **Usage:** `bin/trigger [registry_id] <device_id> <version> <blob_path>`
+- **Behavior:** Initiates an update process. Similar to `register`, it MUST support optional `registry_id`.
+
+## 11. Standard Configuration Environment Variables
+
+To ensure interoperability between tools from different implementations (e.g., an Orchestrator from Impl A reading a model file created by a Register tool from Impl B), the following environment variables are standardized. All implementations MUST respect these variables if they support the corresponding functionality.
+
+- **`BUTLER_CONN_SPEC`**: The default connection specification URL (e.g., `mqtt://localhost:1883`).
+- **`BUTLER_MODEL_FILE`**: The path to the local JSON file representing the cloud model (default: `testing/model.json`).
+- **`BUTLER_BLOBS_DIR`**: The base directory for the blob repository (default: `testing/blobs`).
+- **`BUTLER_TIMEOUT`**: The timeout in seconds for the orchestrator to wait for a device to progress from the `pending` state before triggering a rollback (default: `60`).
+- **`BUTLER_REGISTRY_ID`**: The default registry ID to use when not specified (default: `default`).
+
+---
+
+# Appendix A: Schemas and Examples
+
+This appendix contains the formal JSON schemas and message examples for the UUFI protocol.
+
+## A.1. Examples
+
+### A.1.1. Handshake (PubSub)
 
 **Attributes:**
 ```json
@@ -155,7 +254,7 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 }
 ```
 
-### 7.2. Pointset Config (MQTT)
+### A.1.2. Pointset Config (MQTT)
 
 **Topic:** `/uufi/r/reg-1/d/dev-1/c/config/pointset`
 
@@ -176,72 +275,7 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 }
 ```
 
-## 8. Reliability
-
-### MQTT QoS
-- **Requirement:** QoS 1 (At Least Once) for all state and configuration messages.
-
-### Idempotency
-- **Nonce:** MUST use an 8-digit hex nonce for message identification.
-- **Deduplication:** Track nonces for 5 minutes.
-### 9.1. Payload Structure
-- **Nesting:** The `payload` object MUST contain exactly one top-level key matching the `subFolder` name.
-- **Subsystem Nesting:** For `update` config and state payloads, data MUST be nested within a subsystem-id key (e.g., `main`) to support multi-subsystem devices. Implementations MUST handle both nested and unnested (flat) payloads for backward compatibility and robust interoperability.
-- **Mandatory Fields:** `timestamp` and `version` MUST be at the root of the `payload` object.
-- **Metadata:** The `make` and `model` fields are mandatory for all `update` subfolder payloads (state and config) within the subsystem nesting. These fields are essential for the Butler (System) to locate the correct blob in the repository (Section 11.1) and MUST be included in every subsystem entry subject to reconciliation.
-- **Update Config URL:** The `url` field in an `update` config payload MUST be a valid URI. Implementations MUST support the `file://` scheme for local file references. When a `file://` URI is provided, the recipient MUST strip the scheme and any leading slashes as appropriate for the local operating system to resolve the absolute or relative path.
-
-### 9.2. Timestamp Format
-...
-### 10.4. Cloud Model Payload
-...
-### 10.5. Update Config Payload
-```json
-{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "UpdateConfigPayload",
-  "type": "object",
-  "properties": {
-    "version": { "type": "string" },
-    "timestamp": { "type": "string", "format": "date-time" },
-    "update": {
-      "type": "object",
-      "patternProperties": {
-        "^[a-zA-Z0-9_-]+$": {
-          "type": "object",
-          "properties": {
-            "version": { "type": "string", "description": "Target version for the subsystem" },
-            "url": { "type": "string", "description": "Location of the update blob" },
-            "sha256": { "type": "string", "description": "Hex-encoded SHA-256 hash of the blob" },
-            "make": { "type": "string" },
-            "model": { "type": "string" }
-          },
-          "required": ["version", "url", "sha256", "make", "model"]
-        }
-      }
-    }
-  },
-  "required": ["version", "timestamp", "update"]
-}
-```
-
-## 11. Local Repository Structure (Standardized)
-
-- **Timezone:** UTC required (`Z` suffix).
-- **Precision:** System-originated messages SHOULD NOT include fractional seconds. Clients MAY include fractional seconds (microseconds), and all implementations MUST handle them gracefully by ignoring extra precision if necessary.
-- **Type Safety:** Mandatory version strings (`current_version`, `target_version`, etc.) MUST NOT be `null`. If a version is unknown, use a placeholder string like `"0.0.0"`. Implementations MUST treat `"0.0.0"` as an uninitialized or lower-precedence state; a non-zero version string MUST NEVER be overwritten by `"0.0.0"` during automated synchronization.
-- **Metadata Fallbacks:** For mandatory string fields like `make` and `model`, if the value is unknown or uninitialized, implementations SHOULD use `"unknown"` as a standard fallback value.
-
-### 9.3. Redundancy Rule
-- **MQTT:** Implementations MUST reject messages where envelope fields duplicate topic-encoded data.
-
-### 9.4. MQTT Topic Formatting
-- **Leading Slash:** For MQTT transport, all UUFI topics MUST start with a leading slash `/`. Implementations MUST NOT accept or publish to topics lacking the leading slash.
-- **Wildcards:** Subscription wildcards (e.g., `/#`) MUST also adhere to the leading slash rule and MUST be scoped to the connection-defined prefix to ensure consistent topic matching across the prefix tree.
-
-## 10. Schemas
-
-### 10.1. UUFI Message Envelope
+## A.2. UUFI Message Envelope Schema
 ```json
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
@@ -272,7 +306,9 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 }
 ```
 
-### 10.2. Handshake State Payload
+## A.3. Handshake Schemas
+
+### A.3.1. Handshake State Payload
 ```json
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
@@ -302,7 +338,7 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 }
 ```
 
-### 10.3. Handshake Config Payload
+### A.3.2. Handshake Config Payload
 ```json
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
@@ -339,7 +375,7 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 }
 ```
 
-### 10.4. Cloud Model Payload
+## A.4. Cloud Model Payload Schema
 ```json
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
@@ -400,68 +436,32 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 }
 ```
 
-## 11. Local Repository Structure (Standardized)
-
-To ensure that tools from different implementations (e.g., a Trigger from Impl A and an Orchestrator from Impl B) can interoperate within the same local workspace, the following directory and file structures are standardized.
-
-### 11.1. Blob Repository
-Blobs MUST be stored in a directory structure following this pattern:
-`{base_dir}/{make}/{model}/{subsystem}/{version}/`
-
-Each version directory MUST contain:
-- `bundle.bin`: The binary blob content.
-- `sha256.txt`: A text file containing the hex-encoded SHA-256 hash of `bundle.bin`.
-
-### 11.2. Model Repository
-The cloud model, when stored as a local JSON file, MUST follow the full schema defined in Section 10.4, including the top-level `cloud` wrapper and the 3-level nesting within it (Registries -> Devices -> Subsystems).
-- **Format:** RFC 3339 minimal precision (e.g., `2026-05-01T22:32:17Z`).
-- **Timezone:** UTC required.
-- **Precision:** No microseconds.
-- **Metadata:** The `make` and `model` fields are mandatory for the Butler (System) to locate the correct blob in the repository (Section 11.1). These fields MUST be populated during device registration and MUST be included in the model entry for every subsystem subject to reconciliation.
-- **Persistence:** The System (Butler) MUST update the local model file (if configured via `BUTLER_MODEL_FILE`) whenever the cloud model state changes (e.g., upon successful device update or model update command). Implementations SHOULD handle legacy formats (e.g. without the `cloud` wrapper) gracefully during migration but MUST write the compliant format.
-
-### 11.3. Orchestrator Behavior
-- **LKG Management:** The Orchestrator is the primary authority for the `lkg_version` in the cloud model and SHOULD NOT trust a device-reported `lkg_version` if it conflicts with a previously validated state. Upon receiving a device report indicating a successful update (status `success` or `quiescent`) where the `current_version` differs from the known model state, the Orchestrator MUST update the cloud model's `current_version` along with the `lkg_version`. This promotion ensures that the newly validated version is established as the Last Known Good state for future rollbacks. Device simulators SHOULD similarly update their internal `lkg_version` to match the `current_version` upon successful application of an update.
-- **Model Update Robustness:** Relying solely on the transient `success` state is discouraged; any terminal state reporting the new version SHOULD trigger a model synchronization.
-- **Metadata Ingestion:** Orchestrators MUST ingest and cache `make` and `model` information from all available sources, including initial registration, cloud model updates, and device state reports. Failure to maintain accurate metadata for a known device is a protocol robustness violation. For mandatory string fields like `make` and `model`, if the value is unknown or uninitialized, implementations SHOULD use `"unknown"` as a standard fallback value. System components MUST NOT reject or skip operations (such as reconciliation) solely because metadata is set to this standard fallback value.
-- **CLI Tool Robustness:** All CLI tools MUST handle optional arguments gracefully. For `bin/register` and `bin/trigger`, the `registry_id` should default to the `BUTLER_REGISTRY_ID` environment variable or `"default"`. Tools MUST NOT fail if extra/unknown arguments are provided. To ensure robust argument parsing across different implementation environments, all tools MUST support the `--conn_spec` flag for explicitly passing the connection specification. Tools that modify the local model repository MUST also publish a corresponding `model/cloud` message to the MQTT transport to ensure active components remain synchronized. These published messages MUST have the `operation` field set to `UPDATE` to trigger synchronization in active System components.
-- **Identity Differentiators:** Implementations SHOULD NOT detect or reject identities with multiple components (e.g., `user.toolname`) as "manual differentiators" if they are part of a standardized naming scheme for tool identification. When performing identity or principal matching, implementations MUST account for these differentiators (e.g., by matching the prefix before the first dot).
-
-## 12. Standard Tooling CLI Interface
-
-To support interoperability testing and shared orchestration scripts, the following command-line interfaces are standardized for the core tools. All implementations MUST support these positional argument patterns:
-
-### 12.1. bin/setup
-- **Usage:** `bin/setup <conn_spec>`
-- **Behavior:** Ensures the local environment (e.g., MQTT broker) is ready for the given connection specification.
-
-### 12.2. bin/register
-- **Usage:** `bin/register [registry_id] <device_id> [make] [model]`
-- **Behavior:** Registers a device in the local model. If only one argument is provided, it MUST be treated as the `device_id`, with `registry_id` defaulting to `BUTLER_REGISTRY_ID` or `"default"`.
-
-### 12.3. bin/mocket
-- **Usage:** `bin/mocket <conn_spec> <registry_id> <device_id>`
-- **Behavior:** Starts a mock device client that responds to UUFI handshakes and update configurations.
-
-### 12.4. bin/butler
-- **Usage:** `bin/butler <conn_spec>`
-- **Behavior:** Starts the system orchestrator (Butler).
-
-### 12.5. bin/verifier
-- **Usage:** `bin/verifier <conn_spec>`
-- **Behavior:** Starts the independent verification tool.
-
-### 12.6. bin/trigger
-- **Usage:** `bin/trigger [registry_id] <device_id> <version> <blob_path>`
-- **Behavior:** Initiates an update process. Similar to `register`, it MUST support optional `registry_id`.
-
-## 13. Standard Configuration Environment Variables
-
-To ensure interoperability between tools from different implementations (e.g., an Orchestrator from Impl A reading a model file created by a Register tool from Impl B), the following environment variables are standardized. All implementations MUST respect these variables if they support the corresponding functionality.
-
-- **`BUTLER_CONN_SPEC`**: The default connection specification URL (e.g., `mqtt://localhost:1883`).
-- **`BUTLER_MODEL_FILE`**: The path to the local JSON file representing the cloud model (default: `testing/model.json`).
-- **`BUTLER_BLOBS_DIR`**: The base directory for the blob repository (default: `testing/blobs`).
-- **`BUTLER_TIMEOUT`**: The timeout in seconds for the orchestrator to wait for a device to progress from the `pending` state before triggering a rollback (default: `60`).
-- **`BUTLER_REGISTRY_ID`**: The default registry ID to use when not specified (default: `default`).
-
+## A.5. Update Config Payload Schema
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "UpdateConfigPayload",
+  "type": "object",
+  "properties": {
+    "version": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "update": {
+      "type": "object",
+      "patternProperties": {
+        "^[a-zA-Z0-9_-]+$": {
+          "type": "object",
+          "properties": {
+            "version": { "type": "string", "description": "Target version for the subsystem" },
+            "url": { "type": "string", "description": "Location of the update blob" },
+            "sha256": { "type": "string", "description": "Hex-encoded SHA-256 hash of the blob" },
+            "make": { "type": "string" },
+            "model": { "type": "string" }
+          },
+          "required": ["version", "url", "sha256", "make", "model"]
+        }
+      }
+    }
+  },
+  "required": ["version", "timestamp", "update"]
+}
+```
