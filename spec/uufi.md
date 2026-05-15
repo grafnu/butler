@@ -35,10 +35,12 @@ Format: `scheme://[user@]host[:port][/path]`
 #### MQTT (`mqtt://`)
 - **Host/Port:** Standard network mapping.
 - **Topic Structure:** `[/{prefix}]/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
-  - The `prefix` is the optional path component of the connection string.
+  - The `prefix` is the optional path component of the connection string, representing one or more path segments. Implementations MUST strip any leading or trailing slashes from the path component before using it as a `prefix`.
 - **Prefix Isolation:** The `prefix` MUST be used to isolate different environments sharing the same broker. If provided, it MUST be the leading part of the topic path (e.g. matching all segments of the path provided in the connection string). Implementations MUST support multi-segment prefixes and MUST NOT omit the prefix if provided in the connection string. All active subscriptions (including those for traffic observation) MUST be scoped to the provided prefix to ensure environmental isolation. Prefix enforcement MUST be strict: implementations MUST NOT publish to or subscribe from topics outside their designated prefix tree.
+- **Project Identity:** For the MQTT transport, the `projectId` field in the envelope SHOULD be treated as a general environment or project identifier. All components within a single UUFI session MUST use a consistent `projectId` (default: `vibrant`) to avoid ambiguity in message processing.
 - **Identity Isolation:** The `principal` identifier MUST be included in the JSON envelope to distinguish between different clients within the same environment.
 - **Principal Format:** For MQTT, the `principal` SHOULD be the plain `user` component from the connection string without a trailing `@`. Implementations MUST NOT reject principals based on the presence or absence of the `@` character.
+- **Library Compatibility:** Implementations using the `paho-mqtt` library MUST ensure compatibility with version 2.0.0 and later by correctly specifying the `CallbackAPIVersion` during client initialization. To maintain backward compatibility, implementations SHOULD use a `try-except` block or feature detection when instantiating the MQTT client.
 - **Cloud Model Service:**
   - **Discovery:** Clients publish a `query/cloud` message to `[/{prefix}]/uufi/c/query/cloud`.
   - **Response:** System publishes the model to `[/{prefix}]/uufi/c/config/cloud`.
@@ -46,7 +48,11 @@ Format: `scheme://[user@]host[:port][/path]`
 
 ## 3. Handshake Protocol
 
-Handshake is Client-initiated. The System MUST NOT initiate a handshake unless acting as a Client.
+Handshake is **Client-initiated**. The **System MUST NOT initiate a handshake** unless acting as a Client.
+
+- **Wait for Handshake**: The System SHOULD wait for at least one Client handshake before becoming fully active, but it MUST NOT block indefinitely if no Clients are present.
+- **Local Blobs**: For local file references, the `url` MUST use the `file://` scheme. Recipients MUST strip the scheme to resolve the path.
+- **Metadata**: Device metadata (`make`, `model`) SHOULD be stored in a dedicated `meta` subsystem within the cloud model for consistency.
 
 ### Step 1: State Declaration
 The Client publishes a UDMI `state` message to `/uufi/c/state/udmi`.
@@ -56,7 +62,7 @@ The Client publishes a UDMI `state` message to `/uufi/c/state/udmi`.
 ### Step 2: Configuration Confirmation
 The System publishes a UDMI `config` message to `/uufi/c/config/udmi`.
 - **Payload:** Must include `udmi.setup` and `udmi.reply` (see Schema 10.3).
-- **Addressing:** Envelope `principal` MUST match Client's identity.
+- **Addressing:** Envelope `principal` MUST match Client's identity. For handshake replies, the System MUST use the `principal` or `source` from the received state message to ensure the reply reaches the correct client. If the received message has a `principal`, it SHOULD be used; otherwise, the `source` SHOULD be used as a fallback.
 
 **Retries:** The Client SHOULD periodically republish the Step 1 state message (e.g., every 5 seconds) if a valid Step 2 confirmation has not been received, until the 60-second timeout.
 
@@ -64,9 +70,14 @@ The System publishes a UDMI `config` message to `/uufi/c/config/udmi`.
 
 ### Registry ID Discovery
 - **Default:** `default`
-- **Discovery:** System may provide `{registryId}` in `config.udmi` during handshake.
+- **Discovery:** The System (Orchestrator) MAY provide a `registryId` in the `config.udmi` handshake reply to the Client. The Client SHOULD use this `registryId` for all subsequent registry-scoped topics. The System MUST NOT expect to discover its own `registryId` from Client-initiated handshakes. (Note: Use `registryId` camelCase exactly as specified; case-insensitive or snake_case matching is NOT guaranteed).
+- **Responsiveness:** MQTT message callback handlers MUST NOT perform long-running or blocking operations (e.g., `time.sleep()`). Any simulated work or heavy processing MUST be offloaded to a separate thread to maintain system-wide responsiveness and avoid buffer overflows or message loss in high-concurrency environments.
 
-### Timeouts
+### 3.1 Interoperability Reminders
+- **Metadata Persistence:** Orchestrators MUST ingest and cache `make` and `model` information from all available sources (registration, cloud updates, and state reports). Device simulators SHOULD include these fields in every state report to ensure consistency.
+- **Update Config Keys:** Implementations MUST use `version` and `url` keys in the `update` subfolder config payloads. Avoid legacy keys like `target_version` or `bundle_url`.
+- **Topic Slashes:** All UUFI topics MUST start with a leading slash `/`. The `prefix` (if any) is the first segment after the slash.
+- **Handshake Robustness:** Clients SHOULD periodically republish their handshake state until a valid reply is received. Systems SHOULD reflect the Client's `principal` in the handshake reply.
 - **Window:** 60 seconds.
 - **Failure:** On timeout, the Client MUST log a critical error and terminate (Fail-fast).
 
@@ -88,6 +99,7 @@ Inner JSON `payload` object MUST include:
 
 #### MQTT Constraints
 - **Redundancy:** Envelope fields MUST NOT include data encoded in the topic path (`subType`, `subFolder`, and if present, `deviceRegistryId`, `deviceId`).
+- **Mandatory Fields:** The MQTT envelope MUST include `projectId`, `transactionId`, `publishTime`, `source`, `nonce`, `principal`, and `payload`.
 - **Nesting:** UDMI message data MUST be nested within the `payload` key.
 
 ## 5. Cloud Model Operations
@@ -220,7 +232,8 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 
 - **Timezone:** UTC required (`Z` suffix).
 - **Precision:** System-originated messages SHOULD NOT include fractional seconds. Clients MAY include fractional seconds (microseconds), and all implementations MUST handle them gracefully by ignoring extra precision if necessary.
-- **Type Safety:** Mandatory version strings (`current_version`, `target_version`, etc.) MUST NOT be `null`. If a version is unknown, use a placeholder string like `"0.0.0"`.
+- **Type Safety:** Mandatory version strings (`current_version`, `target_version`, etc.) MUST NOT be `null`. If a version is unknown, use a placeholder string like `"0.0.0"`. Implementations MUST treat `"0.0.0"` as an uninitialized or lower-precedence state; a non-zero version string MUST NEVER be overwritten by `"0.0.0"` during automated synchronization.
+- **Metadata Fallbacks:** For mandatory string fields like `make` and `model`, if the value is unknown or uninitialized, implementations SHOULD use `"unknown"` as a standard fallback value.
 
 ### 9.3. Redundancy Rule
 - **MQTT:** Implementations MUST reject messages where envelope fields duplicate topic-encoded data.
@@ -411,10 +424,10 @@ The cloud model, when stored as a local JSON file, MUST follow the full schema d
 - **Persistence:** The System (Butler) MUST update the local model file (if configured via `BUTLER_MODEL_FILE`) whenever the cloud model state changes (e.g., upon successful device update or model update command). Implementations SHOULD handle legacy formats (e.g. without the `cloud` wrapper) gracefully during migration but MUST write the compliant format.
 
 ### 11.3. Orchestrator Behavior
-...
-- **Model Update Robustness:** Upon receiving a device report indicating a successful update (status `success` or `quiescent`) where the `current_version` differs from the known model state, the Orchestrator MUST update the cloud model's `current_version` along with the `lkg_version`. Relying solely on the transient `success` state is discouraged; any terminal state reporting the new version SHOULD trigger a model synchronization.
+- **LKG Management:** The Orchestrator is the primary authority for the `lkg_version` in the cloud model and SHOULD NOT trust a device-reported `lkg_version` if it conflicts with a previously validated state. Upon receiving a device report indicating a successful update (status `success` or `quiescent`) where the `current_version` differs from the known model state, the Orchestrator MUST update the cloud model's `current_version` along with the `lkg_version`. This promotion ensures that the newly validated version is established as the Last Known Good state for future rollbacks. Device simulators SHOULD similarly update their internal `lkg_version` to match the `current_version` upon successful application of an update.
+- **Model Update Robustness:** Relying solely on the transient `success` state is discouraged; any terminal state reporting the new version SHOULD trigger a model synchronization.
 - **Metadata Ingestion:** Orchestrators MUST ingest and cache `make` and `model` information from all available sources, including initial registration, cloud model updates, and device state reports. Failure to maintain accurate metadata for a known device is a protocol robustness violation.
-- **CLI Tool Robustness:** All CLI tools MUST handle optional arguments gracefully. For `bin/register` and `bin/trigger`, the `registry_id` should default to the `BUTLER_REGISTRY_ID` environment variable or `"default"`. Tools MUST NOT fail if extra/unknown arguments (like `--conn_spec`) are provided.
+- **CLI Tool Robustness:** All CLI tools MUST handle optional arguments gracefully. For `bin/register` and `bin/trigger`, the `registry_id` should default to the `BUTLER_REGISTRY_ID` environment variable or `"default"`. Tools MUST NOT fail if extra/unknown arguments are provided. To ensure robust argument parsing across different implementation environments, all tools MUST support the `--conn_spec` flag for explicitly passing the connection specification. Tools that modify the local model repository MUST also publish a corresponding `model/cloud` message to the MQTT transport to ensure active components remain synchronized.
 - **Identity Differentiators:** Implementations SHOULD NOT detect or reject identities with multiple components (e.g., `user.toolname`) as "manual differentiators" if they are part of a standardized naming scheme for tool identification.
 
 ## 12. Standard Tooling CLI Interface
