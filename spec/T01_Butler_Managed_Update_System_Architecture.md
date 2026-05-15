@@ -100,7 +100,7 @@ The system utilizes a message-based transport (MQTT or PubSub) as defined in `uu
 ### 5.1 Verifier (Active Observer)
 - **Handshake:** MUST complete UUFI handshake.
 - **Monitoring:** Track state transitions in `update` subfolder.
-- **Reporting:** Publish to `[/{prefix}]/uufi/r/{reg_id}/d/{dev_id}/validation`.
+- **Reporting:** Publish to `[/{prefix}]/uufi/r/{reg_id}/d/{dev_id}/c/events/validation`.
 - **Timestamp:** Enforce RFC 3339 minimal precision for Butler messages.
 
 ### 5.2 Observer (Passive Observer)
