@@ -7,8 +7,8 @@ AGENT WITHOUT THE ABILITY TO ASK QUESTIONS OR SEEK ADVICE.
 Only changes to the `spec/` files should be
 committed and pushed from this repo.
 No other files should have a diff or be
-commited to the PR. If there are no changes to the spec or test summary
-results, then an empty commit should be pushed with the log message
+commited to the PR. If there are no changes to the spec,
+then an empty commit should be pushed with the log message
 "Clean run with no spec or result changes."
 
 The primary goal is to empirically ensure that the provided specs are
