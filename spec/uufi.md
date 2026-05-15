@@ -65,9 +65,13 @@ The System publishes a UDMI `config` message to `/uufi/c/config/udmi`.
 
 ### Registry ID Discovery
 - **Default:** `default`
-- **Discovery:** The System (Orchestrator) MAY provide a `registryId` in the `config.udmi` handshake reply to the Client. The Client SHOULD use this `registryId` for all subsequent registry-scoped topics. The System MUST NOT expect to discover its own `registryId` from Client-initiated handshakes.
+- **Discovery:** The System (Orchestrator) MAY provide a `registryId` in the `config.udmi` handshake reply to the Client. The Client SHOULD use this `registryId` for all subsequent registry-scoped topics. The System MUST NOT expect to discover its own `registryId` from Client-initiated handshakes. (Note: Use `registryId` camelCase exactly as specified).
 
-### Timeouts
+### 3.1 Interoperability Reminders
+- **Metadata Persistence:** Orchestrators MUST ingest and cache `make` and `model` information from all available sources (registration, cloud updates, and state reports). Device simulators SHOULD include these fields in every state report to ensure consistency.
+- **Update Config Keys:** Implementations MUST use `version` and `url` keys in the `update` subfolder config payloads. Avoid legacy keys like `target_version` or `bundle_url`.
+- **Topic Slashes:** All UUFI topics MUST start with a leading slash `/`. The `prefix` (if any) is the first segment after the slash.
+- **Handshake Robustness:** Clients SHOULD periodically republish their handshake state until a valid reply is received. Systems SHOULD reflect the Client's `principal` in the handshake reply.
 - **Window:** 60 seconds.
 - **Failure:** On timeout, the Client MUST log a critical error and terminate (Fail-fast).
 
