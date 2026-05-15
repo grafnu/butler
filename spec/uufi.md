@@ -26,7 +26,7 @@ Format: `scheme://[user@]host[:port][/path]`
 #### PubSub (`pubsub://`)
 - **Host:** GCP Project ID.
 - **User:** Maps to a subscription suffix and the `principal` attribute.
-- **Principal:** The `user` component with a trailing `@`.
+- **Principal:** The `user` component with a trailing `@` (e.g., `user@`).
 - **Path:** First component maps to the root topic name (default: `udmi_uufi`).
 - **Subscription:** `{topic}+{user}`.
 - **Filtering:** Subscriptions should filter for messages where the `principal` attribute matches the local identity or is absent.
@@ -38,6 +38,7 @@ Format: `scheme://[user@]host[:port][/path]`
   - The `prefix` is the optional path component of the connection string.
 - **Prefix Isolation:** The `prefix` MUST be used to isolate different environments sharing the same broker. If provided, it MUST be the leading part of the topic path (e.g. matching all segments of the path provided in the connection string). Implementations MUST support multi-segment prefixes and MUST NOT omit the prefix if provided in the connection string.
 - **Identity Isolation:** The `principal` identifier MUST be included in the JSON envelope to distinguish between different clients within the same environment.
+- **Principal Format:** For MQTT, the `principal` SHOULD be the plain `user` component from the connection string without a trailing `@`. Implementations MUST NOT reject principals based on the presence or absence of the `@` character.
 - **Cloud Model Service:**
   - **Discovery:** Clients publish a `query/cloud` message to `[/{prefix}]/uufi/c/query/cloud`.
   - **Response:** System publishes the model to `[/{prefix}]/uufi/c/config/cloud`.
