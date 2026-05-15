@@ -230,7 +230,7 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 
 - **Timezone:** UTC required (`Z` suffix).
 - **Precision:** System-originated messages SHOULD NOT include fractional seconds. Clients MAY include fractional seconds (microseconds), and all implementations MUST handle them gracefully by ignoring extra precision if necessary.
-- **Type Safety:** Mandatory version strings (`current_version`, `target_version`, etc.) MUST NOT be `null`. If a version is unknown, use a placeholder string like `"0.0.0"`.
+- **Type Safety:** Mandatory version strings (`current_version`, `target_version`, etc.) MUST NOT be `null`. If a version is unknown, use a placeholder string like `"0.0.0"`. Implementations MUST treat `"0.0.0"` as an uninitialized or lower-precedence state; a non-zero version string MUST NEVER be overwritten by `"0.0.0"` during automated synchronization.
 
 ### 9.3. Redundancy Rule
 - **MQTT:** Implementations MUST reject messages where envelope fields duplicate topic-encoded data.
@@ -422,9 +422,9 @@ The cloud model, when stored as a local JSON file, MUST follow the full schema d
 
 ### 11.3. Orchestrator Behavior
 ...
-- **Model Update Robustness:** Upon receiving a device report indicating a successful update (status `success` or `quiescent`) where the `current_version` differs from the known model state, the Orchestrator MUST update the cloud model's `current_version` along with the `lkg_version`. Relying solely on the transient `success` state is discouraged; any terminal state reporting the new version SHOULD trigger a model synchronization.
+- **Model Update Robustness:** Upon receiving a device report indicating a successful update (status `success` or `quiescent`) where the `current_version` differs from the known model state, the Orchestrator MUST update the cloud model's `current_version` along with the `lkg_version`. The Orchestrator is the primary authority for the `lkg_version` in the cloud model and SHOULD NOT trust a device-reported `lkg_version` if it conflicts with a previously validated state. Relying solely on the transient `success` state is discouraged; any terminal state reporting the new version SHOULD trigger a model synchronization.
 - **Metadata Ingestion:** Orchestrators MUST ingest and cache `make` and `model` information from all available sources, including initial registration, cloud model updates, and device state reports. Failure to maintain accurate metadata for a known device is a protocol robustness violation.
-- **CLI Tool Robustness:** All CLI tools MUST handle optional arguments gracefully. For `bin/register` and `bin/trigger`, the `registry_id` should default to the `BUTLER_REGISTRY_ID` environment variable or `"default"`. Tools MUST NOT fail if extra/unknown arguments are provided. To ensure robust argument parsing across different implementation environments, all tools MUST support the `--conn_spec` flag for explicitly passing the connection specification.
+- **CLI Tool Robustness:** All CLI tools MUST handle optional arguments gracefully. For `bin/register` and `bin/trigger`, the `registry_id` should default to the `BUTLER_REGISTRY_ID` environment variable or `"default"`. Tools MUST NOT fail if extra/unknown arguments are provided. To ensure robust argument parsing across different implementation environments, all tools MUST support the `--conn_spec` flag for explicitly passing the connection specification. Tools that modify the local model repository SHOULD also publish a corresponding `model/cloud` message to the MQTT transport to ensure active components remain synchronized.
 - **Identity Differentiators:** Implementations SHOULD NOT detect or reject identities with multiple components (e.g., `user.toolname`) as "manual differentiators" if they are part of a standardized naming scheme for tool identification.
 
 ## 12. Standard Tooling CLI Interface
