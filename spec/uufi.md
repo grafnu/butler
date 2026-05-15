@@ -36,7 +36,7 @@ Format: `scheme://[user@]host[:port][/path]`
 - **Host/Port:** Standard network mapping.
 - **Topic Structure:** `[/{prefix}]/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
   - The `prefix` is the optional path component of the connection string.
-- **Prefix Isolation:** The `prefix` MUST be used to isolate different environments sharing the same broker. If provided, it MUST be the leading part of the topic path (e.g. matching all segments of the path provided in the connection string). Implementations MUST support multi-segment prefixes and MUST NOT omit the prefix if provided in the connection string.
+- **Prefix Isolation:** The `prefix` MUST be used to isolate different environments sharing the same broker. If provided, it MUST be the leading part of the topic path (e.g. matching all segments of the path provided in the connection string). Implementations MUST support multi-segment prefixes and MUST NOT omit the prefix if provided in the connection string. All active subscriptions (including those for traffic observation) MUST be scoped to the provided prefix to ensure environmental isolation.
 - **Identity Isolation:** The `principal` identifier MUST be included in the JSON envelope to distinguish between different clients within the same environment.
 - **Principal Format:** For MQTT, the `principal` SHOULD be the plain `user` component from the connection string without a trailing `@`. Implementations MUST NOT reject principals based on the presence or absence of the `@` character.
 - **Cloud Model Service:**
@@ -195,7 +195,7 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 
 ### 9.4. MQTT Topic Formatting
 - **Leading Slash:** For MQTT transport, all UUFI topics MUST start with a leading slash `/`. Implementations MUST NOT accept or publish to topics lacking the leading slash.
-- **Wildcards:** Subscription wildcards (e.g., `/#`) MUST also adhere to the leading slash rule to ensure consistent topic matching across the prefix tree.
+- **Wildcards:** Subscription wildcards (e.g., `/#`) MUST also adhere to the leading slash rule and MUST be scoped to the connection-defined prefix to ensure consistent topic matching across the prefix tree.
 
 ## 10. Schemas
 
