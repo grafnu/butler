@@ -65,7 +65,7 @@ The System publishes a UDMI `config` message to `/uufi/c/config/udmi`.
 
 ### Registry ID Discovery
 - **Default:** `default`
-- **Discovery:** System may provide `{registryId}` in `config.udmi` during handshake.
+- **Discovery:** The System (Orchestrator) MAY provide a `registryId` in the `config.udmi` handshake reply to the Client. The Client SHOULD use this `registryId` for all subsequent registry-scoped topics. The System MUST NOT expect to discover its own `registryId` from Client-initiated handshakes.
 
 ### Timeouts
 - **Window:** 60 seconds.
@@ -89,6 +89,7 @@ Inner JSON `payload` object MUST include:
 
 #### MQTT Constraints
 - **Redundancy:** Envelope fields MUST NOT include data encoded in the topic path (`subType`, `subFolder`, and if present, `deviceRegistryId`, `deviceId`).
+- **Mandatory Fields:** The MQTT envelope MUST include `projectId`, `transactionId`, `publishTime`, `source`, `nonce`, `principal`, and `payload`.
 - **Nesting:** UDMI message data MUST be nested within the `payload` key.
 
 ## 5. Cloud Model Operations
