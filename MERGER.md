@@ -4,8 +4,9 @@ AGENT WITHOUT THE ABILITY TO ASK QUESTIONS OR SEEK ADVICE.
 # Instructions on how to run a merge integration test between multiple
   implementations.
 
-Only changes to the `spec/` files and `test_summary.txt` should be
-committed and pushed.  No other files should have a diff or be
+Only changes to the `spec/` files should be
+committed and pushed from this repo.
+No other files should have a diff or be
 commited to the PR. If there are no changes to the spec or test summary
 results, then an empty commit should be pushed with the log message
 "Clean run with no spec or result changes."

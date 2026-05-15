@@ -30,7 +30,6 @@ The Butler system is organized as follows:
 - **README.md**: This overview document.
 - **AGENTS.md**: Mandatory instructions and constraints for agentic systems.
 - **REBUILD.md/UPDATE.md/MERGER.md/WORKFLOW.md**: System procedures and workflows.
-- **test_summary.txt**: Results from verification and testing runs.
 - **impl/**: Cross-implementation testing workspace.
 - **testing/**: Test assets and simulation environments.
 - **tmp/**: Ephemeral workspace for temporary files.
