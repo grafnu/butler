@@ -70,7 +70,8 @@ The System publishes a UDMI `config` message to `/uufi/c/config/udmi`.
 
 ### Registry ID Discovery
 - **Default:** `default`
-- **Discovery:** The System (Orchestrator) MAY provide a `registryId` in the `config.udmi` handshake reply to the Client. The Client SHOULD use this `registryId` for all subsequent registry-scoped topics. The System MUST NOT expect to discover its own `registryId` from Client-initiated handshakes. (Note: Use `registryId` camelCase exactly as specified).
+- **Discovery:** The System (Orchestrator) MAY provide a `registryId` in the `config.udmi` handshake reply to the Client. The Client SHOULD use this `registryId` for all subsequent registry-scoped topics. The System MUST NOT expect to discover its own `registryId` from Client-initiated handshakes. (Note: Use `registryId` camelCase exactly as specified; case-insensitive or snake_case matching is NOT guaranteed).
+- **Responsiveness:** MQTT message callback handlers MUST NOT perform long-running or blocking operations (e.g., `time.sleep()`). Any simulated work or heavy processing MUST be offloaded to a separate thread to maintain system-wide responsiveness and avoid buffer overflows or message loss in high-concurrency environments.
 
 ### 3.1 Interoperability Reminders
 - **Metadata Persistence:** Orchestrators MUST ingest and cache `make` and `model` information from all available sources (registration, cloud updates, and state reports). Device simulators SHOULD include these fields in every state report to ensure consistency.
