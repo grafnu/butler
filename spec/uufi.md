@@ -26,7 +26,7 @@ Format: `scheme://[user@]host[:port][/path]`
 #### PubSub (`pubsub://`)
 - **Host:** GCP Project ID.
 - **User:** Maps to a subscription suffix and the `principal` attribute.
-- **Principal:** The `user` component with a trailing `@`.
+- **Principal:** The `user` component with a trailing `@` (e.g., `user@`).
 - **Path:** First component maps to the root topic name (default: `udmi_uufi`).
 - **Subscription:** `{topic}+{user}`.
 - **Filtering:** Subscriptions should filter for messages where the `principal` attribute matches the local identity or is absent.
@@ -36,8 +36,9 @@ Format: `scheme://[user@]host[:port][/path]`
 - **Host/Port:** Standard network mapping.
 - **Topic Structure:** `[/{prefix}]/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
   - The `prefix` is the optional path component of the connection string.
-- **Prefix Isolation:** The `prefix` MUST be used to isolate different environments sharing the same broker. If provided, it MUST be the leading part of the topic path (e.g. matching all segments of the path provided in the connection string). Implementations MUST support multi-segment prefixes and MUST NOT omit the prefix if provided in the connection string.
+- **Prefix Isolation:** The `prefix` MUST be used to isolate different environments sharing the same broker. If provided, it MUST be the leading part of the topic path (e.g. matching all segments of the path provided in the connection string). Implementations MUST support multi-segment prefixes and MUST NOT omit the prefix if provided in the connection string. All active subscriptions (including those for traffic observation) MUST be scoped to the provided prefix to ensure environmental isolation. Prefix enforcement MUST be strict: implementations MUST NOT publish to or subscribe from topics outside their designated prefix tree.
 - **Identity Isolation:** The `principal` identifier MUST be included in the JSON envelope to distinguish between different clients within the same environment.
+- **Principal Format:** For MQTT, the `principal` SHOULD be the plain `user` component from the connection string without a trailing `@`. Implementations MUST NOT reject principals based on the presence or absence of the `@` character.
 - **Cloud Model Service:**
   - **Discovery:** Clients publish a `query/cloud` message to `[/{prefix}]/uufi/c/query/cloud`.
   - **Response:** System publishes the model to `[/{prefix}]/uufi/c/config/cloud`.
@@ -174,17 +175,49 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 ### Idempotency
 - **Nonce:** MUST use an 8-digit hex nonce for message identification.
 - **Deduplication:** Track nonces for 5 minutes.
-
-## 9. Compliance
-
 ### 9.1. Payload Structure
 - **Nesting:** The `payload` object MUST contain exactly one top-level key matching the `subFolder` name.
 - **Subsystem Nesting:** For `update` config and state payloads, data MUST be nested within a subsystem-id key (e.g., `main`) to support multi-subsystem devices. Implementations MUST handle both nested and unnested (flat) payloads for backward compatibility and robust interoperability.
 - **Mandatory Fields:** `timestamp` and `version` MUST be at the root of the `payload` object.
 - **Metadata:** The `make` and `model` fields are mandatory for all `update` subfolder payloads (state and config) within the subsystem nesting. These fields are essential for the Butler (System) to locate the correct blob in the repository (Section 11.1) and MUST be included in every subsystem entry subject to reconciliation.
+- **Update Config URL:** The `url` field in an `update` config payload MUST be a valid URI. Implementations MUST support the `file://` scheme for local file references. When a `file://` URI is provided, the recipient MUST strip the scheme and any leading slashes as appropriate for the local operating system to resolve the absolute or relative path.
 
 ### 9.2. Timestamp Format
-- **Standard:** RFC 3339 minimal precision (e.g., `2026-05-01T22:32:17Z`).
+...
+### 10.4. Cloud Model Payload
+...
+### 10.5. Update Config Payload
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "UpdateConfigPayload",
+  "type": "object",
+  "properties": {
+    "version": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "update": {
+      "type": "object",
+      "patternProperties": {
+        "^[a-zA-Z0-9_-]+$": {
+          "type": "object",
+          "properties": {
+            "version": { "type": "string", "description": "Target version for the subsystem" },
+            "url": { "type": "string", "description": "Location of the update blob" },
+            "sha256": { "type": "string", "description": "Hex-encoded SHA-256 hash of the blob" },
+            "make": { "type": "string" },
+            "model": { "type": "string" }
+          },
+          "required": ["version", "url", "sha256", "make", "model"]
+        }
+      }
+    }
+  },
+  "required": ["version", "timestamp", "update"]
+}
+```
+
+## 11. Local Repository Structure (Standardized)
+
 - **Timezone:** UTC required (`Z` suffix).
 - **Precision:** System-originated messages SHOULD NOT include fractional seconds. Clients MAY include fractional seconds (microseconds), and all implementations MUST handle them gracefully by ignoring extra precision if necessary.
 - **Type Safety:** Mandatory version strings (`current_version`, `target_version`, etc.) MUST NOT be `null`. If a version is unknown, use a placeholder string like `"0.0.0"`.
@@ -194,7 +227,7 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 
 ### 9.4. MQTT Topic Formatting
 - **Leading Slash:** For MQTT transport, all UUFI topics MUST start with a leading slash `/`. Implementations MUST NOT accept or publish to topics lacking the leading slash.
-- **Wildcards:** Subscription wildcards (e.g., `/#`) MUST also adhere to the leading slash rule to ensure consistent topic matching across the prefix tree.
+- **Wildcards:** Subscription wildcards (e.g., `/#`) MUST also adhere to the leading slash rule and MUST be scoped to the connection-defined prefix to ensure consistent topic matching across the prefix tree.
 
 ## 10. Schemas
 
