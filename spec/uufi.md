@@ -47,7 +47,11 @@ Format: `scheme://[user@]host[:port][/path]`
 
 ## 3. Handshake Protocol
 
-Handshake is Client-initiated. The System MUST NOT initiate a handshake unless acting as a Client.
+Handshake is **Client-initiated**. The **System MUST NOT initiate a handshake** unless acting as a Client.
+
+- **Wait for Handshake**: The System SHOULD wait for at least one Client handshake before becoming fully active, but it MUST NOT block indefinitely if no Clients are present.
+- **Local Blobs**: For local file references, the `url` MUST use the `file://` scheme. Recipients MUST strip the scheme to resolve the path.
+- **Metadata**: Device metadata (`make`, `model`) SHOULD be stored in a dedicated `meta` subsystem within the cloud model for consistency.
 
 ### Step 1: State Declaration
 The Client publishes a UDMI `state` message to `/uufi/c/state/udmi`.
