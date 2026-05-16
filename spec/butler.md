@@ -59,7 +59,7 @@ The system utilizes a message-based transport (MQTT or PubSub) as defined in `uu
 - **LKG Management:** Upon receiving a device report indicating a successful update (status `success` or `quiescent`) where the `current_version` matches the `target_version`, the Butler MUST update the cloud model's `current_version` and `lkg_version`.
 - **Persistence:** The Butler MUST update the local model file (configured via `BUTLER_MODEL_FILE`) whenever the cloud model state changes.
 - **Model Update Robustness:** Any terminal state reporting the new version SHOULD trigger a model synchronization, not just the transient `success` state.
-- **Metadata Ingestion:** Orchestrators MUST ingest and cache `make` and `model` information from all available sources (registration, cloud updates, and state reports).
+- **Metadata Ingestion:** Orchestrators MUST ingest and cache `make` and `model` information from all available sources (registration, cloud updates, and state reports). When ingesting metadata, orchestrators SHOULD prioritize specific, non-fallback values (e.g., actual strings over "unknown") to prevent existing information from being overwritten by uninitialized states.
 
 ### 3.3 Identity and Differentiators
 - **Naming Schemes:** Butler implementations SHOULD NOT detect or reject identities with multiple components (e.g., `user.toolname`) as "manual differentiators" if they are part of a standardized naming scheme.
