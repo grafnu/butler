@@ -32,6 +32,7 @@ The root directory MUST ONLY contain the following files and directories:
 
 ### 2.1 Orchestrator Behavior
 - **Authority:** The Butler is the primary authority for the `lkg_version` in the cloud model and MUST NOT trust a device-reported `lkg_version` if it conflicts with a previously validated state.
+- **Discovery:** The Butler MUST dynamically discover registries and devices from incoming state reports or cloud updates. This includes the Handshake Step 1 state message, which SHOULD be used to populate the initial model entry for a device.
 - **State Machine:**
   - `quiescent`: Target Version == Current Version.
   - `active`: Target Version != Current Version.

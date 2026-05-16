@@ -169,7 +169,7 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 
 ### 8.5. Identity Isolation
 To support multi-client environments on a shared messaging backbone (especially when topic prefixes are not used), implementations MUST strictly enforce identity isolation using the `principal` field:
-- **Filtering:** All components MUST filter incoming messages and reject those where the `principal` field does not match their own local identity (accounting for identity differentiators). 
+- **Filtering:** All components MUST filter ALL incoming messages (including `config`, `state`, `query`, and `model` types) and reject those where the `principal` field does not match their own local identity (accounting for identity differentiators). 
 - **Enforcement:** For MQTT, if the `principal` field is missing from an incoming envelope, the message MUST be rejected to prevent cross-trial interference and ensure protocol compliance.
 - **Differentiators:** When matching identities, implementations MUST only compare the base part of the identity (the portion before the first dot `.`) to allow for tool-specific tagging (e.g., `user.verifier` MUST match `user`).
 
