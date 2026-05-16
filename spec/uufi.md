@@ -1,5 +1,3 @@
-THIS IS A PROVISIONAL SPEC THAT IS NOT NECESSARILY REPRESENTATIVE OF THE CURRENT IMPLEMENTATION.
-
 # Unified UDMI Functional Interface (UUFI)
 
 The **Unified UDMI Functional Interface (UUFI)** defines a standardized messaging mechanism for external applications (the **Client**) to integrate with a UDMI-managed system (the **System**).
