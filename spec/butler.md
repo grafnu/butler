@@ -87,6 +87,8 @@ The root directory MUST ONLY contain the following files and directories:
 
 All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`). It MUST be supported both as a positional first argument and via an explicit `--conn_spec` flag. On startup, all tools SHOULD output their connectivity parameters in a consistent format: `Conn spec: scheme={scheme}, host={host}, port={port}, principal={principal}, prefix={prefix}`.
 
+To ensure interoperability and environmental isolation, tools SHOULD NOT fail if optional arguments (indicated by `[]`) are omitted, provided a valid default can be determined. When running in a multi-client environment (e.g., parallel testing), implementations MUST strictly adhere to the `Prefix Isolation` requirements defined in UUFI Section 2.2. Specifically, test runners (`smokeit`) SHOULD incorporate the provided connection prefix into all internally generated topics and child process arguments to prevent cross-trial interference.
+
 - **butler [conn_spec] [-f]**: Starts the system orchestrator.
 - **register [conn_spec] [registry_id] <device_id> [make] [model]**: Registers a device in the local model.
 - **trigger [conn_spec] [registry_id] <device_id> <subsystem_id> <version> <blob_path>**: Initiates a blobset update process.
