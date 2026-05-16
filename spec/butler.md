@@ -104,16 +104,16 @@ The system utilizes a message-based transport (MQTT or PubSub) as defined in `uu
 
 ## 6. Standard Tooling CLI Interface (bin/)
 
-All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`).
+All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`). It SHOULD be supported both as an optional first positional argument and via an explicit `--conn_spec` flag.
 
-- **butler <conn_spec> [-f]**: Starts the system orchestrator.
-- **register [registry_id] <device_id> [make] [model]**: Registers a device in the local model.
-- **trigger [registry_id] <device_id> <subsystem_id> <version> <blob_path>**: Initiates a blobset update process.
-- **setup <conn_spec>**: Ensures the local environment (e.g., MQTT broker) is ready.
-- **mocket <conn_spec> <registry_id> <device_id> [-f]**: Starts a mock device client.
-- **verifier <conn_spec>**: Starts the independent verification tool.
-- **observe <conn_spec>**: Passive monitoring of the UUFI bus (output: `{topic}: {payload}`).
-- **smokeit <conn_spec>**: Basic integration test.
+- **butler [conn_spec] [-f]**: Starts the system orchestrator.
+- **register [conn_spec] [registry_id] <device_id> [make] [model]**: Registers a device in the local model.
+- **trigger [conn_spec] [registry_id] <device_id> <subsystem_id> <version> <blob_path>**: Initiates a blobset update process.
+- **setup [conn_spec]**: Ensures the local environment (e.g., MQTT broker) is ready.
+- **mocket [conn_spec] <registry_id> <device_id> [-f]**: Starts a mock device client.
+- **verifier [conn_spec]**: Starts the independent verification tool.
+- **observe [conn_spec]**: Passive monitoring of the UUFI bus (output: `{topic}: {payload}`).
+- **smokeit [conn_spec]**: Basic integration test.
 
 ## 7. Standard Configuration Environment Variables
 
