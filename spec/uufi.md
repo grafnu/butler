@@ -59,7 +59,7 @@ The Handshake Protocol is the message sequence and associated behavior used to e
    - **Payload**: MUST include the `setup` block.
    - **Addressing**: Registry-less topic. `source` in envelope contains Client identity.
 2. **Configuration Confirmation**: The System publishes a UDMI `config` message to `/uufi/c/config/udmi`.
-   - **Payload**: MUST include `setup` and `reply` blocks.
+   - **Payload**: MUST include `setup` and `reply` blocks. Specifically, the `reply.msg_source` MUST match the `setup.msg_source` from the received Step 1 state message.
    - **Addressing**: Envelope `principal` MUST match Client's identity.
 
 ### Behavior and Lifecycle
