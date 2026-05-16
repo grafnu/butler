@@ -1,8 +1,7 @@
 DO NOT ASK FOR CLARIFICATION OR DIRECTION. YOU ARE AN AUTONONOMOUS
 AGENT WITHOUT THE ABILITY TO ASK QUESTIONS OR SEEK ADVICE.
 
-# Instructions on how to run a merge integration test between multiple
-  implementations.
+# Instructions on how to run a merge integration test between multiple implementations.
 
 Only changes to the `spec/` files should be
 committed and pushed from this repo.
@@ -21,7 +20,11 @@ accordingly.  Spec compliance is defined as successfully passing the
 verification failures and consistent behavioral logs.  If everything
 is spec compliant then there is nothing to do except report success.
 
-The goal is to be spec compliant, not to just pass the tests.
+The goal is to be spec compliant, not to just pass the tests. The
+spec should be concise and authoritave. It should focus on the specific
+requirements, avoiding "should" and "may", focusing on what is
+strictly required, what the system must do to function and be compliant.
+Either something is done correctly, or it doesn't matter how it's done.
 
 First merge `origin/main` into this branch to make sure all specs and
 other details are up to date.

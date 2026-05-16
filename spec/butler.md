@@ -28,41 +28,44 @@ The root directory MUST ONLY contain the following files and directories:
 - **testing/**: Test assets and environment.
 - **venv/**: Python virtual environment.
 
-## 2. Communication Substrate
+## 2. Role and Behavior
 
-The system utilizes a message-based transport (MQTT or PubSub) as defined in `uufi.md`.
-
-### UUFI Compliance
-- **Standardization:** All messages MUST adhere to UUFI schemas and the messaging mechanism defined in `uufi.md`.
-- **Handshake Protocol:** The Butler MUST implement the handshake protocol as specified in the UUFI documentation (Section 3). It MUST complete the handshake within 60s or fail-fast.
-- **Topic Structure:** All MQTT topics MUST start with a leading slash `/` and adhere to the `/uufi/` prefix structure.
-- **Debug Differentiation:** For singular receiver protocols (e.g., PubSub), append identifiers to the `user` component:
-  - `butler`: (none)
-  - `observe`: `.observe`
-  - `verifier`: `.verifier`
-  - `mocket`: `.mocket`
-
-## 3. Role and Behavior
-
-### 3.1 Orchestrator Behavior
-- **Authority:** The Butler is the primary authority for the `lkg_version` in the cloud model and SHOULD NOT trust a device-reported `lkg_version` if it conflicts with a previously validated state.
+### 2.1 Orchestrator Behavior
+- **Authority:** The Butler is the primary authority for the `lkg_version` in the cloud model and MUST NOT trust a device-reported `lkg_version` if it conflicts with a previously validated state.
 - **State Machine:**
   - `quiescent`: Target Version == Current Version.
   - `active`: Target Version != Current Version.
   - `pending`: Update in progress (device has received command).
 - **Triggering:** The orchestrator re-evaluates state upon receiving device status reports. A null `current_version` is treated as an empty string.
-- **Settling Time:** A minimum 5s delay SHOULD be observed after state changes before re-evaluation to avoid race conditions. For the purposes of this rule, "state changes" MUST be interpreted as changes to the `target_version` or `current_version`. Implementations MUST NOT reset the settling time timer upon receiving periodic status reports that do not change these version fields, even if other fields like `status` or `timestamp` vary. This ensures that updates are not indefinitely blocked by high-frequency heartbeat messages.
+- **Efficiency:** State transitions and model updates MUST be processed immediately upon receipt of relevant messages to minimize end-to-end latency.
 - **Timeout:** The Butler MUST wait for at least `BUTLER_TIMEOUT` (default: 60s) for a device to progress from the `pending` state before triggering a rollback.
-- **Discovery:** The Butler MUST dynamically discover registries and devices via the UUFI message bus.
 
-### 3.2 Model Synchronization
-- **LKG Management:** Upon receiving a device report indicating a successful update (status `success` or `quiescent`) where the `current_version` matches the `target_version`, the Butler MUST update the cloud model's `current_version` and `lkg_version`.
-- **Persistence:** The Butler MUST update the local model file (configured via `BUTLER_MODEL_FILE`) whenever the cloud model state changes.
-- **Model Update Robustness:** Any terminal state reporting the new version SHOULD trigger a model synchronization, not just the transient `success` state.
-- **Metadata Ingestion:** Orchestrators MUST ingest and cache `make` and `model` information from all available sources (registration, cloud updates, and state reports). When ingesting metadata, orchestrators SHOULD prioritize specific, non-fallback values (e.g., actual strings over "unknown") to prevent existing information from being overwritten by uninitialized states.
+### 2.2 Model and Update Management
+- **LKG Management:** Upon receiving a device report indicating a successful update where the `current_version` matches the `target_version`, the Butler MUST update the cloud model's `current_version` and `lkg_version`.
+- **Persistence:** The Butler MUST update the local model file whenever the cloud model state changes.
 
-### 3.3 Identity and Differentiators
-- **Naming Schemes:** Butler implementations SHOULD NOT detect or reject identities with multiple components (e.g., `user.toolname`) as "manual differentiators" if they are part of a standardized naming scheme.
+## 3. Functional Components
+
+### 3.1 Blob Repository
+- **Structure:** `{base_dir}/{make}/{model}/{subsystem_id}/{version}/`
+- **Contents:**
+  - `bundle.bin`: The binary blob content.
+  - `sha256.txt`: Hex-encoded SHA-256 hash of `bundle.bin`.
+- **Integrity:** Every blob requires a SHA256 hash for verification.
+
+### 3.2 Model Repository (Desired State)
+- **Format:** The cloud model MUST follow the full schema defined in UUFI Section 5.
+- **Path Override:** `BUTLER_MODEL_FILE`.
+- **Atomicity:** Updates to the local model file MUST be atomic (e.g., write to temporary file then rename).
+- **Access:** Direct local access is restricted to `mocket`, `register`, and `trigger`.
+- **Primary Key:** Composite of `registry_id` and `device_id`.
+
+### 3.3 Device Conduit (Client-side / Mocket)
+- **Reporting:** Periodically publish `current_version`, `status`, and `lkg_version` via `blobset` state messages.
+- **Payload Structure:** `blobset` payloads MUST include `make` and `model` fields within the subsystem nesting to ensure the orchestrator can correctly identify the device type. For consistency across implementations, implementations MUST use the `blobs` wrapper key within the `blobset` state report.
+- **Lifecycle:** `quiescent` -> `pending` (download/verify) -> `success` or `failure`.
+- **Transitions:** Transitions to `success` or `failure` MUST only occur from the `pending` state. A direct transition from `quiescent` to `success` or `failure` is a protocol violation.
+- **Robustness:** Devices MUST robustly handle immediate state change requests (back-to-back config updates) and ensure eventual consistency with the latest target state.
 
 ## 4. Functional Components
 
@@ -82,7 +85,7 @@ The system utilizes a message-based transport (MQTT or PubSub) as defined in `uu
 
 ### 4.3 Device Conduit (Client-side / Mocket)
 - **Reporting:** Periodically publish `current_version`, `status`, and `lkg_version` via `blobset` state messages.
-- **Payload Structure:** `blobset` payloads MUST include `make` and `model` fields within the subsystem nesting to ensure the orchestrator can correctly identify the device type. For consistency across implementations, it is RECOMMENDED to use the `blobs` wrapper key within the `blobset` state report.
+- **Payload Structure:** `blobset` payloads MUST include `make` and `model` fields within the subsystem nesting to ensure the orchestrator can correctly identify the device type. For consistency across implementations, implementations MUST use the `blobs` wrapper key within the `blobset` state report.
 - **Lifecycle:** `quiescent` -> `pending` (download/verify) -> `success` or `failure`.
 - **Transitions:** Transitions to `success` or `failure` MUST only occur from the `pending` state. A direct transition from `quiescent` to `success` or `failure` is a protocol violation.
 
@@ -104,7 +107,7 @@ The system utilizes a message-based transport (MQTT or PubSub) as defined in `uu
 
 ## 6. Standard Tooling CLI Interface (bin/)
 
-All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`). It MUST be supported both as an optional first positional argument and via an explicit `--conn_spec` flag.
+All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`). It MUST be supported both as a positional first argument and via an explicit `--conn_spec` flag.
 
 - **butler [conn_spec] [-f]**: Starts the system orchestrator.
 - **register [conn_spec] [registry_id] <device_id> [make] [model]**: Registers a device in the local model.
