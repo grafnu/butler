@@ -149,7 +149,7 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 - **UDMI Subfolder Nesting:** For messages using the `udmi` subfolder (e.g., handshakes), the payload data MUST be nested within a `udmi` key at the root of the `payload` object. Implementations SHOULD also handle flattened payloads for robustness.
 
 - **Mandatory Fields:** `timestamp` and `version` MUST be at the root of the `payload` object.
-- **Metadata:** The `make` and `model` fields are mandatory for all `blobset` subfolder payloads (state and config) within the subsystem nesting. These fields are essential for the System to locate the correct blob in the repository and MUST be included in every subsystem entry subject to reconciliation.
+- **Metadata:** The `make` and `model` fields are mandatory for all `blobset` subfolder payloads (state and config) within the subsystem nesting. These fields are essential for the System to locate the correct blob in the repository and MUST be included in every subsystem entry subject to reconciliation. Additionally, the `generation` field MAY be included in `blobset` config payloads to provide a temporal reference for the update command; if provided, it SHOULD follow the RFC 3339 minimal precision format.
 - **Blobset Config URL:** The `url` field in a `blobset` config payload MUST be a valid URI. Implementations MUST support the `file://` scheme for local file references. When a `file://` URI is provided, the recipient MUST strip the scheme and any leading slashes as appropriate for the local operating system to resolve the absolute or relative path.
 
 
