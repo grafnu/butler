@@ -61,7 +61,7 @@ The Client publishes a UDMI `state` message to `/uufi/c/state/udmi`.
 ### Step 2: Configuration Confirmation
 The System publishes a UDMI `config` message to `/uufi/c/config/udmi`.
 - **Payload:** Must include `setup` and `reply`.
-- **Addressing:** Envelope `principal` MUST match Client's identity. For handshake replies, the System MUST use the `principal` or `source` from the received state message to ensure the reply reaches the correct client. If the received message has a `principal`, it SHOULD be used; otherwise, the `source` SHOULD be used as a fallback.
+- **Addressing:** Envelope `principal` MUST match Client's identity. For handshake replies, the System MUST use the `principal` or `source` from the received state message to ensure the reply reaches the correct client. If the received message has a `principal`, it SHOULD be used; otherwise, the `source` SHOULD be used as a fallback. To ensure interoperability with tagged identities (Section 3.1), "matching" the Client's identity SHOULD account for identity differentiators (e.g., matching the base identity part).
 
 **Retries:** The Client SHOULD periodically republish the Step 1 state message (e.g., every 5 seconds) if a valid Step 2 confirmation has not been received, until the 60-second timeout.
 
