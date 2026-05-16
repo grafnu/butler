@@ -82,7 +82,7 @@ The system utilizes a message-based transport (MQTT or PubSub) as defined in `uu
 
 ### 4.3 Device Conduit (Client-side / Mocket)
 - **Reporting:** Periodically publish `current_version`, `status`, and `lkg_version` via `blobset` state messages.
-- **Payload Structure:** `blobset` payloads MUST include `make` and `model` fields within the subsystem nesting to ensure the orchestrator can correctly identify the device type.
+- **Payload Structure:** `blobset` payloads MUST include `make` and `model` fields within the subsystem nesting to ensure the orchestrator can correctly identify the device type. For consistency across implementations, it is RECOMMENDED to use the `blobs` wrapper key within the `blobset` state report.
 - **Lifecycle:** `quiescent` -> `pending` (download/verify) -> `success` or `failure`.
 - **Transitions:** Transitions to `success` or `failure` MUST only occur from the `pending` state. A direct transition from `quiescent` to `success` or `failure` is a protocol violation.
 

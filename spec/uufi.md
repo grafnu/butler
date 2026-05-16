@@ -61,7 +61,7 @@ The Client publishes a UDMI `state` message to `/uufi/c/state/udmi`.
 ### Step 2: Configuration Confirmation
 The System publishes a UDMI `config` message to `/uufi/c/config/udmi`.
 - **Payload:** Must include `setup` and `reply`.
-- **Addressing:** Envelope `principal` MUST match Client's identity. For handshake replies, the System MUST use the `principal` or `source` from the received state message to ensure the reply reaches the correct client. If the received message has a `principal`, it SHOULD be used; otherwise, the `source` SHOULD be used as a fallback.
+- **Addressing:** Envelope `principal` MUST match Client's identity. For handshake replies, the System MUST use the `principal` or `source` from the received state message to ensure the reply reaches the correct client. If the received message has a `principal`, it SHOULD be used; otherwise, the `source` SHOULD be used as a fallback. To ensure interoperability with tagged identities (Section 3.1), "matching" the Client's identity SHOULD account for identity differentiators (e.g., matching the base identity part).
 
 **Retries:** The Client SHOULD periodically republish the Step 1 state message (e.g., every 5 seconds) if a valid Step 2 confirmation has not been received, until the 60-second timeout.
 
@@ -127,12 +127,15 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 | Blobset Config | `config` | `blobset` | Publish |
 | Blobset State | `state` | `blobset` | Receive |
 
-## 7. Reliability
+### 7.1 Transaction Identifiers
+- **Envelope Field:** MUST use `transactionId` (camelCase) in the MQTT and PubSub envelope.
+- **Payload Field:** For handshake messages (`udmi` subfolder), the `setup` and `reply` blocks MUST use `transaction_id` (snake_case) to maintain UDMI schema compatibility.
+- **Consistency:** The value of `transactionId` in the envelope SHOULD match the `transaction_id` in the payload for the same message.
 
-### MQTT QoS
+### 7.2 MQTT QoS
 - **Requirement:** QoS 1 (At Least Once) for all state and configuration messages.
 
-### Idempotency
+### 7.3 Idempotency
 - **Transaction ID:** MUST use a unique `transactionId` for message identification.
 - **Deduplication:** Track `transactionId`s for 5 minutes.
 
@@ -140,7 +143,9 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 
 ### 8.1. Payload Structure
 - **Nesting:** The `payload` object contains the fields of the UDMI message corresponding to the `subFolder` and `subType`.
-- **Subsystem Nesting:** For `blobset` config and state payloads, data MUST be nested within a subsystem-id key (e.g., `system`) to support multi-subsystem devices. Implementations MUST handle both nested and unnested (flat) payloads for backward compatibility and robust interoperability.
+- **Subsystem Nesting:** For `blobset` config and state payloads, data MUST be nested within a subsystem-id key (e.g., `system`) to support multi-subsystem devices. For maximum compatibility with UDMI standards, implementations SHOULD include a `blobs` wrapper key within the `blobset` object, containing the subsystem-id keys. Implementations MUST handle both nested (with and without the `blobs` wrapper) and unnested (flat) payloads for backward compatibility and robust interoperability.
+
+- **UDMI Subfolder Nesting:** For messages using the `udmi` subfolder (e.g., handshakes), the payload data MUST be nested within a `udmi` key at the root of the `payload` object. Implementations SHOULD also handle flattened payloads for robustness.
 
 - **Mandatory Fields:** `timestamp` and `version` MUST be at the root of the `payload` object.
 - **Metadata:** The `make` and `model` fields are mandatory for all `blobset` subfolder payloads (state and config) within the subsystem nesting. These fields are essential for the System to locate the correct blob in the repository and MUST be included in every subsystem entry subject to reconciliation.
