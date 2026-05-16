@@ -73,8 +73,8 @@ The Handshake Protocol is the message sequence and associated behavior used to e
 - **Principal Mapping**: For handshake replies, the System MUST use the `principal` or `source` from the received state message. The received message's `principal` MUST be used if present; otherwise, the `source` MUST be used as a fallback.
 - **Matching**: When matching identities, implementations MUST only compare the base part of the identity (the portion before the first dot `.`) to allow for tool-specific tagging (e.g., `user.verifier` MUST match `user`).
 - **Naming Schemes**: System components MUST NOT detect or reject identities with multiple components (e.g., `user.toolname`) as "manual differentiators" if they are part of a standardized naming scheme.
-- **Registry Discovery**: The System MUST provide a `deviceRegistryId` in the `config.udmi` handshake reply if the System has prior knowledge of the Client's registry. If provided, the `deviceRegistryId` MUST be placed within the `setup` block of the payload.
-- **Responsiveness**: MQTT message callback handlers MUST NOT perform long-running or blocking operations. Heavy processing MUST be offloaded to a separate thread.
+- **Registry Discovery:** The System MUST provide a `deviceRegistryId` in the `config.udmi` handshake reply if the System has prior knowledge of the Client's registry. If provided, the `deviceRegistryId` MUST be placed within the `setup` block of the payload. Once a Client receives a `deviceRegistryId`, it MUST use this value in the topic path for all subsequent device-specific messages (e.g., `events`, `state`, `config`).
+- **Responsiveness:** MQTT message callback handlers MUST NOT perform long-running or blocking operations. Heavy processing MUST be offloaded to a separate thread.
 
 ### 3.1 Metadata and Topic Conventions
 - **Metadata Storage**: Device metadata (`make`, `model`) MUST be stored in a dedicated `meta` subsystem within the cloud model for consistency.
@@ -154,7 +154,7 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 
 - **Mandatory Fields:** `timestamp` and `version` MUST be at the root of the `payload` object.
 - **Metadata:** The `make` and `model` fields are mandatory for all `blobset` subfolder payloads (state and config) within the subsystem nesting. These fields are essential for the System to locate the correct blob in the repository and MUST be included in every subsystem entry subject to reconciliation. Additionally, the `generation` field MUST be included in `blobset` config payloads to provide a temporal reference for the update command; it MUST follow the RFC 3339 minimal precision format (as defined in Section 8.2). Implementations MUST NOT use the version string as the value for the `generation` field.
-- **Blobset Config URL:** The `url` field in a `blobset` config payload MUST be a valid URI. Implementations MUST support the `file://` scheme for local file references. When a `file://` URI is provided, the recipient MUST strip the scheme and any leading slashes as appropriate for the local operating system to resolve the absolute or relative path. For absolute paths, it is RECOMMENDED to use the `file:///` (three slashes) format to avoid ambiguity with the `netloc` component of the URI.
+- **Blobset Config URL:** The `url` field in a `blobset` config payload MUST be a valid URI. Implementations MUST support the `file://` scheme for local file references. When a `file://` URI is provided, the recipient MUST strip the scheme and any leading slashes as appropriate for the local operating system to resolve the absolute or relative path. For absolute paths, implementations MUST use the `file:///` (three slashes) format to avoid ambiguity with the `netloc` component of the URI.
 
 
 ### 8.2. Timestamp Format

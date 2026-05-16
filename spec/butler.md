@@ -137,7 +137,7 @@ All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`). It
 ### 9.1 Verifier (Active Observer)
 - **Handshake:** MUST complete UUFI handshake.
 - **Monitoring:** Track state transitions in the `blobset` subfolder.
-- **Reporting:** Publish validation results to `[/{prefix}]/uufi/r/{reg_id}/d/{dev_id}/c/events/validation`.
+- **Reporting:** Publish validation results to `[/{prefix}]/uufi/r/{reg_id}/d/{dev_id}/c/events/validation`. If the `registry_id` for a device is unknown, the Verifier MUST use `unknown` as the `{reg_id}` in the topic path.
 
 ### 9.2 Observer (Passive Observer)
 - **Output:** Raw wire format `{topic}: {payload}`.
