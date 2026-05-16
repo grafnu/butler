@@ -124,9 +124,11 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 | Handshake Config | `config` | `udmi` | Receive |
 | Config Update | `config` | *varies* | Publish |
 | State Event | `state` | *varies* | Receive |
-| Telemetry | `events` | `pointset` | Receive |
-| Discovery | `events` | `discovery` | Receive |
-| Model Query | `query` | `cloud` | Publish |
+| Telemetry | events | pointset | Receive |
+| Discovery | events | discovery | Receive |
+| Validation | events | validation | Receive |
+| Model Query | query | cloud | Publish |
+
 | Model Update | `model` | `cloud` | Publish |
 | Model Reply | `config` | `cloud` | Receive |
 | Blobset Config | `config` | `blobset` | Publish |

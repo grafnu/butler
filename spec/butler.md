@@ -139,13 +139,21 @@ All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`). It
 - **Handshake:** MUST complete UUFI handshake.
 - **Monitoring:** Track state transitions in the `blobset` subfolder.
 - **Reporting:** Publish validation results to `[/{prefix}]/uufi/r/{reg_id}/d/{dev_id}/c/events/validation`. The Verifier MUST use the `deviceRegistryId` provided during its Handshake for its own topic path. For reporting on other devices, if the `registry_id` for that device is unknown, the Verifier MUST use `unknown` as the `{reg_id}` in the topic path.
+- **Payload Schema:** The `validation` object within the message payload MUST contain:
+  - `message` (string, mandatory): Human-readable event description.
+  - `level` (string, mandatory): One of `INFO`, `WARN`, `ERROR`.
+  - `result` (string, optional): One of `PASS`, `FAIL`, `INFO`.
+  - `device_id` (string, optional): The ID of the device being validated.
+  - `subsystem_id` (string, optional): The ID of the subsystem being validated.
 
 ### 9.2 Observer (Passive Observer)
 - **Output:** Raw wire format `{topic}: {payload}`.
 - **Constraints:** Unbuffered, single line, no truncation.
 
 ### 9.3 Compliance Logging
-For automated interoperability testing and verification, implementations MUST adhere to the following log formats for critical lifecycle events:
+For automated interoperability testing and verification, implementations MUST adhere to the following log formats for critical lifecycle events in both STDOUT and the `message` field of `events/validation` payloads:
+- **Handshake Step 1 (Client):** `VERIFIER [INFO]: Handshake started by {source}`
+- **Handshake Step 2 (System):** `VERIFIER [INFO]: Handshake completed for {client}`
 - **State Transitions (Verifier):** `VERIFIER [INFO]: State transition for {subsystem}: {old_state} -> {new_state}`
 - **Validation Errors (Verifier):** `VERIFIER [ERROR]: VALIDATION ERROR: {message}`
 - **Terminal State (Orchestrator):** `[butler] Device {registry_id}/{device_id}/{subsystem} terminal state {status} with version {version}`
