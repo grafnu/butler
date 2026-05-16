@@ -106,7 +106,7 @@ Inner JSON `payload` object MUST include:
 
 ### 5.1. Schema
 - **Operation:** `READ`, `CREATE`, `UPDATE`, `DELETE`, `BIND`, `UNBIND`.
-- **Registries:** Map of `{registry_id}` to a map of `{device_id}` to a map of `{subsystem_id}` to subsystem state.
+- **Registries:** Map of `{registry_id}` to a map containing a `devices` key, which is a map of `{device_id}` to a map of `{subsystem_id}` to subsystem state.
 - **Detail:** Optional parameters.
 
 ### 5.2. Update Semantics (Partial Merge)
