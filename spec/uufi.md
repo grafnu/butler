@@ -50,7 +50,7 @@ Format: `scheme://[user@]host[:port][/path]`
   - **Discovery:** System components MUST dynamically discover registries and devices via the UUFI message bus. Clients publish a `query/cloud` message to `[/{prefix}]/uufi/c/query/cloud`.
   - **Response:** System publishes the model to `[/{prefix}]/uufi/c/config/cloud`.
   - **Updates:** Clients publish model updates to `[/{prefix}]/uufi/c/model/cloud`.
-  - **Registry-less Enforcement:** All cloud model operations (`query`, `model`, `config`) MUST use registry-less topics (e.g., omitting the `/r/{registry_id}/d/{device_id}` path segments).
+  - **Registry-less Enforcement:** All cloud model operations (`query`, `model`, `config`) MUST use registry-less topics (e.g., omitting the `/r/{registry_id}/d/{device_id}` path segments). Similarly, the `Discovery` operation (`events/discovery`) MAY use registry-less topics to facilitate initial device identification, especially before a successful handshake has provided the client with a `deviceRegistryId`.
   - **Structure:** Uses nested **Registries** (Section 5.1).
 
 ### 2.3 Cloud Model Structure
