@@ -139,7 +139,7 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 
 ### 7.3 Idempotency
 - **Transaction ID:** MUST use a unique `transactionId` for message identification.
-- **Deduplication:** Track `transactionId`s for 5 minutes.
+- **Deduplication:** Track `transactionId`s for 5 minutes. Implementations MUST ensure that deduplication logic does not interfere with the Handshake protocol (Section 3), which intentionally reflects the same `transactionId` between Step 1 and Step 2. Specifically, a message MUST NOT be rejected as a duplicate if it is a valid handshake reply (Step 2) to a previously sent handshake state (Step 1).
 
 ## 8. Payload and Formatting Rules
 
