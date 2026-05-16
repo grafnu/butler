@@ -78,6 +78,7 @@ The System publishes a UDMI `config` message to `/uufi/c/config/udmi`.
 - **Blobset Config Keys:** Implementations MUST use standard UDMI keys in the `blobset` subfolder config payloads.
 - **Topic Slashes:** All UUFI topics MUST start with a leading slash `/`. The `prefix` (if any) is the first segment after the slash.
 - **Handshake Robustness:** Clients SHOULD periodically republish their handshake state until a valid reply is received. Systems SHOULD reflect the Client's `principal` in the handshake reply.
+- **Orchestrator Efficiency:** To ensure timely firmware updates, Orchestrators SHOULD avoid excessive "settling times" or long polling intervals for model reconciliation. State transitions and model updates SHOULD be processed as soon as relevant messages are received to minimize end-to-end latency, while maintaining enough separation to avoid redundant processing or message loops.
 - **Window:** 60 seconds.
 - **Failure:** On timeout, the Client MUST log a critical error and terminate (Fail-fast).
 
