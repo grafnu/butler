@@ -99,7 +99,7 @@ Inner JSON `payload` object MUST include:
 | **MQTT** | JSON Wrapper | Payload `payload` key |
 
 #### MQTT Constraints
-- **Redundancy:** Envelope fields MUST NOT include data encoded in the topic path (`subType`, `subFolder`, and if present, `deviceRegistryId`, `deviceId`).
+- **Redundancy:** Envelope fields MUST NOT include data encoded in the topic path (`subType`, `subFolder`, and if present, `deviceRegistryId`, `deviceId`). Implementations MUST reject messages where envelope fields duplicate topic-encoded data.
 - **Mandatory Fields:** The MQTT envelope MUST include `projectId`, `transactionId`, `publishTime`, `source`, `principal`, and `payload`.
 - **Nesting:** UDMI message data MUST be nested within the `payload` key.
 
@@ -107,7 +107,8 @@ Inner JSON `payload` object MUST include:
 
 ### 5.1. Schema
 - **Operation:** `READ`, `CREATE`, `UPDATE`, `DELETE`, `BIND`, `UNBIND`.
-- **Registries:** Map of `{registry_id}` to a map containing a `devices` key, which is a map of `{device_id}` to a map where each key is a `{subsystem_id}` (e.g., `main`, `meta`, `system`) and each value is the corresponding subsystem state. Implementations MUST NOT include an additional `subsystems` wrapper key between the `{device_id}` and the `{subsystem_id}`.
+- **Registries:** Map of `{registry_id}` to a map containing a `devices` key, which is a map of `{device_id}` to a map where each key is a `{subsystem_id}` (e.g., `main`, `meta`, `system`) and each value is the corresponding subsystem state.
+- **Constraint:** Implementations MUST NOT include an additional `subsystems` wrapper key between the `{device_id}` and the `{subsystem_id}`. This is a critical interoperability point; extra nesting levels will cause reconciliation failures in compliant orchestrators.
 - **Detail:** Optional parameters.
 
 ### 5.2. Update Semantics (Partial Merge)

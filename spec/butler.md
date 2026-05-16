@@ -139,3 +139,10 @@ All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`). It
 ### 9.2 Observer (Passive Observer)
 - **Output:** Raw wire format `{topic}: {payload}`.
 - **Constraints:** Unbuffered, single line, no truncation.
+
+### 9.3 Compliance Logging
+For automated interoperability testing and verification, implementations MUST adhere to the following log formats for critical lifecycle events:
+- **State Transitions (Verifier):** `VERIFIER [INFO]: State transition for {subsystem}: {old_state} -> {new_state}`
+- **Validation Errors (Verifier):** `VERIFIER [ERROR]: VALIDATION ERROR: {message}`
+- **Terminal State (Orchestrator):** `[butler] Device {registry_id}/{device_id}/{subsystem} terminal state {status} with version {version}`
+Consistent log prefixes and formats are essential for multi-implementation integration testing.
