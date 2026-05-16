@@ -20,6 +20,7 @@ These top-level files/directories MUST NOT be removed or altered:
 * AGENTS.md: Agent-specific instructions and mandates.
 * REBUILD.md: System rebuild procedures.
 * UPDATE.md: Maintenance and update procedures.
+* AUDIT.md: Audit an implementation for spec compliance.
 * MERGER.md: Specification merge logic.
 * WORKFLOW.md: Operational workflow definitions.
 * spec/: Formal system specifications (e.g., uufi.md).
