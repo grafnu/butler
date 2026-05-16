@@ -107,7 +107,7 @@ The root directory MUST ONLY contain the following files and directories:
 
 ## 6. Standard Tooling CLI Interface (bin/)
 
-All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`). It MUST be supported both as a positional first argument and via an explicit `--conn_spec` flag.
+All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`). It MUST be supported both as a positional first argument and via an explicit `--conn_spec` flag. On startup, all tools SHOULD output their connectivity parameters in a consistent format: `Conn spec: scheme={scheme}, host={host}, port={port}, principal={principal}, prefix={prefix}`.
 
 - **butler [conn_spec] [-f]**: Starts the system orchestrator.
 - **register [conn_spec] [registry_id] <device_id> [make] [model]**: Registers a device in the local model.
@@ -141,7 +141,7 @@ All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`). It
 
 ### 9.2 Observer (Passive Observer)
 - **Output:** Raw wire format `{topic}: {payload}`.
-- **Constraints:** Unbuffered, single line, no truncation.
+- **Constraints:** Unbuffered, exactly one line per message, no truncation. Implementations MUST ensure that message output is thread-safe and that each message is followed by a newline character, even when multiple messages arrive simultaneously.
 
 ### 9.3 Compliance Logging
 For automated interoperability testing and verification, implementations MUST adhere to the following log formats for critical lifecycle events:
