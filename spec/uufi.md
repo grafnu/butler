@@ -154,7 +154,7 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 
 - **Mandatory Fields:** `timestamp` and `version` MUST be at the root of the `payload` object.
 - **Metadata:** The `make` and `model` fields are mandatory for all `blobset` subfolder payloads (state and config) within the subsystem nesting. These fields are essential for the System to locate the correct blob in the repository and MUST be included in every subsystem entry subject to reconciliation. Additionally, the `generation` field MUST be included in `blobset` config payloads to provide a temporal reference for the update command; it MUST follow the RFC 3339 minimal precision format (as defined in Section 8.2). Implementations MUST NOT use the version string as the value for the `generation` field.
-- **Blobset Config URL:** The `url` field in a `blobset` config payload MUST be a valid URI. Implementations MUST support the `file://` scheme for local file references. When a `file://` URI is provided, the recipient MUST strip the scheme and any leading slashes as appropriate for the local operating system to resolve the absolute or relative path.
+- **Blobset Config URL:** The `url` field in a `blobset` config payload MUST be a valid URI. Implementations MUST support the `file://` scheme for local file references. When a `file://` URI is provided, the recipient MUST strip the scheme and any leading slashes as appropriate for the local operating system to resolve the absolute or relative path. For absolute paths, it is RECOMMENDED to use the `file:///` (three slashes) format to avoid ambiguity with the `netloc` component of the URI.
 
 
 ### 8.2. Timestamp Format
