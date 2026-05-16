@@ -51,7 +51,7 @@ The system utilizes a message-based transport (MQTT or PubSub) as defined in `uu
   - `active`: Target Version != Current Version.
   - `pending`: Update in progress (device has received command).
 - **Triggering:** The orchestrator re-evaluates state upon receiving device status reports. A null `current_version` is treated as an empty string.
-- **Settling Time:** A minimum 5s delay SHOULD be observed after state changes before re-evaluation to avoid race conditions.
+- **Settling Time:** A minimum 5s delay SHOULD be observed after state changes before re-evaluation to avoid race conditions. For the purposes of this rule, "state changes" MUST be interpreted as changes to the `target_version` or `current_version`. Implementations MUST NOT reset the settling time timer upon receiving periodic status reports that do not change these version fields, even if other fields like `status` or `timestamp` vary. This ensures that updates are not indefinitely blocked by high-frequency heartbeat messages.
 - **Timeout:** The Butler MUST wait for at least `BUTLER_TIMEOUT` (default: 60s) for a device to progress from the `pending` state before triggering a rollback.
 - **Discovery:** The Butler MUST dynamically discover registries and devices via the UUFI message bus.
 
@@ -74,7 +74,7 @@ The system utilizes a message-based transport (MQTT or PubSub) as defined in `uu
 - **Integrity:** Every blob requires a SHA256 hash for verification.
 
 ### 4.2 Model Repository (Desired State)
-- **Format:** The cloud model MUST follow the full schema defined in UUFI Appendix (A.2), including the top-level `cloud` wrapper and the 3-level nesting (Registries -> Devices -> Subsystems).
+- **Format:** The cloud model MUST follow the full schema defined in UUFI Appendix (A.2), including the top-level `cloud` wrapper and the 3-level nesting (Registries -> devices -> Device -> Subsystem). The `devices` wrapper is mandatory, and no additional nesting (like `subsystems`) is permitted between the device and its subsystems.
 - **Path Override:** `BUTLER_MODEL_FILE`.
 - **Atomicity:** Updates to the local model file MUST be atomic (e.g., write to temporary file then rename).
 - **Access:** Direct local access is restricted to `mocket`, `register`, and `trigger`.
