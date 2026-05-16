@@ -140,7 +140,9 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 
 ### 8.1. Payload Structure
 - **Nesting:** The `payload` object contains the fields of the UDMI message corresponding to the `subFolder` and `subType`.
-- **Subsystem Nesting:** For `blobset` config and state payloads, data MUST be nested within a subsystem-id key (e.g., `system`) to support multi-subsystem devices. Implementations MUST handle both nested and unnested (flat) payloads for backward compatibility and robust interoperability.
+- **Subsystem Nesting:** For `blobset` config and state payloads, data MUST be nested within a subsystem-id key (e.g., `system`) to support multi-subsystem devices. For maximum compatibility with UDMI standards, implementations SHOULD include a `blobs` wrapper key within the `blobset` object, containing the subsystem-id keys. Implementations MUST handle both nested (with and without the `blobs` wrapper) and unnested (flat) payloads for backward compatibility and robust interoperability.
+
+- **UDMI Subfolder Nesting:** For messages using the `udmi` subfolder (e.g., handshakes), the payload data MUST be nested within a `udmi` key at the root of the `payload` object. Implementations SHOULD also handle flattened payloads for robustness.
 
 - **Mandatory Fields:** `timestamp` and `version` MUST be at the root of the `payload` object.
 - **Metadata:** The `make` and `model` fields are mandatory for all `blobset` subfolder payloads (state and config) within the subsystem nesting. These fields are essential for the System to locate the correct blob in the repository and MUST be included in every subsystem entry subject to reconciliation.
