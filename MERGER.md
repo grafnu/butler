@@ -74,14 +74,14 @@ implementations then there should be exactly N*(N-1) test runs.
 Every combination of `butler` & `verifier` should be tested.
 
 Run the tests all in parallel at the same time, using different
-prefixes to disamiguate the working sets. All trial runs should
+prefixes to disambiguate the working sets. All trial runs should
 take about the same amount of time to complete, so if some runs
 are taking more than twice as long as the passing runs, then it
 should be aborted and considered a failure.
 
 Create/update a file `impl/test_summary.txt` with PASS/FAIL/FIXED results
 of the testing results in the form (e.g.) `impl_A verifies impl_B:
-PASS` sorted in lexagraphical order (e.g. using `sort` on the
+PASS` sorted in lexicographical order (e.g. using `sort` on the
 file). PASS means it passed unmodified, FAIL means it failed and could
 not easily be fixed, and FIXED means that it passed after
 modifications.

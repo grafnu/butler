@@ -23,7 +23,7 @@ These top-level files/directories MUST NOT be removed or altered:
 * AUDIT.md: Audit an implementation for spec compliance.
 * MERGER.md: Specification merge logic.
 * WORKFLOW.md: Operational workflow definitions.
-* spec/: Formal system specifications (e.g., uufi.md).
+* spec/: Formal system specifications (e.g., uufi.md, butler.md).
 * .wincolor: Terminal configuration.
 * .gitignore: Git exclusion patterns.
 
