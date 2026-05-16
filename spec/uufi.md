@@ -161,7 +161,7 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 
 ### 8.3. Type Safety and Fallbacks
 - **Type Safety:** Mandatory version strings (`current_version`, `target_version`, etc.) MUST NOT be `null`. If a version is unknown, use a placeholder string like `"0.0.0"`. Implementations MUST treat `"0.0.0"` as an uninitialized or lower-precedence state; a non-zero version string MUST NEVER be overwritten by `"0.0.0"` during automated synchronization.
-- **Metadata Fallbacks:** For mandatory string fields like `make` and `model`, if the value is unknown or uninitialized, implementations SHOULD use `"unknown"` as a standard fallback value.
+- **Metadata Fallbacks:** For mandatory string fields like `make` and `model`, if the value is unknown or uninitialized, implementations SHOULD use `"unknown"` as a standard fallback value. Similar to the rule for versions, implementations MUST treat `"unknown"` as a lower-precedence state; a known non-fallback value MUST NEVER be overwritten by `"unknown"` during model reconciliation or synchronization.
 
 ### 8.4. MQTT Specific Rules
 - **Redundancy Rule:** Implementations MUST reject messages where envelope fields duplicate topic-encoded data.
