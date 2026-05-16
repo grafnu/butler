@@ -78,6 +78,7 @@ The Handshake Protocol is the message sequence and associated behavior used to e
 
 ### Identity and Addressing
 - **Principal Mapping**: For handshake replies, the System MUST use the `principal` or `source` from the received state message. The received message's `principal` MUST be used if present; otherwise, the `source` MUST be used as a fallback.
+- **Handshake Registry Discovery**: If the `source` field in the handshake Step 1 state message contains a forward slash `/`, System components SHOULD interpret the portion before the first slash as the `deviceRegistryId` and the portion after as the `deviceId` for the purpose of environmental identification and registry discovery.
 - **Matching**: When matching identities, implementations MUST only compare the base part of the identity (the portion before the first dot `.`) to allow for tool-specific tagging (e.g., `user.verifier` MUST match `user`).
 - **Differentiator Separator**: Implementations MUST use the dot `.` character to separate identity components (e.g., `butler.nonce`). Other separators (e.g., `-`, `_`) MUST NOT be used for this purpose to ensure consistent matching of base identities.
 - **Naming Schemes**: System components MUST NOT detect or reject identities with multiple components (e.g., `user.toolname`) as "manual differentiators" if they are part of a standardized naming scheme.
