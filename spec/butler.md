@@ -10,6 +10,7 @@ The root directory MUST ONLY contain the following files and directories:
 - **AGENTS.md**: Agent-specific instructions and mandates.
 - **REBUILD.md**: System rebuild procedures.
 - **UPDATE.md**: Maintenance and update procedures.
+- **AUDIT.md**: Audit an implementation for spec compliance.
 - **MERGER.md**: Specification merge logic.
 - **WORKFLOW.md**: Operational workflow definitions.
 - **.wincolor**: Terminal configuration.
@@ -22,8 +23,7 @@ The root directory MUST ONLY contain the following files and directories:
 - **README.md**: System overview and documentation.
 
 ### Operational and Test Artifacts
-- **test_summary.txt**: Verification and testing results.
-- **impl/**: Cross-implementation testing workspace.
+- **impl/**: Cross-implementation testing workspace (including `test_summary.txt`).
 - **tmp/**: Temporary workspace (ephemeral).
 - **testing/**: Test assets and environment.
 - **venv/**: Python virtual environment.

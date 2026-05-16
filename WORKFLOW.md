@@ -16,7 +16,7 @@ The ultimate output of the workflow is an implementation in the `gemerger` branc
 a promoted version of one of the versions from an `impl` branch, which source their
 behavioral specifications from the `spec` branch. Additionally, if there are relevant
 changes to the spec from the `gemerger` branch, they are migrated back into `spec` through
-a metered reviewed process.
+a metered review process.
 
 ## Workflow stages.
 
