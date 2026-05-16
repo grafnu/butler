@@ -10,7 +10,7 @@ Only execute this if the `butler` directory already exists (and has code in it).
 
 * `git fetch origin`
 * `git merge origin/main`
-* Update the code with any recent changes in `spec/`
+* Update the code to comply with the specifications in `spec/`
 * `git push`
 
 The files in `spec/` should be considered immutable and not changed. All files

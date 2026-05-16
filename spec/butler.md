@@ -126,7 +126,7 @@ All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`).
 ## 8. Robustness
 
 - **Idempotency:** All components MUST be idempotent.
-- **Deduplication:** Track message nonces (8-digit hex) for at least 5 minutes.
+- **Deduplication:** Track message `transaction_id` (8-digit hex) for at least 5 minutes.
 - **Partial Merge:** `cloud` model `UPDATE` operations MUST be partial merges at the device subsystem level; existing fields not in the payload MUST NOT be modified.
 
 ## 9. Verification and Observability
