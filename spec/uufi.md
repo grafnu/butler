@@ -49,6 +49,8 @@ Format: `scheme://[user@]host[:port][/path]`
 - **Cloud Model Service:**
   - **Discovery:** System components MUST dynamically discover registries and devices via the UUFI message bus. Clients publish a `query/cloud` message to `[/{prefix}]/uufi/c/query/cloud`.
   - **Response:** System publishes the model to `[/{prefix}]/uufi/c/config/cloud`.
+  - **Updates:** Clients publish model updates to `[/{prefix}]/uufi/c/model/cloud`.
+  - **Registry-less Enforcement:** All cloud model operations (`query`, `model`, `config`) MUST use registry-less topics (e.g., omitting the `/r/{registry_id}/d/{device_id}` path segments).
   - **Structure:** Uses nested **Registries** (Section 5.1).
 
 ### 2.3 Cloud Model Structure
@@ -77,6 +79,7 @@ The Handshake Protocol is the message sequence and associated behavior used to e
 ### Identity and Addressing
 - **Principal Mapping**: For handshake replies, the System MUST use the `principal` or `source` from the received state message. The received message's `principal` MUST be used if present; otherwise, the `source` MUST be used as a fallback.
 - **Matching**: When matching identities, implementations MUST only compare the base part of the identity (the portion before the first dot `.`) to allow for tool-specific tagging (e.g., `user.verifier` MUST match `user`).
+- **Differentiator Separator**: Implementations MUST use the dot `.` character to separate identity components (e.g., `butler.nonce`). Other separators (e.g., `-`, `_`) MUST NOT be used for this purpose to ensure consistent matching of base identities.
 - **Naming Schemes**: System components MUST NOT detect or reject identities with multiple components (e.g., `user.toolname`) as "manual differentiators" if they are part of a standardized naming scheme.
 - **Registry Discovery**: The System MUST provide a `deviceRegistryId` in the `config.udmi` handshake reply if the System has prior knowledge of the Client's registry. If provided, the `deviceRegistryId` MUST be placed within the `setup` block of the payload.
 - **Responsiveness**: MQTT message callback handlers MUST NOT perform long-running or blocking operations. Heavy processing MUST be offloaded to a separate thread.
