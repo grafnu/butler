@@ -51,6 +51,10 @@ Format: `scheme://[user@]host[:port][/path]`
   - **Response:** System publishes the model to `[/{prefix}]/uufi/c/config/cloud`.
   - **Structure:** Uses nested **Registries** (Section 5.1).
 
+### 2.3 Cloud Model Structure
+- **Nesting Rule:** To ensure interoperability, the cloud model MUST use a strictly defined nesting structure: `cloud` -> `registries` -> `{registry_id}` -> `devices` -> `{device_id}` -> `{subsystem_id}`.
+- **Subsystem Metadata:** Each subsystem object SHOULD include a `subsystem` field matching its `{subsystem_id}` to facilitate debugging and message routing.
+
 ## 3. Handshake Protocol
 
 The Handshake Protocol is the message sequence and associated behavior used to establish an active UUFI session between a Client and the System.

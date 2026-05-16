@@ -67,28 +67,6 @@ The root directory MUST ONLY contain the following files and directories:
 - **Transitions:** Transitions to `success` or `failure` MUST only occur from the `pending` state. A direct transition from `quiescent` to `success` or `failure` is a protocol violation.
 - **Robustness:** Devices MUST robustly handle immediate state change requests (back-to-back config updates) and ensure eventual consistency with the latest target state.
 
-## 4. Functional Components
-
-### 4.1 Blob Repository
-- **Structure:** `{base_dir}/{make}/{model}/{subsystem_id}/{version}/`
-- **Contents:**
-  - `bundle.bin`: The binary blob content.
-  - `sha256.txt`: Hex-encoded SHA-256 hash of `bundle.bin`.
-- **Integrity:** Every blob requires a SHA256 hash for verification.
-
-### 4.2 Model Repository (Desired State)
-- **Format:** The cloud model MUST follow the full schema defined in UUFI Appendix (A.2), including the top-level `cloud` wrapper and the 3-level nesting (Registries -> devices -> Device -> Subsystem). The `devices` wrapper is mandatory, and no additional nesting (like `subsystems`) is permitted between the device and its subsystems.
-- **Path Override:** `BUTLER_MODEL_FILE`.
-- **Atomicity:** Updates to the local model file MUST be atomic (e.g., write to temporary file then rename).
-- **Access:** Direct local access is restricted to `mocket`, `register`, and `trigger`.
-- **Primary Key:** Composite of `registry_id` and `device_id`.
-
-### 4.3 Device Conduit (Client-side / Mocket)
-- **Reporting:** Periodically publish `current_version`, `status`, and `lkg_version` via `blobset` state messages.
-- **Payload Structure:** `blobset` payloads MUST include `make` and `model` fields within the subsystem nesting to ensure the orchestrator can correctly identify the device type. For consistency across implementations, implementations MUST use the `blobs` wrapper key within the `blobset` state report.
-- **Lifecycle:** `quiescent` -> `pending` (download/verify) -> `success` or `failure`.
-- **Transitions:** Transitions to `success` or `failure` MUST only occur from the `pending` state. A direct transition from `quiescent` to `success` or `failure` is a protocol violation.
-
 ## 5. Operational Sequences
 
 ### 5.1 Update Flow
