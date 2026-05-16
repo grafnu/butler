@@ -127,12 +127,15 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 | Blobset Config | `config` | `blobset` | Publish |
 | Blobset State | `state` | `blobset` | Receive |
 
-## 7. Reliability
+### 7.1 Transaction Identifiers
+- **Envelope Field:** MUST use `transactionId` (camelCase) in the MQTT and PubSub envelope.
+- **Payload Field:** For handshake messages (`udmi` subfolder), the `setup` and `reply` blocks MUST use `transaction_id` (snake_case) to maintain UDMI schema compatibility.
+- **Consistency:** The value of `transactionId` in the envelope SHOULD match the `transaction_id` in the payload for the same message.
 
-### MQTT QoS
+### 7.2 MQTT QoS
 - **Requirement:** QoS 1 (At Least Once) for all state and configuration messages.
 
-### Idempotency
+### 7.3 Idempotency
 - **Transaction ID:** MUST use a unique `transactionId` for message identification.
 - **Deduplication:** Track `transactionId`s for 5 minutes.
 
