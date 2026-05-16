@@ -104,7 +104,7 @@ The system utilizes a message-based transport (MQTT or PubSub) as defined in `uu
 
 ## 6. Standard Tooling CLI Interface (bin/)
 
-All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`). It SHOULD be supported both as an optional first positional argument and via an explicit `--conn_spec` flag.
+All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`). It MUST be supported both as an optional first positional argument and via an explicit `--conn_spec` flag.
 
 - **butler [conn_spec] [-f]**: Starts the system orchestrator.
 - **register [conn_spec] [registry_id] <device_id> [make] [model]**: Registers a device in the local model.
