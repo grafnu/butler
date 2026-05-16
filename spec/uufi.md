@@ -107,7 +107,7 @@ Inner JSON `payload` object MUST include:
 
 ### 5.1. Schema
 - **Operation:** `READ`, `CREATE`, `UPDATE`, `DELETE`, `BIND`, `UNBIND`.
-- **Registries:** Map of `{registry_id}` to a map containing a `devices` key, which is a map of `{device_id}` to a map of `{subsystem_id}` to subsystem state.
+- **Registries:** Map of `{registry_id}` to a map containing a `devices` key, which is a map of `{device_id}` to a map where each key is a `{subsystem_id}` (e.g., `main`, `meta`, `system`) and each value is the corresponding subsystem state. Implementations MUST NOT include an additional `subsystems` wrapper key between the `{device_id}` and the `{subsystem_id}`.
 - **Detail:** Optional parameters.
 
 ### 5.2. Update Semantics (Partial Merge)
@@ -150,7 +150,7 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 - **UDMI Subfolder Nesting:** For messages using the `udmi` subfolder (e.g., handshakes), the payload data MUST be nested within a `udmi` key at the root of the `payload` object. Implementations SHOULD also handle flattened payloads for robustness.
 
 - **Mandatory Fields:** `timestamp` and `version` MUST be at the root of the `payload` object.
-- **Metadata:** The `make` and `model` fields are mandatory for all `blobset` subfolder payloads (state and config) within the subsystem nesting. These fields are essential for the System to locate the correct blob in the repository and MUST be included in every subsystem entry subject to reconciliation. Additionally, the `generation` field MAY be included in `blobset` config payloads to provide a temporal reference for the update command; if provided, it SHOULD follow the RFC 3339 minimal precision format.
+- **Metadata:** The `make` and `model` fields are mandatory for all `blobset` subfolder payloads (state and config) within the subsystem nesting. These fields are essential for the System to locate the correct blob in the repository and MUST be included in every subsystem entry subject to reconciliation. Additionally, the `generation` field MAY be included in `blobset` config payloads to provide a temporal reference for the update command; if provided, it MUST follow the RFC 3339 minimal precision format (as defined in Section 8.2). Implementations MUST NOT use the version string as the value for the `generation` field.
 - **Blobset Config URL:** The `url` field in a `blobset` config payload MUST be a valid URI. Implementations MUST support the `file://` scheme for local file references. When a `file://` URI is provided, the recipient MUST strip the scheme and any leading slashes as appropriate for the local operating system to resolve the absolute or relative path.
 
 
