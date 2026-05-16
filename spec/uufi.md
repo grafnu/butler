@@ -70,7 +70,7 @@ The System publishes a UDMI `config` message to `/uufi/c/config/udmi`.
 
 ### Registry ID Discovery
 - **Default:** `default`
-- **Discovery:** The System MAY provide a `deviceRegistryId` in the `config.udmi` handshake reply to the Client. To ensure interoperability, the `deviceRegistryId` SHOULD be placed within the `setup` block of the payload. The Client SHOULD use this `deviceRegistryId` for all subsequent registry-scoped topics. The System MUST NOT expect to discover its own `deviceRegistryId` from Client-initiated handshakes. (Note: Use `deviceRegistryId` camelCase exactly as specified; case-insensitive or snake_case matching is NOT guaranteed).
+- **Discovery:** The System MAY provide a `deviceRegistryId` in the `config.udmi` handshake reply to the Client. If the System has prior knowledge of the Client's registry (e.g., from a pre-configured model), it SHOULD provide the correct `deviceRegistryId` to ensure consistent addressing. To ensure interoperability, the `deviceRegistryId` SHOULD be placed within the `setup` block of the payload. The Client SHOULD use this `deviceRegistryId` for all subsequent registry-scoped topics. The System MUST NOT expect to discover its own `deviceRegistryId` from Client-initiated handshakes. (Note: Use `deviceRegistryId` camelCase exactly as specified; case-insensitive or snake_case matching is NOT guaranteed).
 - **Responsiveness:** MQTT message callback handlers MUST NOT perform long-running or blocking operations (e.g., `time.sleep()`). Any simulated work or heavy processing MUST be offloaded to a separate thread to maintain system-wide responsiveness and avoid buffer overflows or message loss in high-concurrency environments.
 
 ### 3.1 Interoperability Reminders
