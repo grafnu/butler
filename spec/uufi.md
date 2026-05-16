@@ -83,7 +83,7 @@ The Handshake Protocol is the message sequence and associated behavior used to e
 - **Differentiator Separator**: Implementations MUST use the dot `.` character to separate identity components (e.g., `butler.nonce`). Other separators (e.g., `-`, `_`) MUST NOT be used for this purpose to ensure consistent matching of base identities.
 - **Naming Schemes**: System components MUST NOT detect or reject identities with multiple components (e.g., `user.toolname`) as "manual differentiators" if they are part of a standardized naming scheme.
 - **Registry Discovery**: The System MUST provide a `deviceRegistryId` in the `config.udmi` handshake reply if the System has prior knowledge of the Client's registry. If provided, the `deviceRegistryId` MUST be placed within the `setup` block of the payload.
-- **Responsiveness**: MQTT message callback handlers MUST NOT perform long-running or blocking operations. Heavy processing MUST be offloaded to a separate thread.
+- **Responsiveness**: MQTT message callback handlers MUST NOT perform long-running or blocking operations. Heavy processing MUST be offloaded to a separate thread. Implementations MUST ensure that messages originating from the same `source` or `principal` are processed in the order they were received, even when offloaded, to maintain protocol state integrity.
 
 ### 3.1 Metadata and Topic Conventions
 - **Metadata Storage**: Device metadata (`make`, `model`) MUST be stored in a dedicated `meta` subsystem within the cloud model for consistency.

@@ -64,7 +64,7 @@ The root directory MUST ONLY contain the following files and directories:
 - **Reporting:** Periodically publish `current_version`, `status`, and `lkg_version` via `blobset` state messages.
 - **Payload Structure:** `blobset` payloads MUST include `make` and `model` fields within the subsystem nesting to ensure the orchestrator can correctly identify the device type. For consistency across implementations, implementations MUST use the `blobs` wrapper key within the `blobset` state report.
 - **Lifecycle:** `quiescent` -> `pending` (download/verify) -> `success` or `failure`.
-- **Transitions:** Transitions to `success` or `failure` MUST only occur from the `pending` state. A direct transition from `quiescent` to `success` or `failure` is a protocol violation.
+- **Transitions:** Transitions to `success` or `failure` MUST only occur from the `pending` state. A direct transition from `quiescent` to `success` or `failure` is a protocol violation. System and Verifier components MUST ensure that state reports are processed in the order they were generated to avoid false-positive violations.
 - **Robustness:** Devices MUST robustly handle immediate state change requests (back-to-back config updates) and ensure eventual consistency with the latest target state.
 
 ## 5. Operational Sequences
