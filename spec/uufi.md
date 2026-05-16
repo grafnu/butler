@@ -108,7 +108,7 @@ Inner JSON `payload` object MUST include:
 ### 5.1. Schema
 - **Operation:** `READ`, `CREATE`, `UPDATE`, `DELETE`, `BIND`, `UNBIND`.
 - **Registries:** Map of `{registry_id}` to a map containing a `devices` key, which is a map of `{device_id}` to a map where each key is a `{subsystem_id}` (e.g., `main`, `meta`, `system`) and each value is the corresponding subsystem state.
-- **Constraint:** Implementations MUST NOT include an additional `subsystems` wrapper key between the `{device_id}` and the `{subsystem_id}`. This is a critical interoperability point; extra nesting levels will cause reconciliation failures in compliant orchestrators.
+- **CRITICAL Nesting Rule:** Implementations MUST NOT include an additional `subsystems` wrapper key between the `{device_id}` and the `{subsystem_id}` in any payload (especially `cloud` model and config messages). This is a foundational interoperability requirement. Subsystems MUST be direct children of the `{device_id}` key. Extra nesting levels WILL cause reconciliation failures in compliant orchestrators and MUST be flagged as a FAIL by verifiers.
 - **Detail:** Optional parameters.
 
 ### 5.2. Update Semantics (Partial Merge)
