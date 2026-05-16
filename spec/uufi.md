@@ -62,7 +62,7 @@ The Client publishes a UDMI `state` message to `/uufi/c/state/udmi`.
 ### Step 2: Configuration Confirmation
 The System publishes a UDMI `config` message to `/uufi/c/config/udmi`.
 - **Payload:** Must include `setup` and `reply`.
-- **Addressing:** Envelope `principal` MUST match Client's identity. For handshake replies, the System MUST use the `principal` or `source` from the received state message to ensure the reply reaches the correct client. If the received message has a `principal`, it SHOULD be used; otherwise, the `source` SHOULD be used as a fallback. To ensure interoperability with tagged identities (Section 3.1), "matching" the Client's identity SHOULD account for identity differentiators (e.g., matching the base identity part).
+- **Addressing:** Envelope `principal` MUST match Client's identity. For handshake replies, the System MUST use the `principal` or `source` from the received state message to ensure the reply reaches the correct client. The received message's `principal` MUST be used if present; otherwise, the `source` SHOULD be used as a fallback. To ensure interoperability with tagged identities (Section 3.1), "matching" the Client's identity SHOULD account for identity differentiators (e.g., matching the base identity part).
 
 **Retries:** The Client SHOULD periodically republish the Step 1 state message (e.g., every 5 seconds) if a valid Step 2 confirmation has not been received, until the 60-second timeout.
 
@@ -166,6 +166,12 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 - **Redundancy Rule:** Implementations MUST reject messages where envelope fields duplicate topic-encoded data.
 - **Leading Slash:** For MQTT transport, all UUFI topics MUST start with a leading slash `/`. Implementations MUST NOT accept or publish to topics lacking the leading slash.
 - **Wildcards:** Subscription wildcards (e.g., `/#`) MUST also adhere to the leading slash rule and MUST be scoped to the connection-defined prefix to ensure consistent topic matching across the prefix tree.
+
+### 8.5. Identity Isolation
+To support multi-client environments on a shared messaging backbone (especially when topic prefixes are not used), implementations MUST strictly enforce identity isolation using the `principal` field:
+- **Filtering:** All components MUST filter incoming messages and reject those where the `principal` field does not match their own local identity (accounting for identity differentiators). 
+- **Enforcement:** For MQTT, if the `principal` field is missing from an incoming envelope, the message MUST be rejected to prevent cross-trial interference and ensure protocol compliance.
+- **Differentiators:** When matching identities, implementations SHOULD only compare the base part of the identity (the portion before the first dot `.`) to allow for tool-specific tagging (e.g., `user.verifier` should match `user`).
 
 ---
 
