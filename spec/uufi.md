@@ -48,6 +48,7 @@ Format: `scheme://[user@]host[:port][/path]`
 - **Project Identity:** For the MQTT transport, the `projectId` field in the envelope MUST be treated as a general environment or project identifier. All components within a single UUFI session MUST use a consistent `projectId` (default: `vibrant`) to avoid ambiguity in message processing.
 - **Cloud Model Service:**
   - **Discovery:** System components MUST dynamically discover registries and devices via the UUFI message bus. Clients publish a `query/cloud` message to `[/{prefix}]/uufi/c/query/cloud`.
+  - **Subscription:** System components (specifically the Butler/Orchestrator) MUST subscribe to both the global model update topic `[/{prefix}]/uufi/c/model/cloud` and the device-specific model update topics `[/{prefix}]/uufi/r/+/d/+/c/model/cloud` to ensure all client-initiated updates are captured.
   - **Response:** System publishes the model to `[/{prefix}]/uufi/c/config/cloud`.
   - **Structure:** Uses nested **Registries** (Section 5.1).
 
