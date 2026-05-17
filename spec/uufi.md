@@ -29,7 +29,7 @@ Format: `scheme://[user@]host[:port][/path]`
 - **Principal:** The `user` component with a trailing `@`.
 - **Path:** First component maps to the root topic name (default: `udmi_uufi`).
 - **Subscription:** `{topic}+{user}`.
-- **Filtering:** Subscriptions should filter for messages where the `principal` attribute matches the local identity or is absent.
+- **Filtering:** Subscriptions MUST filter for messages where the `principal` attribute matches the local identity or is absent.
 - **Constraint:** `:port` is prohibited.
 
 #### MQTT (`mqtt://`)
@@ -55,14 +55,14 @@ The System publishes a UDMI `config` message to `/uufi/c/config/udmi`.
 - **Payload:** Must include `udmi.setup` and `udmi.reply` (see Schema 10.3).
 - **Addressing:** Envelope `principal` MUST match Client's identity.
 
-**Retries:** The Client SHOULD periodically republish the Step 1 state message (e.g., every 5 seconds) if a valid Step 2 confirmation has not been received, until the 60-second timeout.
+**Retries:** The Client MUST periodically republish the Step 1 state message (e.g., every 5 seconds) if a valid Step 2 confirmation has not been received, until the 60-second timeout.
 
 **Activation:** The Client is **Active** when `udmi.reply.transaction_id` matches the original `state.udmi.setup.transaction_id`.
 
 ### Registry ID Discovery
 - **Default:** `default`
-- **Discovery:** System may provide `{registryId}` in `config.udmi` during handshake.
-- **Priority:** If a Client has a pre-configured registry ID (e.g., via command-line arguments), it SHOULD prioritize it over the one provided by the System during handshake to ensure identity consistency in restricted environments.
+- **Discovery:** System can provide `{registryId}` in `config.udmi` during handshake.
+- **Priority:** If a Client has a pre-configured registry ID (e.g., via command-line arguments), it MUST prioritize it over the one provided by the System during handshake to ensure identity consistency in restricted environments.
 
 ### Timeouts
 - **Window:** 60 seconds.
@@ -172,8 +172,8 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 - **Requirement:** QoS 1 (At Least Once) for all state and configuration messages.
 
 ### Idempotency
-- **Nonce:** SHOULD use a unique message instance ID (8-digit hex nonce) for identification.
-- **Deduplication:** Track `nonce` values for 5 minutes. If `nonce` is not present, implementations MAY use `transactionId` for deduplication, EXCEPT for messages in the `udmi` subfolder (e.g., handshakes), which MUST NOT be deduplicated by `transactionId` to allow for protocol retries.
+- **Nonce:** MUST use a unique message instance ID (8-digit hex nonce) for identification.
+- **Deduplication:** Track `nonce` values for 5 minutes. If `nonce` is not present, implementations can use `transactionId` for deduplication, EXCEPT for messages in the `udmi` subfolder (e.g., handshakes), which MUST NOT be deduplicated by `transactionId` to allow for protocol retries.
 
 ## 9. Compliance
 
@@ -369,7 +369,7 @@ The cloud model, when stored as a local JSON file, MUST use the 3-level nesting 
 ## 11. Command Line Interface (CLI)
 
 ### 11.1. Robustness
-- **Unexpected Arguments:** All UUFI-compliant tools MUST NOT fail if they receive unexpected or unknown command-line arguments. They SHOULD ignore unknown arguments and proceed with execution.
-- **Argument Order:** Positional arguments SHOULD follow the order defined in the tool's usage string.
+- **Unexpected Arguments:** All UUFI-compliant tools MUST NOT fail if they receive unexpected or unknown command-line arguments. They MUST ignore unknown arguments and proceed with execution.
+- **Argument Order:** Positional arguments MUST follow the order defined in the tool's usage string.
 ```
 
