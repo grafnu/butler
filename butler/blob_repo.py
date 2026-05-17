@@ -23,14 +23,14 @@ class BlobRepo:
         target_path = os.path.join(target_dir, filename)
         shutil.copy2(blob_path, target_path)
 
-        with open(os.path.join(target_dir, "hash.txt"), "w") as f:
+        with open(os.path.join(target_dir, "sha256.txt"), "w") as f:
             f.write(hash_hex)
 
         return hash_hex
 
     def get_blob_info(self, make: str, model: str, subsystem: str, version: str) -> dict:
         target_dir = os.path.join(self.base_dir, make, model, subsystem, version)
-        hash_file = os.path.join(target_dir, "hash.txt")
+        hash_file = os.path.join(target_dir, "sha256.txt")
 
         if not os.path.exists(hash_file):
             return None
@@ -40,7 +40,7 @@ class BlobRepo:
 
         blob_path = None
         for item in os.listdir(target_dir):
-            if item != "hash.txt":
+            if item != "sha256.txt":
                 blob_path = os.path.join(target_dir, item)
                 break
 
