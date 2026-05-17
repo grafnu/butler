@@ -50,12 +50,12 @@ Format: `scheme://[user@]host[:port][/path]`
   - **Discovery:** System components MUST dynamically discover registries and devices via the UUFI message bus. Clients publish a `query/cloud` message to `[/{prefix}]/uufi/c/query/cloud`.
   - **Response:** System publishes the model to `[/{prefix}]/uufi/c/config/cloud`.
   - **Updates:** Clients publish model updates to `[/{prefix}]/uufi/c/model/cloud`.
-  - **Registry-less Enforcement:** All cloud model operations (`query`, `model`, `config`) MUST use registry-less topics (e.g., omitting the `/r/{registry_id}/d/{device_id}` path segments). Similarly, the `Discovery` operation (`events/discovery`) MAY use registry-less topics to facilitate initial device identification, especially before a successful handshake has provided the client with a `deviceRegistryId`.
+  - **Registry-less Enforcement:** All cloud model operations (`query`, `model`, `config`) MUST use registry-less topics (e.g., omitting the `/r/{registry_id}/d/{device_id}` path segments). Similarly, the `Discovery` operation (`events/discovery`) MUST use registry-less topics to facilitate initial device identification, especially before a successful handshake has provided the client with a `deviceRegistryId`.
   - **Structure:** Uses nested **Registries** (Section 5.1).
 
 ### 2.3 Cloud Model Structure
 - **Nesting Rule:** To ensure interoperability, the cloud model MUST use a strictly defined nesting structure: `cloud` -> `registries` -> `{registry_id}` -> `devices` -> `{device_id}` -> `{subsystem_id}`.
-- **Subsystem Metadata:** Each subsystem object SHOULD include a `subsystem` field matching its `{subsystem_id}` to facilitate debugging and message routing.
+- **Subsystem Metadata:** Each subsystem object MUST include a `subsystem` field matching its `{subsystem_id}` to facilitate debugging and message routing.
 
 ## 3. Handshake Protocol
 
@@ -78,7 +78,7 @@ The Handshake Protocol is the message sequence and associated behavior used to e
 
 ### Identity and Addressing
 - **Principal Mapping**: For handshake replies, the System MUST use the `principal` or `source` from the received state message. The received message's `principal` MUST be used if present; otherwise, the `source` MUST be used as a fallback.
-- **Handshake Registry Discovery**: If the `source` field in the handshake Step 1 state message contains a forward slash `/`, System components SHOULD interpret the portion before the first slash as the `deviceRegistryId` and the portion after as the `deviceId` for the purpose of environmental identification and registry discovery.
+- **Handshake Registry Discovery**: If the `source` field in the handshake Step 1 state message contains a forward slash `/`, System components MUST interpret the portion before the first slash as the `deviceRegistryId` and the portion after as the `deviceId` for the purpose of environmental identification and registry discovery.
 - **Matching**: When matching identities, implementations MUST only compare the base part of the identity (the portion before the first dot `.`) to allow for tool-specific tagging (e.g., `user.verifier` MUST match `user`).
 - **Differentiator Separator**: Implementations MUST use the dot `.` character to separate identity components (e.g., `butler.nonce`). Other separators (e.g., `-`, `_`) MUST NOT be used for this purpose to ensure consistent matching of base identities.
 - **Naming Schemes**: System components MUST NOT detect or reject identities with multiple components (e.g., `user.toolname`) as "manual differentiators" if they are part of a standardized naming scheme.
@@ -179,8 +179,8 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 
 ### 8.5. Identity Isolation
 To support multi-client environments on a shared messaging backbone (especially when topic prefixes are not used), implementations MUST strictly enforce identity isolation using the `principal` field:
-- **Filtering:** All components MUST filter incoming messages and reject those where the `principal` field does not match their own local identity (accounting for identity differentiators). Passive monitoring tools (e.g., observers and verifiers) SHOULD be exempt from this filtering to facilitate system-wide visibility.
-- **Enforcement:** For MQTT, if the `principal` field is missing from an incoming envelope, the message MUST be rejected to prevent cross-trial interference and ensure protocol compliance. Passive monitoring tools MAY also waive this requirement.
+- **Filtering:** All components MUST filter incoming messages and reject those where the `principal` field does not match their own local identity (accounting for identity differentiators). Passive monitoring tools (e.g., observers and verifiers) MUST be exempt from this filtering to facilitate system-wide visibility.
+- **Enforcement:** For MQTT, if the `principal` field is missing from an incoming envelope, the message MUST be rejected to prevent cross-trial interference and ensure protocol compliance. Passive monitoring tools MUST also waive this requirement.
 - **Differentiators:** When matching identities, implementations MUST only compare the base part of the identity (the portion before the first dot `.`) to allow for tool-specific tagging (e.g., `user.verifier` MUST match `user`).
 
 ---
