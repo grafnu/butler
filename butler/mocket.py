@@ -46,10 +46,12 @@ def main():
         subFolder = parsed.get('subFolder')
         unwrapped = unwrap_message(payload)
 
-        if subType == 'config' and subFolder == 'update' and parsed.get('deviceId') == device_id:
-            update_wrap = unwrapped.get('update', {})
-            for sub_name, sub_update in update_wrap.items():
-                if not isinstance(sub_update, dict): continue
+        if subType == 'config' and subFolder == 'blobset' and parsed.get('deviceId') == device_id:
+            blobset_wrap = unwrapped.get('blobset', {})
+            # Handle both nested (with 'blobs') and unnested
+            blobs = blobset_wrap.get('blobs', blobset_wrap)
+            for sub_name, sub_update in blobs.items():
+                if not isinstance(sub_update, dict) or sub_name in ['version', 'timestamp']: continue
                 subsystem = sub_name
                 if 'url' in sub_update and 'sha256' in sub_update:
                     state = "pending"
@@ -60,8 +62,9 @@ def main():
                     publish_status()
 
     def publish_status():
-        topic = transport.format_topic("state", "update", registry_id, device_id)
-        msg = wrap_message({"update": {subsystem: {"status": state, "current_version": current_version, "lkg_version": lkg_version}}}, principal=transport.principal)
+        topic = transport.format_topic("state", "blobset", registry_id, device_id)
+        # Spec 8.1: include 'blobs' wrapper and mandatory make/model
+        msg = wrap_message({"blobset": {"blobs": {subsystem: {"status": state, "current_version": current_version, "lkg_version": lkg_version, "make": "default", "model": "default"}}}}, principal=transport.principal)
         transport.publish(topic, msg)
 
     transport.set_on_message(on_message)

@@ -2,7 +2,7 @@ import sys
 import time
 import argparse
 import os
-from butler.transport import parse_conn_spec, MqttTransport, wrap_message, unwrap_message
+from butler.transport import parse_conn_spec, MqttTransport, wrap_message, unwrap_message, get_timestamp
 from butler.blob_repo import BlobRepo
 from butler.model_repo import ModelRepo
 
@@ -33,7 +33,7 @@ def main():
 
     def fetch_model_state():
         topic = transport.format_topic("query", "cloud")
-        msg = wrap_message({"cloud": {"operation": "READ"}}, principal=transport.principal, source=transport.principal)
+        msg = wrap_message({"cloud": {"operation": "READ", "registries": {}}}, principal=transport.principal, source=transport.principal)
         transport.publish(topic, msg)
 
     def on_message(topic, payload):
@@ -111,11 +111,14 @@ def main():
             device_states[state_key] = {}
             fetch_model_state()
 
-        if subType == 'state' and subFolder == 'update':
-            update = unwrapped.get('update', {})
-            if "status" in update or "current_version" in update: update = {"main": update}
-            for subsystem, sub_update in update.items():
-                if not isinstance(sub_update, dict): continue
+        if subType == 'state' and subFolder == 'blobset':
+            blobset = unwrapped.get('blobset', {})
+            blobs = blobset.get('blobs', blobset)
+            # Ensure nesting for flat payloads
+            if "status" in blobs or "current_version" in blobs: blobs = {"main": blobs}
+            
+            for subsystem, sub_update in blobs.items():
+                if not isinstance(sub_update, dict) or subsystem in ['version', 'timestamp']: continue
                 state = sub_update.get('status') or sub_update.get('state')
                 current_version = sub_update.get('current_version')
                 if subsystem not in device_states[state_key]: device_states[state_key][subsystem] = {}
@@ -142,7 +145,7 @@ def main():
     transport.subscribe(transport.format_topic("config", "cloud"))
     transport.subscribe(transport.format_topic("query", "cloud"))
     transport.subscribe(transport.format_topic("model", "cloud"))
-    transport.subscribe(transport.format_topic("state", "update", registry_id="+", device_id="+"))
+    transport.subscribe(transport.format_topic("state", "blobset", registry_id="+", device_id="+"))
 
     last_model_pub = 0
     try:
@@ -151,8 +154,21 @@ def main():
             # Periodically publish current configuration (every 10s)
             if now - last_model_pub > 10:
                 model_data = model_repo.get_model()
+                registries = model_data.get('registries', {})
+                for reg_id, reg_data in registries.items():
+                    devices = reg_data.get('devices', reg_data)
+                    for dev_id, dev_data in devices.items():
+                        state_key = (reg_id, dev_id)
+                        if state_key not in device_states: device_states[state_key] = {}
+                        for subsystem, data in dev_data.items():
+                            if not isinstance(data, dict): continue
+                            if subsystem not in device_states[state_key]: device_states[state_key][subsystem] = {}
+                            sd = device_states[state_key][subsystem]
+                            if 'target_version' in data: sd['target_version'] = data.get('target_version')
+                            if 'current_version' in data: sd['current_version'] = data.get('current_version')
+
                 topic_config = transport.format_topic("config", "cloud")
-                transport.publish(topic_config, wrap_message({"cloud": {"operation": "READ", "registries": model_data.get("registries", {})}}, principal=transport.principal, source=transport.principal))
+                transport.publish(topic_config, wrap_message({"cloud": {"operation": "READ", "registries": registries}}, principal=transport.principal, source=transport.principal))
                 last_model_pub = now
 
             for (registry_id, device_id), subsystems in list(device_states.items()):
@@ -171,8 +187,8 @@ def main():
                         
                         blob_info = blob_repo.get_blob_info(make, model_name, subsystem, target)
                         if blob_info:
-                            topic_update = transport.format_topic("config", "update", registry_id, device_id)
-                            msg = wrap_message({"update": {subsystem: {"url": blob_info['url'], "sha256": blob_info['hash'], "version": target}}}, principal=transport.principal)
+                            topic_update = transport.format_topic("config", "blobset", registry_id, device_id)
+                            msg = wrap_message({"blobset": {"blobs": {subsystem: {"url": blob_info['url'], "sha256": blob_info['hash'], "version": target, "make": make, "model": model_name, "generation": get_timestamp()}}}}, principal=transport.principal)
                             transport.publish(topic_update, msg)
                             state_data['state'] = 'pending'
                             state_data['pending_version'] = target

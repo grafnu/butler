@@ -39,8 +39,8 @@ def main():
         print(f"Device {device_id} not found in registry {registry_id} in model. Register it first.")
         sys.exit(1)
 
-    make = device.get("make", "default")
-    model_name = device.get("model", "default")
+    make = device.get(subsystem, {}).get("make") or device.get("main", {}).get("make", "default")
+    model_name = device.get(subsystem, {}).get("model") or device.get("main", {}).get("model", "default")
 
     blob_repo = BlobRepo()
     hash_hex = blob_repo.store_blob(make, model_name, subsystem, blob_version, blob_path)

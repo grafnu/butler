@@ -40,18 +40,21 @@ def main():
         device_id = parsed.get('deviceId')
         registry_id = parsed.get('registryId')
         
-        if subType == 'state' and subFolder == 'update' and device_id and registry_id:
+        if subType == 'state' and subFolder == 'blobset' and device_id and registry_id:
             unwrapped = unwrap_message(payload)
-            update = unwrapped.get('update', {})
-            if "status" in update or "current_version" in update: update = {"main": update}
-            for subsystem, sub_update in update.items():
-                if not isinstance(sub_update, dict): continue
+            blobset = unwrapped.get('blobset', {})
+            blobs = blobset.get('blobs', blobset)
+            if "status" in blobs or "current_version" in blobs: blobs = {"main": blobs}
+            for subsystem, sub_update in blobs.items():
+                if not isinstance(sub_update, dict) or subsystem in ['version', 'timestamp']: continue
                 state = sub_update.get('status') or sub_update.get('state')
                 if state:
                     state_key = (registry_id, device_id)
                     if state_key not in device_states: device_states[state_key] = {}
-                    prev_state = device_states[state_key].get(subsystem, 'quiescent')
+                    prev_state = device_states[state_key].get(subsystem, 'unknown')
                     if state != prev_state:
+                        # Use the standard verifier log format for easier parsing
+                        print(f"VERIFIER [INFO]: State transition for {subsystem}: {prev_state} -> {state}")
                         publish_verification(f"State transition: {prev_state} -> {state}", registry_id, device_id)
                         device_states[state_key][subsystem] = state
 

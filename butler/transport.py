@@ -60,22 +60,37 @@ def get_timestamp() -> str:
 
 def wrap_message(payload: dict, **envelope_kwargs) -> dict:
     msg = envelope_kwargs.copy()
-
-    # Omit fields already encoded in the MQTT topic structure
-    # But as per 9.3, principal SHOULD be included in outer JSON for registry-less messages.
-    # We'll ensure principal is there if provided.
-
     now = get_timestamp()
 
     if 'publishTime' not in msg:
         msg['publishTime'] = now
+    if 'projectId' not in msg:
+        msg['projectId'] = os.environ.get("BUTLER_PROJECT_ID", "vibrant")
+    if 'transactionId' not in msg:
+        msg['transactionId'] = uuid.uuid4().hex[:8]
     if 'nonce' not in msg:
         msg['nonce'] = uuid.uuid4().hex[:8]
-    if 'principal' not in msg and 'source' in msg:
-        msg['principal'] = msg['source']
+    if 'principal' not in msg:
+        msg['principal'] = msg.get('source', 'unknown')
+    if 'source' not in msg:
+        msg['source'] = msg.get('principal', 'unknown')
 
     if 'payload' not in msg:
         msg['payload'] = payload.copy()
+
+    def normalize_versions(obj):
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if k.endswith('_version') or k in ['version', 'current_version', 'target_version', 'lkg_version']:
+                    if v is None:
+                        obj[k] = "0.0.0"
+                else:
+                    normalize_versions(v)
+        elif isinstance(obj, list):
+            for item in obj:
+                normalize_versions(item)
+
+    normalize_versions(msg['payload'])
 
     if 'timestamp' not in msg['payload']:
         msg['payload']['timestamp'] = now
@@ -128,19 +143,24 @@ class MqttTransport:
         self.client.disconnect()
 
     def subscribe(self, topic: str):
+        if topic.startswith("/uufi") and self.conn_spec.prefix:
+            topic = "/" + self.conn_spec.prefix + topic
         self.client.subscribe(topic)
 
     def publish(self, topic: str, payload: dict):
+        if topic.startswith("/uufi") and self.conn_spec.prefix:
+            topic = "/" + self.conn_spec.prefix + topic
         self.client.publish(topic, json.dumps(payload), qos=1)
 
     def set_on_message(self, callback: Callable[[str, Any], None]):
         self.on_message_callback = callback
 
     def format_topic(self, sub_type: str, sub_folder: str, registry_id: str = None, device_id: str = None) -> str:
-        # /uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}
-        parts = ["", "uufi"]
+        # [/{prefix}]/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}
+        parts = [""]
         if self.conn_spec.prefix:
-            parts.append(self.conn_spec.prefix)
+            parts.extend(self.conn_spec.prefix.split("/"))
+        parts.append("uufi")
 
         if registry_id:
             parts.extend(["r", registry_id])
@@ -151,18 +171,20 @@ class MqttTransport:
         return "/".join(parts)
 
     def parse_topic(self, topic: str) -> dict:
+        if not topic.startswith('/'):
+            return {}
         parts = topic.split('/')
         if parts[0] == "":
             parts.pop(0)
 
-        if len(parts) < 3 or parts[0] != "uufi":
+        # Find the marker "uufi"
+        try:
+            uufi_idx = parts.index("uufi")
+        except ValueError:
             return {}
 
-        idx = 1
-        prefix = None
-        if parts[idx] not in ["r", "c"]: # Handling prefix if present
-             prefix = parts[idx]
-             idx += 1
+        prefix = "/".join(parts[:uufi_idx]) if uufi_idx > 0 else None
+        idx = uufi_idx + 1
 
         result = {}
         if prefix:
@@ -191,33 +213,37 @@ class MqttTransport:
         handshake_complete = False
         def temp_callback(topic, payload):
             nonlocal handshake_complete
+            print(f"DEBUG: handshake received {topic} {payload}")
             parsed = self.parse_topic(topic)
             if parsed.get('subType') == 'config' and parsed.get('subFolder') == 'udmi':
                 # Check principal and transactionId in envelope (Matching own principal as per spec)
-                if payload.get('principal') == self.principal:
+                p = payload.get('principal') if isinstance(payload, dict) else None
+                if p == self.principal or p == self.principal.split('.')[0]:
                    unwrapped = unwrap_message(payload)
-                   if 'udmi' in unwrapped and 'reply' in unwrapped['udmi']:
-                       if unwrapped['udmi']['reply'].get('transaction_id') == transaction_id:
+                   udmi = unwrapped.get('udmi', unwrapped)
+                   if isinstance(udmi, dict) and 'reply' in udmi:
+                       if udmi['reply'].get('transaction_id') == transaction_id:
                            handshake_complete = True
 
         old_callback = self.on_message_callback
         self.set_on_message(temp_callback)
 
-        payload = wrap_message({
-            "udmi": {
-                "setup": {
-                    "functions_ver": 9,
-                    "transaction_id": transaction_id,
-                    "msg_source": self.principal,
-                    "user": self.principal
-                }
-            }
-        }, transactionId=transaction_id, principal=self.principal, source=self.principal)
-
-        self.publish(topic_state, payload)
-
         start = time.time()
+        last_publish = 0
         while not handshake_complete and time.time() - start < 60:
+            if time.time() - last_publish >= 5:
+                payload = wrap_message({
+                    "udmi": {
+                        "setup": {
+                            "functions_ver": 9,
+                            "transaction_id": transaction_id,
+                            "msg_source": self.principal,
+                            "user": self.principal
+                        }
+                    }
+                }, transactionId=transaction_id, principal=self.principal, source=self.principal)
+                self.publish(topic_state, payload)
+                last_publish = time.time()
             time.sleep(0.1)
 
         self.set_on_message(old_callback)

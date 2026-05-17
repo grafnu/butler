@@ -78,9 +78,12 @@ class ModelRepo:
         devices = reg.setdefault("devices", {})
         if device_id not in devices:
             devices[device_id] = {
-                "make": make,
-                "model": model,
-                "main": {} # Default subsystem
+                "main": {
+                    "make": make,
+                    "model": model,
+                    "status": "quiescent",
+                    "current_version": "0.0.0"
+                }
             }
             self._write_model(data)
 
