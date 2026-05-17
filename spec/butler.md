@@ -31,7 +31,7 @@ The root directory MUST ONLY contain the following files and directories:
 ## 2. Role and Behavior
 
 ### 2.1 Orchestrator Behavior
-- **Authority:** The Butler is the primary authority for the `lkg_version` in the cloud model and MUST NOT trust a device-reported `lkg_version` if it conflicts with a previously validated state.
+The **Butler** is the primary authority for the `lkg_version` in the cloud model and MUST NOT trust a device-reported `lkg_version` if it conflicts with a previously validated state. To prevent split-brain conditions, the Butler is the **sole authoritative Cloud Model Server** on the UUFI bus; other components (e.g., `mocket`, `verifier`) MUST NOT respond to `query/cloud` messages or unilaterally publish `config/cloud` messages.
 - **Discovery:** The Butler MUST dynamically discover registries and devices from incoming state reports or cloud updates. This includes the Handshake Step 1 state message, which SHOULD be used to populate the initial model entry for a device.
 - **State Machine:**
   - `quiescent`: Target Version == Current Version.
@@ -65,30 +65,8 @@ The root directory MUST ONLY contain the following files and directories:
 - **Reporting:** Periodically publish `current_version`, `status`, and `lkg_version` via `blobset` state messages.
 - **Payload Structure:** `blobset` payloads MUST include `make` and `model` fields within the subsystem nesting to ensure the orchestrator can correctly identify the device type. For consistency across implementations, implementations MUST use the `blobs` wrapper key within the `blobset` state report.
 - **Lifecycle:** `quiescent` -> `pending` (download/verify) -> `success` or `failure`.
-- **Transitions:** Transitions to `success` or `failure` MUST only occur from the `pending` state. A direct transition from `quiescent` to `success` or `failure` is a protocol violation.
+- **Transitions:** Transitions to `success` or `failure` MUST only occur from the `pending` state. A direct transition from `quiescent` to `success` or `failure` is a protocol violation. System and Verifier components MUST ensure that state reports are processed in the order they were generated to avoid false-positive violations.
 - **Robustness:** Devices MUST robustly handle immediate state change requests (back-to-back config updates) and ensure eventual consistency with the latest target state.
-
-## 4. Functional Components
-
-### 4.1 Blob Repository
-- **Structure:** `{base_dir}/{make}/{model}/{subsystem_id}/{version}/`
-- **Contents:**
-  - `bundle.bin`: The binary blob content.
-  - `sha256.txt`: Hex-encoded SHA-256 hash of `bundle.bin`.
-- **Integrity:** Every blob requires a SHA256 hash for verification.
-
-### 4.2 Model Repository (Desired State)
-- **Format:** The cloud model MUST follow the full schema defined in UUFI Appendix (A.2), including the top-level `cloud` wrapper and the 3-level nesting (Registries -> devices -> Device -> Subsystem). The `devices` wrapper is mandatory, and no additional nesting (like `subsystems`) is permitted between the device and its subsystems.
-- **Path Override:** `BUTLER_MODEL_FILE`.
-- **Atomicity:** Updates to the local model file MUST be atomic (e.g., write to temporary file then rename).
-- **Access:** Direct local access is restricted to `mocket`, `register`, and `trigger`.
-- **Primary Key:** Composite of `registry_id` and `device_id`.
-
-### 4.3 Device Conduit (Client-side / Mocket)
-- **Reporting:** Periodically publish `current_version`, `status`, and `lkg_version` via `blobset` state messages.
-- **Payload Structure:** `blobset` payloads MUST include `make` and `model` fields within the subsystem nesting to ensure the orchestrator can correctly identify the device type. For consistency across implementations, implementations MUST use the `blobs` wrapper key within the `blobset` state report.
-- **Lifecycle:** `quiescent` -> `pending` (download/verify) -> `success` or `failure`.
-- **Transitions:** Transitions to `success` or `failure` MUST only occur from the `pending` state. A direct transition from `quiescent` to `success` or `failure` is a protocol violation.
 
 ## 5. Operational Sequences
 
@@ -108,7 +86,9 @@ The root directory MUST ONLY contain the following files and directories:
 
 ## 6. Standard Tooling CLI Interface (bin/)
 
-All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`). It MUST be supported both as a positional first argument and via an explicit `--conn_spec` flag.
+All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`). It MUST be supported both as a positional first argument and via an explicit `--conn_spec` flag. On startup, all tools MUST output their connectivity parameters in a consistent format: `Conn spec: scheme={scheme}, host={host}, port={port}, principal={principal}, prefix={prefix}`. This output SHOULD be directed to `stderr` if the tool is designed to produce machine-readable data on `stdout` (e.g., `observe`).
+
+To ensure interoperability and environmental isolation, tools MUST NOT fail if optional arguments (indicated by `[]`) are omitted, provided a valid default can be determined. When running in a multi-client environment (e.g., parallel testing), implementations MUST strictly adhere to the `Prefix Isolation` requirements defined in UUFI Section 2.2. Specifically, test runners (`smokeit`) MUST incorporate the provided connection prefix into all internally generated topics and child process arguments to prevent cross-trial interference.
 
 - **butler [conn_spec] [-f]**: Starts the system orchestrator.
 - **register [conn_spec] [registry_id] <device_id> [make] [model]**: Registers a device in the local model.
@@ -118,6 +98,8 @@ All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`). It
 - **verifier [conn_spec]**: Starts the independent verification tool.
 - **observe [conn_spec]**: Passive monitoring of the UUFI bus (output: `{topic}: {payload}`).
 - **smokeit [conn_spec]**: Basic integration test.
+
+The startup connectivity output MUST use the resolved numeric port (e.g., `1883`) for the `port` field; it MUST NOT be `None` or empty.
 
 ## 7. Standard Configuration Environment Variables
 
@@ -138,23 +120,27 @@ All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`). It
 ### 9.1 Verifier (Active Observer)
 - **Handshake:** MUST complete UUFI handshake.
 - **Monitoring:** Track state transitions in the `blobset` subfolder.
-- **Reporting:** Publish validation results to `[/{prefix}]/uufi/r/{reg_id}/d/{dev_id}/c/events/validation`. The Verifier MUST use the `deviceRegistryId` provided during its Handshake for its own topic path. For reporting on other devices, if the `registry_id` for that device is unknown, the Verifier MUST use `unknown` as the `{reg_id}` in the topic path.
-- **Payload Schema:** The `validation` object within the message payload MUST contain:
-  - `message` (string, mandatory): Human-readable event description.
-  - `level` (string, mandatory): One of `INFO`, `WARN`, `ERROR`.
-  - `result` (string, optional): One of `PASS`, `FAIL`, `INFO`.
-  - `device_id` (string, optional): The ID of the device being validated.
-  - `subsystem_id` (string, optional): The ID of the subsystem being validated.
+- **Reporting:** Publish validation results to `[/{prefix}]/uufi/r/{reg_id}/d/{dev_id}/c/events/validation`. For events related to a specific device, `{reg_id}` and `{dev_id}` MUST match the device. For self-reporting (e.g., handshake status), `{dev_id}` MUST be the verifier's identity (e.g., `verifier`) and `{reg_id}` MUST be `unknown` unless a specific registry has been discovered.
+- **Processing:** Verifier components MUST ensure that messages from the same device/subsystem are processed sequentially (e.g., via a message queue) to maintain accurate state tracking and avoid false-positive transition violations.
 
 ### 9.2 Observer (Passive Observer)
 - **Output:** Raw wire format `{topic}: {payload}`.
-- **Constraints:** Unbuffered, single line, no truncation.
+- **Constraints:** Unbuffered, exactly one line per message, no truncation. Implementations MUST NOT output any additional text (e.g., connection status, "RECEIVE" labels) beyond the message itself. The startup connectivity output required by Section 6 MUST be directed to `stderr` for the Observer tool to ensure that `stdout` contains only message data. Implementations MUST ensure that message output is thread-safe and that each message is followed by a newline character, even when multiple messages arrive simultaneously.
 
 ### 9.3 Compliance Logging
-For automated interoperability testing and verification, implementations MUST adhere to the following log formats for critical lifecycle events in both STDOUT and the `message` field of `events/validation` payloads:
-- **Handshake Step 1 (Client):** `VERIFIER [INFO]: Handshake started by {source}`
-- **Handshake Step 2 (System):** `VERIFIER [INFO]: Handshake completed for {client}`
-- **State Transitions (Verifier):** `VERIFIER [INFO]: State transition for {subsystem}: {old_state} -> {new_state}`
-- **Validation Errors (Verifier):** `VERIFIER [ERROR]: VALIDATION ERROR: {message}`
-- **Terminal State (Orchestrator):** `[butler] Device {registry_id}/{device_id}/{subsystem} terminal state {status} with version {version}`
-Consistent log prefixes and formats are essential for multi-implementation integration testing.
+For automated interoperability testing and verification, implementations MUST adhere to the following log formats for critical lifecycle events:
+- **State Transitions (Verifier):** `VERIFIER [INFO]: State transition for {subsystem}: {old_state} -> {new_state}`. The initial state before any report is received MUST be considered `unknown`.
+- **Handshake Events (Verifier):** `VERIFIER [INFO]: Handshake {started|completed} for {principal}`.
+- **Validation Errors (Verifier):** `VERIFIER [ERROR]: VALIDATION ERROR: {message}`.
+- **Terminal State (Orchestrator):** `[butler] Device {registry_id}/{device_id}/{subsystem} terminal state {status} with version {version}`.
+Consistent log prefixes and formats are essential for multi-implementation integration testing. These messages MUST be printed exactly as specified, without additional prefixes (e.g., timestamps or thread IDs) that might interfere with automated log analysis.
+
+### 9.4 Validation Event Schema
+- **Topic:** `[/{prefix}]/uufi/r/{registry_id}/d/{device_id}/c/events/validation`
+- **Payload:** The `validation` object within the `payload` MUST include:
+  - `message`: A human-readable description of the validation event.
+  - `level`: One of `INFO`, `WARN`, or `ERROR`.
+  - `device_id`: (Optional) The ID of the device being validated.
+  - `subsystem_id`: (Optional) The ID of the subsystem being validated.
+  - `status`: (Optional) The current state (e.g., `pending`, `success`).
+  - `result`: (Optional) One of `pass` or `fail` (case-insensitive).
