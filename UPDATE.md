@@ -4,9 +4,9 @@ THE PR.
 
 To update a build:
 
-This should NOT be performed on the `main` or `gemerger` branch.
-This sequence is for implementation branches only.
-Only execute this if the `butler` directory already exists (and has code in it).
+This should only be applied to branches that start with `impl_`.
+This should NOT be performed on the `main` or `gemerger` branch, or any other
+unrecognized branch. This sequence is for implementation branches only.
 
 * `git fetch origin`
 * `git merge origin/main`
@@ -26,12 +26,8 @@ Do NOT check out any other branch implementations, assume that they do not exist
 or are off limits.
 
 Do not ask how to complete the task, and do not check if you should proceed.
-Do not ask for clarification on any missing elements. If necessary,
-add a "ASSUMED:" tag in the spec file where it was ambigous and you
-needed to make a guess at the right thing to do.
+Do not ask for clarification on any missing elements.
 Your job is to figure everything out yourself and then generate a commit
 or PR that encapsulates the end result. Don't ask for permission or
-if anything is acceptable.
-
-If necessary, instead of asking what to do, follow the instructions in `REBUILD.md`
-to do a clean build from scratch.
+if anything is acceptable. If necessary, put an "ASSUMPTION:" comment
+into the commit message to explain spec-driven confusion.
