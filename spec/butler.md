@@ -33,6 +33,7 @@ The root directory MUST ONLY contain the following files and directories:
 ### 2.1 Orchestrator Behavior
 The **Butler** is the primary authority for the `lkg_version` in the cloud model and MUST NOT trust a device-reported `lkg_version` if it conflicts with a previously validated state. To prevent split-brain conditions, the Butler is the **sole authoritative Cloud Model Server** on the UUFI bus; other components (e.g., `mocket`, `verifier`) MUST NOT respond to `query/cloud` messages or unilaterally publish `config/cloud` messages.
 - **Discovery:** The Butler MUST dynamically discover registries and devices from incoming state reports or cloud updates. This includes the Handshake Step 1 state message, which MUST be used to populate the initial model entry for a device.
+- **Handshake Compliance:** The Butler MUST NOT initiate its own handshake; it MUST instead respond to handshake state messages from Devices and Verifiers with the appropriate config reply as defined in UUFI Section 3.
 - **State Machine:**
   - `quiescent`: Target Version == Current Version.
   - `active`: Target Version != Current Version.
