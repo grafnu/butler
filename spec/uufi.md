@@ -247,7 +247,8 @@ To support multi-client environments on a shared messaging backbone (especially 
           "properties": {
             "functions_min": { "type": "integer", "description": "Minimum supported functions version" },
             "functions_max": { "type": "integer", "description": "Maximum supported functions version" },
-            "udmi_version": { "type": "string", "description": "System UDMI version" }
+            "udmi_version": { "type": "string", "description": "System UDMI version" },
+            "deviceRegistryId": { "type": "string", "description": "System-provided registry ID" }
           }
         },
         "reply": {
