@@ -194,7 +194,7 @@ To support multi-client environments on a shared messaging backbone (especially 
     "subType": { "type": "string", "description": "UDMI subType" },
     "transactionId": { "type": "string", "description": "Tracking identifier" },
     "publishTime": { "type": "string", "format": "date-time", "description": "Envelope wrapping timestamp" },
-    "source": { "type": "string", "description": "Client session identifier" },
+    "source": { "type": "string", "description": "Unique client session identifier (MUST be unique within the connection prefix)" },
     "principal": { "type": "string", "description": "Session owner identity" },
     "nonce": { "type": "string", "description": "Unique message instance ID (8-digit hex)" },
     "payload": {
