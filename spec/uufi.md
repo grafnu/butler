@@ -158,6 +158,10 @@ To ensure efficiency and avoid redundant processing, components MUST ignore inco
 - **Leading Slash:** For MQTT transport, all UUFI topics MUST start with a leading slash `/`. Implementations MUST NOT accept or publish to topics lacking the leading slash.
 - **Wildcards:** Subscription wildcards (e.g., `/#`) MUST also adhere to the leading slash rule and MUST be scoped to the connection-defined prefix to ensure consistent topic matching across the prefix tree.
 
+### 8.4. Version String Format
+- **Default/Unknown Version:** Implementations MUST use the string `0.0.0` to represent an unknown, uninitialized, or null version (e.g., for `current_version`, `target_version`, or `lkg_version`).
+- **Persistence:** To ensure stability and prevent accidental data loss during partial merges, a non-zero version string (one that is NOT `0.0.0`) MUST NEVER be overwritten by `0.0.0`.
+
 ### 8.5. Identity Isolation
 To support multi-client environments on a shared messaging backbone (especially when topic prefixes are not used), implementations MUST strictly enforce identity isolation using the `principal` field:
 - **Filtering:** All components MUST filter ALL incoming messages (including `config`, `state`, `query`, and `model` types) and reject those where the `principal` field does not match their own local identity (accounting for identity differentiators). 

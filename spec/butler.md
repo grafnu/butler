@@ -38,7 +38,7 @@ The **Butler** is the primary authority for the `lkg_version` in the cloud model
   - `quiescent`: Target Version == Current Version.
   - `active`: Target Version != Current Version.
   - `pending`: Update in progress (device has received command).
-- **Triggering:** The orchestrator re-evaluates state upon receiving device status reports. A null `current_version` is treated as an empty string.
+- **Triggering:** The orchestrator re-evaluates state upon receiving device status reports. A null `current_version` is treated as `0.0.0` (see UUFI Section 8.4).
 - **Efficiency:** State transitions and model updates MUST be processed immediately upon receipt of relevant messages to minimize end-to-end latency.
 - **Timeout:** The Butler MUST wait for at least `BUTLER_TIMEOUT` (default: 60s) for a device to progress from the `pending` state before triggering a rollback.
 
