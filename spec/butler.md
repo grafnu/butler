@@ -138,7 +138,7 @@ For automated interoperability testing and verification, implementations MUST ad
 - State Transitions (Verifier): `VERIFIER [INFO]: State transition for {subsystem}: {old_state} -> {new_state}`. The initial state before any report is received MUST be considered `unknown`. To ensure log clarity, verifiers MUST NOT log a transition if the `{new_state}` is identical to the `{old_state}`. This prohibition applies to both the standard output logging and the publication of validation events (Section 9.4) on the UUFI bus.
 - Handshake Events (Verifier): `VERIFIER [INFO]: Handshake {started|completed} for {principal}`.
 - **Validation Errors (Verifier):** `VERIFIER [ERROR]: VALIDATION ERROR: {message}`.
-- **Terminal State (Orchestrator):** `[butler] Device {registry_id}/{device_id}/{subsystem} terminal state {status} with version {version}`. Terminal states MUST include `success`, `failure`, and `quiescent`. This log MUST be generated whenever a device enters or reports one of these states.
+- **Terminal State (Orchestrator):** `[butler] Device {registry_id}/{device_id}/{subsystem} terminal state {status} with version {version}`. Terminal states MUST include `success`, `failure`, and `quiescent` (even if the version is `0.0.0`). This log MUST be generated whenever a device enters or reports one of these states.
 Consistent log prefixes and formats are essential for multi-implementation integration testing. These messages MUST be printed exactly as specified, without additional prefixes (e.g., timestamps or thread IDs) that might interfere with automated log analysis.
 
 ### 9.4 Validation Event Schema
