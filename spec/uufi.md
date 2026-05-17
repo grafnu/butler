@@ -154,7 +154,7 @@ To ensure efficiency and avoid redundant processing, components MUST ignore inco
 - **Precision:** System-originated messages MUST NOT include fractional seconds. Clients MUST be able to handle fractional seconds (microseconds) if provided by other components, and all implementations MUST handle them gracefully by ignoring extra precision if necessary.
 
 ### 8.3. MQTT Specific Rules
-- **Redundancy Rule:** Implementations MUST reject messages where envelope fields duplicate topic-encoded data.
+- **Redundancy Rule:** Implementations MUST reject messages where envelope fields duplicate topic-encoded data (e.g., `deviceId` in a device-specific topic). "Reject" means the message MUST be logged as a protocol violation and its payload MUST NOT be processed. This rule prevents ambiguity and ensures that the topic remains the authoritative source of routing information.
 - **Leading Slash:** For MQTT transport, all UUFI topics MUST start with a leading slash `/`. Implementations MUST NOT accept or publish to topics lacking the leading slash.
 - **Wildcards:** Subscription wildcards (e.g., `/#`) MUST also adhere to the leading slash rule and MUST be scoped to the connection-defined prefix to ensure consistent topic matching across the prefix tree.
 - **Prefix Isolation:** Implementations MUST strictly enforce the prefix tree for all outgoing and incoming messages. For incoming messages, components MUST validate that the topic starts with the connection-defined prefix (if one is specified in the connection string); messages from other prefixes MUST be ignored.
