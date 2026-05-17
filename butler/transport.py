@@ -1,5 +1,6 @@
 import re
 import urllib.parse
+import os
 from dataclasses import dataclass
 from typing import Optional, Callable, Any, List, Dict
 import json
@@ -8,6 +9,9 @@ import logging
 import time
 import uuid
 from datetime import datetime, timezone
+
+def get_default_conn_spec() -> str:
+    return os.environ.get("BUTLER_CONN_SPEC", "mqtt://unknown@localhost/")
 
 @dataclass
 class ConnSpec:

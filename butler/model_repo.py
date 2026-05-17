@@ -40,6 +40,8 @@ class ModelRepo:
         with open(self.model_file, "r") as f:
             try:
                 data = json.load(f)
+                if "cloud" in data:
+                    data = data["cloud"]
                 if "registries" not in data:
                     return {"registries": {}}
                 return data
@@ -47,9 +49,24 @@ class ModelRepo:
                 return {"registries": {}}
 
     def _write_model(self, data: dict):
+        if "registries" not in data:
+             data = {"registries": data}
+        
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+        
+        wrapped = {
+            "version": "1.5.2",
+            "timestamp": now,
+            "cloud": {
+                "operation": "READ",
+                "registries": data["registries"]
+            }
+        }
+        
         fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(os.path.abspath(self.model_file)))
         with os.fdopen(fd, "w") as f:
-            json.dump(data, f, indent=2)
+            json.dump(wrapped, f, indent=2)
         os.replace(temp_path, self.model_file)
 
     def get_model(self) -> dict:

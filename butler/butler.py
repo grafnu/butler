@@ -1,8 +1,10 @@
 import sys
 import time
 import argparse
+import os
 from butler.transport import parse_conn_spec, MqttTransport, wrap_message, unwrap_message
 from butler.blob_repo import BlobRepo
+from butler.model_repo import ModelRepo
 
 def main():
 
@@ -21,10 +23,11 @@ def main():
         conn_spec_str = get_default_conn_spec()
 
     conn_spec = parse_conn_spec(conn_spec_str)
-    print(f"Conn spec: scheme={conn_spec.scheme}, host={conn_spec.host}, port={conn_spec.port}, principal={conn_spec.principal}, prefix={conn_spec.prefix}")
+    print(f"Conn spec: scheme={conn_spec.scheme}, host={conn_spec.host}, port={conn_spec.port}, principal={conn_spec.principal}, prefix={conn_spec.prefix}", flush=True)
 
     transport = MqttTransport(conn_spec, tag="butler")
     blob_repo = BlobRepo()
+    model_repo = ModelRepo()
     device_states = {}
     settling_times = {}
 
@@ -41,15 +44,59 @@ def main():
         device_id = parsed.get('deviceId')
         unwrapped = unwrap_message(payload)
 
-        if subType == 'config' and subFolder == 'cloud':
+        if subType == 'state' and subFolder == 'udmi':
+            udmi = unwrapped.get('udmi', unwrapped)
+            if 'setup' in udmi:
+                setup = udmi['setup']
+                transaction_id = setup.get('transaction_id')
+                if transaction_id:
+                    sender_principal = payload.get('principal') or payload.get('source')
+                    if sender_principal:
+                        reply_topic = transport.format_topic("config", "udmi")
+                        reply_payload = wrap_message({
+                            "udmi": {
+                                "setup": {
+                                    "functions_ver": 9,
+                                    "deviceRegistryId": os.environ.get("BUTLER_REGISTRY_ID", "reg1")
+                                },
+                                "reply": {
+                                    "transaction_id": transaction_id,
+                                    "msg_source": transport.principal
+                                }
+                            }
+                        }, principal=sender_principal, source=transport.principal)
+                        transport.publish(reply_topic, reply_payload)
+            return
+
+        if subType == 'query' and subFolder == 'cloud':
+            # Respond to cloud model query (UUFI 2.2)
+            model_data = model_repo.get_model()
+            reply_topic = transport.format_topic("config", "cloud")
+            sender_principal = payload.get('principal') or payload.get('source')
+            transport.publish(reply_topic, wrap_message({"cloud": {"operation": "READ", "registries": model_data.get("registries", {})}}, principal=sender_principal, source=transport.principal))
+            return
+
+        if (subType == 'config' or subType == 'model') and subFolder == 'cloud':
             cloud = unwrapped.get('cloud', {})
+            # If it's a model update from someone else, ingest it
+            if subType == 'model' and cloud.get('operation') == 'UPDATE':
+                 registries = cloud.get('registries', {})
+                 for reg_id, reg_data in registries.items():
+                     devices = reg_data.get('devices', reg_data) # Robustness
+                     for dev_id, dev_data in devices.items():
+                         for subsystem, data in dev_data.items():
+                             if isinstance(data, dict):
+                                 model_repo.update_subsystem(reg_id, dev_id, subsystem, data)
+
+            # Refresh local states
             registries = cloud.get('registries', {})
             for reg_id, reg_data in registries.items():
-                devices = reg_data.get('devices', {})
+                devices = reg_data.get('devices', reg_data)
                 for dev_id, dev_data in devices.items():
                     state_key = (reg_id, dev_id)
                     if state_key not in device_states: device_states[state_key] = {}
                     for subsystem, data in dev_data.items():
+                        if not isinstance(data, dict): continue
                         if subsystem not in device_states[state_key]: device_states[state_key][subsystem] = {}
                         state_data = device_states[state_key][subsystem]
                         if 'target_version' in data: state_data['target_version'] = data.get('target_version')
@@ -73,27 +120,41 @@ def main():
                 current_version = sub_update.get('current_version')
                 if subsystem not in device_states[state_key]: device_states[state_key][subsystem] = {}
                 state_data = device_states[state_key][subsystem]
-                if state == 'success' and current_version and current_version != state_data.get('current_version'):
+                
+                # Persistence (Section 3.2): Update local model file and notify others
+                if state in ['success', 'failure'] and (state != state_data.get('state') or current_version != state_data.get('current_version')):
+                    print(f"[butler] Device {registry_id}/{device_id}/{subsystem} terminal state {state} with version {current_version}", flush=True)
+                    update_data = {"status": state, "current_version": current_version}
+                    model_repo.update_subsystem(registry_id, device_id, subsystem, update_data)
+                    
                     topic_model = transport.format_topic("model", "cloud")
-                    model_update = {"cloud": {"operation": "UPDATE", "registries": {registry_id: {"devices": {device_id: {subsystem: {"current_version": current_version, "lkg_version": state_data.get('lkg_version')}}}}}}}
+                    model_update = {"cloud": {"operation": "UPDATE", "registries": {registry_id: {"devices": {device_id: {subsystem: update_data}}}}}}
                     transport.publish(topic_model, wrap_message(model_update, principal=transport.principal))
+
                 if state != state_data.get('state'): settling_times[state_key + (subsystem,)] = time.time()
                 state_data['state'] = state
                 if current_version: state_data['current_version'] = current_version
 
     transport.set_on_message(on_message)
     transport.connect()
-    transport.handshake()
-    transport.subscribe("/uufi/c/config/cloud")
-    transport.subscribe("/uufi/r/+/d/+/c/state/update")
+    # transport.handshake() # System (Butler) MUST NOT initiate handshake, only respond.
+    transport.subscribe(transport.format_topic("state", "udmi"))
+    transport.subscribe(transport.format_topic("config", "cloud"))
+    transport.subscribe(transport.format_topic("query", "cloud"))
+    transport.subscribe(transport.format_topic("model", "cloud"))
+    transport.subscribe(transport.format_topic("state", "update", registry_id="+", device_id="+"))
 
-    last_model_fetch = 0
+    last_model_pub = 0
     try:
         while True:
             now = time.time()
-            if now - last_model_fetch > 10:
-                fetch_model_state()
-                last_model_fetch = now
+            # Periodically publish current configuration (every 10s)
+            if now - last_model_pub > 10:
+                model_data = model_repo.get_model()
+                topic_config = transport.format_topic("config", "cloud")
+                transport.publish(topic_config, wrap_message({"cloud": {"operation": "READ", "registries": model_data.get("registries", {})}}, principal=transport.principal, source=transport.principal))
+                last_model_pub = now
+
             for (registry_id, device_id), subsystems in list(device_states.items()):
                 for subsystem, state_data in subsystems.items():
                     target = state_data.get('target_version')
@@ -103,7 +164,12 @@ def main():
                         if state == 'pending' and target == state_data.get('pending_version'): continue
                         last_change = settling_times.get((registry_id, device_id, subsystem), 0)
                         if now - last_change < 5.0: continue
-                        blob_info = blob_repo.get_blob_info("default", "default", subsystem, target)
+                        
+                        # Fallback for make/model
+                        make = state_data.get('make', 'default')
+                        model_name = state_data.get('model', 'default')
+                        
+                        blob_info = blob_repo.get_blob_info(make, model_name, subsystem, target)
                         if blob_info:
                             topic_update = transport.format_topic("config", "update", registry_id, device_id)
                             msg = wrap_message({"update": {subsystem: {"url": blob_info['url'], "sha256": blob_info['hash'], "version": target}}}, principal=transport.principal)
