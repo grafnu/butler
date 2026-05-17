@@ -125,7 +125,7 @@ def main():
                 state_data = device_states[state_key][subsystem]
                 
                 # Persistence (Section 3.2): Update local model file and notify others
-                if state in ['success', 'failure'] and (state != state_data.get('state') or current_version != state_data.get('current_version')):
+                if state in ['success', 'failure', 'quiescent'] and (state != state_data.get('state') or current_version != state_data.get('current_version')):
                     print(f"[butler] Device {registry_id}/{device_id}/{subsystem} terminal state {state} with version {current_version}", flush=True)
                     update_data = {"status": state, "current_version": current_version}
                     model_repo.update_subsystem(registry_id, device_id, subsystem, update_data)

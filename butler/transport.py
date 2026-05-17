@@ -265,7 +265,28 @@ class MqttTransport:
         except json.JSONDecodeError:
             payload = msg.payload.decode('utf-8')
 
-        if not self.passive and isinstance(payload, dict) and 'nonce' in payload:
+        if not isinstance(payload, dict):
+            return
+
+        # UUFI 8.6: Principal Isolation
+        principal = payload.get('principal')
+        source = payload.get('source')
+        if not self.passive:
+            if not principal:
+                logging.error(f"Rejecting message with missing principal on {msg.topic}")
+                return
+            
+            # Simplified principal match for D-long
+            norm_p = principal.split('.')[0].rstrip('@')
+            norm_self = self.principal.split('.')[0].rstrip('@')
+            if norm_p != norm_self:
+                return
+
+            # UUFI 7.4: Self-Message Filtering
+            if source == self.principal:
+                return
+
+        if not self.passive and 'nonce' in payload:
             nonce = payload['nonce']
             if any(n['nonce'] == nonce for n in self.seen_nonces):
                 return
