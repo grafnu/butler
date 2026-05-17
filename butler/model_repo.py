@@ -72,7 +72,7 @@ class ModelRepo:
     def get_model(self) -> dict:
         return self._read_model()
 
-    def add_device(self, registry_id: str, device_id: str, make="default", model="default"):
+    def add_device(self, registry_id: str, device_id: str, make="unknown", model="unknown"):
         data = self._read_model()
         reg = data["registries"].setdefault(registry_id, {"devices": {}})
         devices = reg.setdefault("devices", {})

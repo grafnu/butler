@@ -19,6 +19,10 @@ def main():
     if not conn_spec_str:
         from butler.transport import get_default_conn_spec
         conn_spec_str = get_default_conn_spec()
+    
+    conn_spec = parse_conn_spec(conn_spec_str)
+    from butler.transport import MqttTransport, wrap_message
+    import time
 
     if len(args) < 5:
         print("Usage: bin/trigger [conn_spec] [registry_id] <device_id> <subsystem_id> <version> <blob_path>")
@@ -39,15 +43,40 @@ def main():
         print(f"Device {device_id} not found in registry {registry_id} in model. Register it first.")
         sys.exit(1)
 
-    make = device.get(subsystem, {}).get("make") or device.get("main", {}).get("make", "default")
-    model_name = device.get(subsystem, {}).get("model") or device.get("main", {}).get("model", "default")
+    make = device.get(subsystem, {}).get("make") or device.get("main", {}).get("make", "unknown")
+    model_name = device.get(subsystem, {}).get("model") or device.get("main", {}).get("model", "unknown")
 
     blob_repo = BlobRepo()
     hash_hex = blob_repo.store_blob(make, model_name, subsystem, blob_version, blob_path)
     print(f"Stored blob with hash {hash_hex}.")
 
     model_repo.update_target_version(registry_id, device_id, subsystem, blob_version)
-    print(f"Updated target_version to {blob_version} for {device_id} in {registry_id} subsystem {subsystem}.")
+    
+    # Section 11.3: Tools that modify the model MUST also publish a model/cloud message
+    transport = MqttTransport(conn_spec, tag="trigger")
+    transport.connect()
+    topic = transport.format_topic("model", "cloud")
+    msg = wrap_message({
+        "cloud": {
+            "operation": "UPDATE",
+            "registries": {
+                registry_id: {
+                    "devices": {
+                        device_id: {
+                            subsystem: {
+                                "target_version": blob_version
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }, principal=transport.principal, source=transport.principal)
+    transport.publish(topic, msg)
+    time.sleep(1)
+    transport.disconnect()
+    
+    print(f"Updated target_version to {blob_version} for {device_id} in {registry_id} subsystem {subsystem} and published cloud update.")
 
 if __name__ == '__main__':
     main()

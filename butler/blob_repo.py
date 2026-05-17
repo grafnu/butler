@@ -16,11 +16,7 @@ class BlobRepo:
         target_dir = os.path.join(self.base_dir, make, model, subsystem, version)
         os.makedirs(target_dir, exist_ok=True)
 
-        filename = os.path.basename(blob_path)
-        if not filename:
-            filename = "firmware.bin"
-
-        target_path = os.path.join(target_dir, filename)
+        target_path = os.path.join(target_dir, "bundle.bin")
         shutil.copy2(blob_path, target_path)
 
         with open(os.path.join(target_dir, "sha256.txt"), "w") as f:
@@ -38,13 +34,8 @@ class BlobRepo:
         with open(hash_file, "r") as f:
             hash_hex = f.read().strip()
 
-        blob_path = None
-        for item in os.listdir(target_dir):
-            if item != "sha256.txt":
-                blob_path = os.path.join(target_dir, item)
-                break
-
-        if not blob_path:
+        blob_path = os.path.join(target_dir, "bundle.bin")
+        if not os.path.exists(blob_path):
             return None
 
         return {

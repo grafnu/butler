@@ -182,8 +182,8 @@ def main():
                         if now - last_change < 5.0: continue
                         
                         # Fallback for make/model
-                        make = state_data.get('make', 'default')
-                        model_name = state_data.get('model', 'default')
+                        make = state_data.get('make', 'unknown')
+                        model_name = state_data.get('model', 'unknown')
                         
                         blob_info = blob_repo.get_blob_info(make, model_name, subsystem, target)
                         if blob_info:
