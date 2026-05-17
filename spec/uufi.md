@@ -157,6 +157,7 @@ To ensure efficiency and avoid redundant processing, components MUST ignore inco
 - **Redundancy Rule:** Implementations MUST reject messages where envelope fields duplicate topic-encoded data.
 - **Leading Slash:** For MQTT transport, all UUFI topics MUST start with a leading slash `/`. Implementations MUST NOT accept or publish to topics lacking the leading slash.
 - **Wildcards:** Subscription wildcards (e.g., `/#`) MUST also adhere to the leading slash rule and MUST be scoped to the connection-defined prefix to ensure consistent topic matching across the prefix tree.
+- **Prefix Isolation:** Implementations MUST strictly enforce the prefix tree for all outgoing and incoming messages. For incoming messages, components MUST validate that the topic starts with the connection-defined prefix (if one is specified in the connection string); messages from other prefixes MUST be ignored.
 
 ### 8.4. Version String Format
 - **Default/Unknown Version:** Implementations MUST use the string `0.0.0` to represent an unknown, uninitialized, or null version (e.g., for `current_version`, `target_version`, or `lkg_version`).
