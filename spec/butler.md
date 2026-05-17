@@ -99,6 +99,8 @@ To ensure interoperability and environmental isolation, tools MUST NOT fail if o
 - **observe [conn_spec]**: Passive monitoring of the UUFI bus (output: `{topic}: {payload}`).
 - **smokeit [conn_spec]**: Basic integration test.
 
+The startup connectivity output MUST use the resolved numeric port (e.g., `1883`) for the `port` field; it MUST NOT be `None` or empty.
+
 ## 7. Standard Configuration Environment Variables
 
 - **`BUTLER_CONN_SPEC`**: Default connection specification URL.
@@ -119,6 +121,7 @@ To ensure interoperability and environmental isolation, tools MUST NOT fail if o
 - **Handshake:** MUST complete UUFI handshake.
 - **Monitoring:** Track state transitions in the `blobset` subfolder.
 - **Reporting:** Publish validation results to `[/{prefix}]/uufi/r/{reg_id}/d/{dev_id}/c/events/validation`. For events related to a specific device, `{reg_id}` and `{dev_id}` MUST match the device. For self-reporting (e.g., handshake status), `{dev_id}` MUST be the verifier's identity (e.g., `verifier`) and `{reg_id}` MUST be `unknown` unless a specific registry has been discovered.
+- **Processing:** Verifier components MUST ensure that messages from the same device/subsystem are processed sequentially (e.g., via a message queue) to maintain accurate state tracking and avoid false-positive transition violations.
 
 ### 9.2 Observer (Passive Observer)
 - **Output:** Raw wire format `{topic}: {payload}`.

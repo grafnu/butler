@@ -344,7 +344,9 @@ The cloud model, when stored as a local JSON file, MUST use the 3-level nesting 
                             "target_version": { "type": "string" },
                             "current_version": { "type": "string" },
                             "status": { "type": "string" },
-                            "lkg_version": { "type": "string" }
+                            "lkg_version": { "type": "string" },
+                            "make": { "type": "string" },
+                            "model": { "type": "string" }
                           }
                         }
                       }
