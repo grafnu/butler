@@ -66,7 +66,7 @@ A **Tagged Identity** is a principal identifier that includes an optional differ
 
 ### Registry ID Discovery
 - **Default:** `default`
-- **Discovery:** System can provide `{registryId}` in `config.udmi` during handshake.
+- **Discovery:** The System provides the `{registryId}` in `config.udmi` during handshake.
 - **Priority:** If a Client has a pre-configured registry ID (e.g., via command-line arguments), it MUST prioritize it over the one provided by the System during handshake to ensure identity consistency in restricted environments.
 
 ### Timeouts
@@ -133,8 +133,7 @@ To prevent infinite message loops, components responding to cloud model operatio
 - **Deduplication:** Track `transactionId`s for 5 minutes. Implementations MUST ensure that deduplication logic does not interfere with the Handshake protocol (Section 3), which MUST reflect the same `transactionId` between Step 1 and Step 2. Specifically, a message MUST NOT be rejected as a duplicate if it is a valid handshake reply (Step 2) to a previously sent handshake state (Step 1).
 
 ### 7.4. Self-Message Filtering
-To ensure efficiency and avoid redundant processing, components MUST ignore incoming messages where the `source` field in the envelope matches their own `source` identifier.
- While the Deduplication rule (Section 7.3) allows processing of self-messages for specific local state synchronization, components MUST NOT engage in behavior where processing a self-originated message triggers the publication of a new message that could sustain a loop.
+To ensure efficiency and avoid redundant processing, components MUST ignore incoming messages where the `source` field in the envelope matches their own `source` identifier. While the Deduplication rule (Section 7.3) allows processing of self-messages for specific local state synchronization, components MUST NOT engage in behavior where processing a self-originated message triggers the publication of a new message that could sustain a loop.
 
 ## 8. Payload and Formatting Rules
 
@@ -172,7 +171,7 @@ To support multi-client environments on a shared messaging backbone (especially 
 
 ### Idempotency
 - **Nonce:** MUST use a unique message instance ID (8-digit hex nonce) for identification.
-- **Deduplication:** Track `nonce` values for 5 minutes. If `nonce` is not present, implementations can use `transactionId` for deduplication, EXCEPT for messages in the `udmi` subfolder (e.g., handshakes), which MUST NOT be deduplicated by `transactionId` to allow for protocol retries.
+- **Deduplication:** Track `nonce` values for 5 minutes. If `nonce` is not present, implementations MUST use `transactionId` for deduplication, EXCEPT for messages in the `udmi` subfolder (e.g., handshakes), which MUST NOT be deduplicated by `transactionId` to allow for protocol retries.
 
 ## 10. Schemas
 
