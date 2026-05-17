@@ -46,7 +46,7 @@ The **Butler** is the primary authority for the `lkg_version` in the cloud model
 
 ### 2.2 Model and Update Management
 - **LKG Management:** Upon receiving a device report indicating a successful update where the `current_version` matches the `target_version`, the Butler MUST update the cloud model's `current_version` and `lkg_version`.
-- **Persistence:** The Butler MUST update the local model file whenever the cloud model state changes.
+- **Persistence:** The Butler MUST update the local model file whenever the cloud model state changes. To ensure consistent fleet visibility, device reports for terminal states (including `quiescent` at version `0.0.0`) MUST be synchronized with the cloud model if the reported state differs from the current model state.
 
 ## 3. Functional Components
 
