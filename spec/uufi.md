@@ -53,7 +53,7 @@ The Client publishes a UDMI `state` message to `/uufi/c/state/udmi`.
 ### Step 2: Configuration Confirmation
 The System publishes a UDMI `config` message to `/uufi/c/config/udmi`.
 - **Payload:** Must include `udmi.setup` and `udmi.reply` (see Schema 10.3).
-- **Addressing:** Envelope `principal` MUST match Client's identity. To ensure interoperability with tagged identities (Section 3.1), "matching" the identity MUST account for identity differentiators (e.g., matching the base part of the identity before the first differentiator separator like a dot).
+- **Addressing:** Envelope `principal` MUST match Client's identity. To ensure interoperability with tagged identities (Section 3.1), "matching" the identity MUST account for identity differentiators (e.g., matching the base part of the identity before the first differentiator separator like a dot). Specifically, to ensure a handshake reply reaches a client using an identity differentiator (e.g., `user.toolname`), the System MUST use the exact `principal` (or `source` if `principal` is missing) from the received Step 1 `state` message as the `target_principal` for the Step 2 `config` reply.
 
 ### 3.1. Tagged Identities
 A **Tagged Identity** is a principal identifier that includes an optional differentiator (e.g., `user.tag`). Differentiators are separated by the dot (`.`) character.
