@@ -117,7 +117,7 @@ To ensure interoperability and environmental isolation, tools SHOULD NOT fail if
 ### 9.1 Verifier (Active Observer)
 - **Handshake:** MUST complete UUFI handshake.
 - **Monitoring:** Track state transitions in the `blobset` subfolder.
-- **Reporting:** Publish validation results to `[/{prefix}]/uufi/r/{reg_id}/d/{dev_id}/c/events/validation`.
+- **Reporting:** Publish validation results to `[/{prefix}]/uufi/r/{reg_id}/d/{dev_id}/c/events/validation`. For events related to a specific device, `{reg_id}` and `{dev_id}` MUST match the device. For self-reporting (e.g., handshake status), `{dev_id}` MUST be the verifier's identity (e.g., `verifier`) and `{reg_id}` SHOULD be `unknown` unless a specific registry has been discovered.
 
 ### 9.2 Observer (Passive Observer)
 - **Output:** Raw wire format `{topic}: {payload}`.
@@ -129,3 +129,13 @@ For automated interoperability testing and verification, implementations MUST ad
 - **Validation Errors (Verifier):** `VERIFIER [ERROR]: VALIDATION ERROR: {message}`
 - **Terminal State (Orchestrator):** `[butler] Device {registry_id}/{device_id}/{subsystem} terminal state {status} with version {version}`
 Consistent log prefixes and formats are essential for multi-implementation integration testing.
+
+### 9.4 Validation Event Schema
+- **Topic:** `[/{prefix}]/uufi/r/{registry_id}/d/{device_id}/c/events/validation`
+- **Payload:** The `validation` object within the `payload` MUST include:
+  - `message`: A human-readable description of the validation event.
+  - `level`: One of `INFO`, `WARN`, or `ERROR`.
+  - `device_id`: (Optional) The ID of the device being validated.
+  - `subsystem_id`: (Optional) The ID of the subsystem being validated.
+  - `status`: (Optional) The current state (e.g., `pending`, `success`).
+  - `result`: (Optional) One of `pass` or `fail` (case-insensitive).

@@ -90,6 +90,7 @@ The Handshake Protocol is the message sequence and associated behavior used to e
 - **Metadata Ingestion**: System components MUST ingest and cache `make` and `model` information from all available sources (registration, cloud updates, and state reports).
 - **Metadata Prioritization**: When ingesting metadata or versions, implementations MUST prioritize specific, non-fallback values. Known non-fallback values MUST NEVER be overwritten by uninitialized states (e.g., `"unknown"` or `"0.0.0"`).
 - **Topic Slashes**: All UUFI topics MUST start with a leading slash `/`.
+- **Version Strings**: Uninitialized or unknown versions (current, target, or LKG) MUST be represented as the string `"0.0.0"`. Implementations MUST treat a null or empty string as equivalent to `"0.0.0"` for comparison and MUST NOT overwrite a non-zero version with `"0.0.0"`.
 - **Blobset Config Keys**: Implementations MUST use standard UDMI keys in the `blobset` subfolder config payloads.
 - **Local Blobs**: For local file references, the `url` MUST use the `file://` scheme. Recipients MUST strip the scheme to resolve the path.
 
