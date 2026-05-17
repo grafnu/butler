@@ -165,7 +165,11 @@ To prevent infinite feedback loops and minimize bus traffic, components MUST ign
 - **Default/Unknown Version:** Implementations MUST use the string `0.0.0` to represent an unknown, uninitialized, or null version (e.g., for `current_version`, `target_version`, or `lkg_version`).
 - **Persistence:** To ensure stability and prevent accidental data loss during partial merges, a non-zero version string (one that is NOT `0.0.0`) MUST NEVER be overwritten by `0.0.0`.
 
-### 8.5. Identity Isolation
+### 8.5. Metadata Fallback
+- **Default/Unknown Metadata:** When a device's `make` or `model` is not explicitly provided during registration or reporting, implementations MUST use the standard fallback value `"unknown"`.
+- **Precedence:** Standard system components MUST handle the `"unknown"` fallback gracefully and prioritize more specific metadata when it becomes available. A known non-fallback value (anything other than `"unknown"`) MUST NEVER be overwritten by `"unknown"`.
+
+### 8.6. Identity Isolation
 To support multi-client environments on a shared messaging backbone (especially when topic prefixes are not used), implementations MUST strictly enforce identity isolation using the `principal` field:
 - **Filtering:** All components MUST filter ALL incoming messages (including `config`, `state`, `query`, and `model` types) and reject those where the `principal` field does not match their own local identity (accounting for identity differentiators). 
 - **Enforcement:** For MQTT, if the `principal` field is missing from an incoming envelope, the message MUST be rejected to prevent cross-trial interference and ensure protocol compliance.
