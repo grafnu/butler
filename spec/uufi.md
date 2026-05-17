@@ -104,6 +104,9 @@ Inner JSON `payload` object MUST include:
 ### 5.2. Update Semantics (Partial Merge)
 The `UPDATE` operation for the `cloud` subfolder is a partial merge at the device subsystem level. Existing fields not in the payload MUST NOT be modified.
 
+### 5.3. Response Loop Prevention
+To prevent infinite message loops, components responding to cloud model operations (e.g., a Cloud Model Server or Mocket emulator) MUST NOT process messages with a `status` field as if they were new requests. Responses MUST be identified and handled as confirmations or completions of previous operations.
+
 ## 6. UDMI to UUFI Mapping
 
 | UDMI Operation | Envelope `subType` | Envelope `subFolder` | Direction |
@@ -128,6 +131,9 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 ### 7.3 Idempotency
 - **Transaction ID:** MUST use a unique `transactionId` for message identification.
 - **Deduplication:** Track `transactionId`s for 5 minutes. Implementations MUST ensure that deduplication logic does not interfere with the Handshake protocol (Section 3), which MUST reflect the same `transactionId` between Step 1 and Step 2. Specifically, a message MUST NOT be rejected as a duplicate if it is a valid handshake reply (Step 2) to a previously sent handshake state (Step 1).
+
+### 7.4. Self-Message Filtering
+To ensure efficiency and avoid redundant processing, components SHOULD ignore incoming messages where the `source` field in the envelope matches their own `source` identifier. While the Deduplication rule (Section 7.3) allows processing of self-messages for specific local state synchronization, components MUST NOT engage in behavior where processing a self-originated message triggers the publication of a new message that could sustain a loop.
 
 ## 8. Payload and Formatting Rules
 
