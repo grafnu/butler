@@ -101,7 +101,7 @@ To ensure interoperability and environmental isolation, tools MUST NOT fail if o
 - **smokeit [conn_spec]**: Basic integration test.
 
 ### 6.1 CLI Compatibility Note
-To ensure interoperability, implementations MUST correctly handle the transition from positional to optional arguments. A common pitfall is allowing an optional `[conn_spec]` to consume the first required positional argument (e.g., `registry_id`). Implementations SHOULD inspect the first positional argument and, if it does not match a valid connection schema (e.g., `mqtt://`), treat it as the first functional argument of the tool.
+To ensure interoperability, implementations MUST correctly handle the transition from positional to optional arguments. A common pitfall is allowing an optional `[conn_spec]` to consume the first required positional argument (e.g., `registry_id`). Implementations MUST inspect the first positional argument and, if it does not match a valid connection schema (e.g., `mqtt://`), treat it as the first functional argument of the tool.
 
 The startup connectivity output MUST use the resolved numeric port (e.g., `1883`) for the `port` field; it MUST NOT be `None` or empty.
 
@@ -133,7 +133,7 @@ The startup connectivity output MUST use the resolved numeric port (e.g., `1883`
 
 ### 9.3 Compliance Logging
 For automated interoperability testing and verification, implementations MUST adhere to the following log formats for critical lifecycle events:
-- **State Transitions (Verifier):** `VERIFIER [INFO]: State transition for {subsystem}: {old_state} -> {new_state}`. The initial state before any report is received MUST be considered `unknown`.
+- **State Transitions (Verifier):** `VERIFIER [INFO]: State transition for {subsystem}: {old_state} -> {new_state}`. The initial state before any report is received MUST be considered `unknown`. To ensure log clarity, verifiers MUST NOT log a transition if the `{new_state}` is identical to the `{old_state}`.
 - **Handshake Events (Verifier):** `VERIFIER [INFO]: Handshake {started|completed} for {principal}`.
 - **Validation Errors (Verifier):** `VERIFIER [ERROR]: VALIDATION ERROR: {message}`.
 - **Terminal State (Orchestrator):** `[butler] Device {registry_id}/{device_id}/{subsystem} terminal state {status} with version {version}`.
