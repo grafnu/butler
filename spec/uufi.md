@@ -240,7 +240,7 @@ The cloud model, when stored as a local JSON file, MUST use the 3-level nesting 
       "required": ["timestamp", "version"]
     }
   },
-  "required": ["payload"]
+  "required": ["payload", "nonce"]
 }
 ```
 
