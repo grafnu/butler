@@ -36,8 +36,10 @@ The **Butler** is the primary authority for the `lkg_version` in the cloud model
 - **Handshake Compliance:** The Butler MUST NOT initiate its own handshake; it MUST instead respond to handshake state messages from Devices and Verifiers with the appropriate config reply as defined in UUFI Section 3.
 - **State Machine:**
   - `quiescent`: Target Version == Current Version.
-  - `active`: Target Version != Current Version.
+  - `active`: Target Version != Current Version (Transitional state).
   - `pending`: Update in progress (device has received command).
+
+- **Terminal States:** For the purpose of the orchestrator state machine, ONLY `success`, `failure`, and `quiescent` are considered terminal states. The `active` state MUST NOT be considered terminal and MUST trigger a reconciliation attempt if no update is already `pending`.
 - **Triggering:** The orchestrator re-evaluates state upon receiving device status reports. A null `current_version` is treated as `0.0.0` (see UUFI Section 8.4).
 - **Efficiency:** State transitions and model updates MUST be processed immediately upon receipt of relevant messages to minimize end-to-end latency. Implementations MUST NOT introduce any artificial delay or "settling time" before processing a state change or triggering a reconciliation.
 - **Timeout:** The Butler MUST wait for at least `BUTLER_TIMEOUT` (default: 60s) for a device to progress from the `pending` state before triggering a rollback.
