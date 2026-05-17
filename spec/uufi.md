@@ -55,6 +55,11 @@ The System publishes a UDMI `config` message to `/uufi/c/config/udmi`.
 - **Payload:** Must include `udmi.setup` and `udmi.reply` (see Schema 10.3).
 - **Addressing:** Envelope `principal` MUST match Client's identity. To ensure interoperability with tagged identities (Section 3.1), "matching" the identity MUST account for identity differentiators (e.g., matching the base part of the identity before the first differentiator separator like a dot).
 
+### 3.1. Tagged Identities
+A **Tagged Identity** is a principal identifier that includes an optional differentiator (e.g., `user.tag`). Differentiators are separated by the dot (`.`) character.
+- **Isolation:** Implementations MUST only compare the base part of the identity (the segment before the first dot) when performing identity-based isolation or filtering.
+- **Interoperability:** System components MUST preserve and reflect the full tagged identity when responding to client-initiated messages (e.g., handshake replies, cloud model responses).
+
 **Retries:** The Client MUST periodically republish the Step 1 state message (e.g., every 5 seconds) if a valid Step 2 confirmation has not been received, until the 60-second timeout.
 
 **Activation:** The Client is **Active** when `udmi.reply.transaction_id` matches the original `state.udmi.setup.transaction_id`.
