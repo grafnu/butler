@@ -31,7 +31,8 @@ The root directory MUST ONLY contain the following files and directories:
 ## 2. Role and Behavior
 
 ### 2.1 Orchestrator Behavior
-- **Authority:** The Butler is the primary authority for the `lkg_version` in the cloud model and MUST NOT trust a device-reported `lkg_version` if it conflicts with a previously validated state.
+The **Butler** is the primary authority for the `lkg_version` in the cloud model and MUST NOT trust a device-reported `lkg_version` if it conflicts with a previously validated state. To prevent split-brain conditions, the Butler is the **sole authoritative Cloud Model Server** on the UUFI bus; other components (e.g., `mocket`, `verifier`) MUST NOT respond to `query/cloud` messages or unilaterally publish `config/cloud` messages.
+
 - **State Machine:**
   - `quiescent`: Target Version == Current Version.
   - `active`: Target Version != Current Version.

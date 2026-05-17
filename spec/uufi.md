@@ -38,7 +38,7 @@ Format: `scheme://[user@]host[:port][/path]`
 - **Topic Isolation:** The `principal` identifier MUST be included in the JSON envelope.
 - **Cloud Model Service:**
   - **Discovery:** Clients publish a `query/cloud` message to `/uufi/c/query/cloud`.
-  - **Response:** System publishes the model to `/uufi/c/config/cloud`.
+  - **Response:** The **System** (and ONLY the System) MUST respond by publishing the requested model information to `/uufi/c/config/cloud`.
   - **Structure:** Uses nested **Registries** (Section 5.1).
 
 ## 3. Handshake Protocol
@@ -62,6 +62,7 @@ The System publishes a UDMI `config` message to `/uufi/c/config/udmi`.
 ### Registry ID Discovery
 - **Default:** `default`
 - **Discovery:** System may provide `{registryId}` in `config.udmi` during handshake.
+- **Priority:** If a Client has a pre-configured registry ID (e.g., via command-line arguments), it SHOULD prioritize it over the one provided by the System during handshake to ensure identity consistency in restricted environments.
 
 ### Timeouts
 - **Window:** 60 seconds.
@@ -84,7 +85,7 @@ Inner JSON `payload` object MUST include:
 | **MQTT** | JSON Wrapper | Payload `payload` key |
 
 #### MQTT Constraints
-- **Redundancy:** Envelope fields MUST NOT include data encoded in the topic path (`subType`, `subFolder`, and if present, `deviceRegistryId`, `deviceId`).
+- **Redundancy:** Envelope fields MUST NOT include data encoded in the topic path (`subType`, `subFolder`, and if present, `deviceRegistryId`, `deviceId`). Implementations MUST NOT reject messages where these fields are present in the envelope but NOT in the topic path (e.g., registry-less topics).
 - **Nesting:** UDMI message data MUST be nested within the `payload` key.
 
 ## 5. Cloud Model Operations
@@ -171,8 +172,8 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 - **Requirement:** QoS 1 (At Least Once) for all state and configuration messages.
 
 ### Idempotency
-- **Nonce:** MUST use an 8-digit hex nonce for message identification.
-- **Deduplication:** Track `nonce` values for 5 minutes. Implementations MUST NOT use `transactionId` for deduplication, as multiple messages (e.g., retried handshakes) may share the same `transactionId` while having unique `nonce` values.
+- **Nonce:** SHOULD use a unique message instance ID (8-digit hex nonce) for identification.
+- **Deduplication:** Track `nonce` values for 5 minutes. If `nonce` is not present, implementations MAY use `transactionId` for deduplication, EXCEPT for messages in the `udmi` subfolder (e.g., handshakes), which MUST NOT be deduplicated by `transactionId` to allow for protocol retries.
 
 ## 9. Compliance
 
