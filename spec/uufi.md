@@ -53,7 +53,7 @@ The Client publishes a UDMI `state` message to `/uufi/c/state/udmi`.
 ### Step 2: Configuration Confirmation
 The System publishes a UDMI `config` message to `/uufi/c/config/udmi`.
 - **Payload:** Must include `udmi.setup` and `udmi.reply` (see Schema 10.3).
-- **Addressing:** Envelope `principal` MUST match Client's identity.
+- **Addressing:** Envelope `principal` MUST match Client's identity. To ensure interoperability with tagged identities (Section 3.1), "matching" the identity MUST account for identity differentiators (e.g., matching the base part of the identity before the first differentiator separator like a dot).
 
 **Retries:** The Client MUST periodically republish the Step 1 state message (e.g., every 5 seconds) if a valid Step 2 confirmation has not been received, until the 60-second timeout.
 
