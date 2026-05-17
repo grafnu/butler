@@ -357,5 +357,12 @@ Each version directory MUST contain:
 - `bundle.bin`: The binary blob content.
 - `sha256.txt`: A text file containing the hex-encoded SHA-256 hash of `bundle.bin`.
 
-### 12.2. Model Repository
-The cloud model, when stored as a local JSON file, MUST use the 3-level nesting defined in Section 10.4 (Registries -> Devices -> Subsystems).
+### 12.3. Standard Environment Variables
+For local execution and testing, implementations SHOULD support the following environment variables for repository configuration:
+- `BUTLER_MODEL_FILE`: The absolute or relative path to the local model JSON file.
+- `BUTLER_BLOBS_DIR`: The base directory for binary blob storage.
+
+Implementations MUST ensure that relative paths are resolved consistently across all components (Orchestrator, Verifier, etc.) to maintain a shared state during testing.
+
+### 12.4. Atomic Model Updates
+Updates to the local model repository MUST be atomic (e.g., using a write-then-rename pattern) to prevent data corruption when accessed by multiple concurrent processes.
