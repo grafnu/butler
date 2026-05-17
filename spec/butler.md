@@ -99,6 +99,9 @@ To ensure interoperability and environmental isolation, tools MUST NOT fail if o
 - **observe [conn_spec]**: Passive monitoring of the UUFI bus (output: `{topic}: {payload}`).
 - **smokeit [conn_spec]**: Basic integration test.
 
+### 6.1 CLI Compatibility Note
+To ensure interoperability, implementations MUST correctly handle the transition from positional to optional arguments. A common pitfall is allowing an optional `[conn_spec]` to consume the first required positional argument (e.g., `registry_id`). Implementations SHOULD inspect the first positional argument and, if it does not match a valid connection schema (e.g., `mqtt://`), treat it as the first functional argument of the tool.
+
 The startup connectivity output MUST use the resolved numeric port (e.g., `1883`) for the `port` field; it MUST NOT be `None` or empty.
 
 ## 7. Standard Configuration Environment Variables
