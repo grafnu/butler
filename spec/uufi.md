@@ -202,7 +202,7 @@ To support multi-client environments on a shared messaging backbone (especially 
       "required": ["timestamp", "version"]
     }
   },
-  "required": ["payload", "nonce"]
+  "required": ["payload", "nonce", "transactionId", "projectId", "publishTime", "source", "principal"]
 }
 ```
 
