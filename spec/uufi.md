@@ -133,7 +133,8 @@ To prevent infinite message loops, components responding to cloud model operatio
 - **Deduplication:** Track `transactionId`s for 5 minutes. Implementations MUST ensure that deduplication logic does not interfere with the Handshake protocol (Section 3), which MUST reflect the same `transactionId` between Step 1 and Step 2. Specifically, a message MUST NOT be rejected as a duplicate if it is a valid handshake reply (Step 2) to a previously sent handshake state (Step 1).
 
 ### 7.4. Self-Message Filtering
-To ensure efficiency and avoid redundant processing, components SHOULD ignore incoming messages where the `source` field in the envelope matches their own `source` identifier. While the Deduplication rule (Section 7.3) allows processing of self-messages for specific local state synchronization, components MUST NOT engage in behavior where processing a self-originated message triggers the publication of a new message that could sustain a loop.
+To ensure efficiency and avoid redundant processing, components MUST ignore incoming messages where the `source` field in the envelope matches their own `source` identifier.
+ While the Deduplication rule (Section 7.3) allows processing of self-messages for specific local state synchronization, components MUST NOT engage in behavior where processing a self-originated message triggers the publication of a new message that could sustain a loop.
 
 ## 8. Payload and Formatting Rules
 
