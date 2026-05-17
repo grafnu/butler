@@ -125,13 +125,14 @@ The startup connectivity output MUST use the resolved numeric port (e.g., `1883`
 
 ### 9.2 Observer (Passive Observer)
 - **Output:** Raw wire format `{topic}: {payload}`.
-- **Constraints:** Unbuffered, exactly one line per message, no truncation. Implementations MUST NOT output any additional text (e.g., connection status, "RECEIVE" labels) beyond the message itself. Implementations MUST ensure that message output is thread-safe and that each message is followed by a newline character, even when multiple messages arrive simultaneously.
+- **Constraints:** Unbuffered, exactly one line per message, no truncation. Implementations MUST NOT output any additional text (e.g., connection status, "RECEIVE" labels) beyond the message itself. The startup connectivity output required by Section 6 MUST be directed to `stderr` for the Observer tool to ensure that `stdout` contains only message data. Implementations MUST ensure that message output is thread-safe and that each message is followed by a newline character, even when multiple messages arrive simultaneously.
 
 ### 9.3 Compliance Logging
 For automated interoperability testing and verification, implementations MUST adhere to the following log formats for critical lifecycle events:
-- **State Transitions (Verifier):** `VERIFIER [INFO]: State transition for {subsystem}: {old_state} -> {new_state}`
-- **Validation Errors (Verifier):** `VERIFIER [ERROR]: VALIDATION ERROR: {message}`
-- **Terminal State (Orchestrator):** `[butler] Device {registry_id}/{device_id}/{subsystem} terminal state {status} with version {version}`
+- **State Transitions (Verifier):** `VERIFIER [INFO]: State transition for {subsystem}: {old_state} -> {new_state}`. The initial state before any report is received MUST be considered `unknown`.
+- **Handshake Events (Verifier):** `VERIFIER [INFO]: Handshake {started|completed} for {principal}`.
+- **Validation Errors (Verifier):** `VERIFIER [ERROR]: VALIDATION ERROR: {message}`.
+- **Terminal State (Orchestrator):** `[butler] Device {registry_id}/{device_id}/{subsystem} terminal state {status} with version {version}`.
 Consistent log prefixes and formats are essential for multi-implementation integration testing. These messages MUST be printed exactly as specified, without additional prefixes (e.g., timestamps or thread IDs) that might interfere with automated log analysis.
 
 ### 9.4 Validation Event Schema
