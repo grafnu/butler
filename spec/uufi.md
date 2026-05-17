@@ -358,7 +358,7 @@ Each version directory MUST contain:
 - `sha256.txt`: A text file containing the hex-encoded SHA-256 hash of `bundle.bin`.
 
 ### 12.3. Standard Environment Variables
-For local execution and testing, implementations SHOULD support the following environment variables for repository configuration:
+For local execution and testing, implementations MUST support the following environment variables for repository configuration:
 - `BUTLER_MODEL_FILE`: The absolute or relative path to the local model JSON file.
 - `BUTLER_BLOBS_DIR`: The base directory for binary blob storage.
 
