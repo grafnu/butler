@@ -1,5 +1,3 @@
-THIS IS A PROVISIONAL SPEC THAT IS NOT NECESSARILY REPRESENTATIVE OF THE CURRENT IMPLEMENTATION.
-
 # Unified UDMI Functional Interface (UUFI)
 
 The **Unified UDMI Functional Interface (UUFI)** defines a standardized messaging mechanism for external applications (the **Client**) to integrate with a UDMI-managed system (the **System**).
@@ -28,71 +26,46 @@ Format: `scheme://[user@]host[:port][/path]`
 #### PubSub (`pubsub://`)
 - **Host:** GCP Project ID.
 - **User:** Maps to a subscription suffix and the `principal` attribute.
-- **Principal:** The `user` component with a trailing `@` (e.g., `user@`).
+- **Principal:** The `user` component with a trailing `@`.
 - **Path:** First component maps to the root topic name (default: `udmi_uufi`).
 - **Subscription:** `{topic}+{user}`.
-- **Filtering:** Subscriptions MUST filter for messages where the `principal` attribute matches the local identity or is absent.
+- **Filtering:** Subscriptions should filter for messages where the `principal` attribute matches the local identity or is absent.
 - **Constraint:** `:port` is prohibited.
-- **Debug Differentiation:** For singular receiver protocols (e.g., PubSub), append identifiers to the `user` component:
-  - `butler`: (none)
-  - `observe`: `.observe`
-  - `verifier`: `.verifier`
-  - `mocket`: `.mocket`
 
 #### MQTT (`mqtt://`)
 - **Host/Port:** Standard network mapping.
-- **Topic Structure:** `[/{prefix}]/uufi/[r/{deviceRegistryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
-  - The `prefix` is the optional path component of the connection string, representing one or more path segments. Implementations MUST NOT use the `user` component (username) as a topic prefix; it is reserved for identity and authentication. Implementations MUST ensure that joining a prefix and the `/uufi/` root does not result in double-slashes (e.g., `/prefix//uufi/...`). Topic normalization MUST be applied.
- Implementations MUST strip any leading or trailing slashes from the path component before using it as a `prefix`. In UDMI environments, the `prefix` often corresponds to the `UDMI_PREFIX` environment variable, which isolates multiple UDMI installations on the same messaging backbone.
-- **Prefix Isolation:** The `prefix` MUST be used to isolate different environments sharing the same broker. If provided, it MUST be the leading part of the topic path (e.g. matching all segments of the path provided in the connection string). Implementations MUST support multi-segment prefixes and MUST NOT omit the prefix if provided in the connection string. All active subscriptions (including those for traffic observation) MUST be scoped to the provided prefix to ensure environmental isolation. Prefix enforcement MUST be strict: implementations MUST NOT publish to or subscribe from topics outside their designated prefix tree. Monitoring tools (e.g., observers and verifiers) SHOULD start their subscriptions as soon as possible after connecting to the broker to avoid missing early lifecycle events, regardless of their own handshake status. To avoid collisions when multiple clients share the same broker, implementations MUST use unique MQTT Client IDs, for example by incorporating the prefix, a random nonce, or a combination of both.
-- **Project Identity:** For the MQTT transport, the `projectId` field in the envelope MUST be treated as a general environment or project identifier. All components within a single UUFI session MUST use a consistent `projectId` (default: `vibrant`) to avoid ambiguity in message processing.
+- **Topic Structure:** `/uufi/[r/{registryId}/[d/{deviceId}/]]c/{subType}/{subFolder}`
+- **Topic Isolation:** The `principal` identifier MUST be included in the JSON envelope.
 - **Cloud Model Service:**
-  - **Discovery:** System components MUST dynamically discover registries and devices via the UUFI message bus. Clients publish a `query/cloud` message to `[/{prefix}]/uufi/c/query/cloud`.
-  - **Response:** System publishes the model to `[/{prefix}]/uufi/c/config/cloud`.
-  - **Updates:** Clients publish model updates to `[/{prefix}]/uufi/c/model/cloud`.
-  - **Registry-less Enforcement:** All cloud model operations (`query`, `model`, `config`) MUST use registry-less topics (e.g., omitting the `/r/{registry_id}/d/{device_id}` path segments). Similarly, the `Discovery` operation (`events/discovery`) MUST use registry-less topics to facilitate initial device identification, especially before a successful handshake has provided the client with a `deviceRegistryId`.
+  - **Discovery:** Clients publish a `query/cloud` message to `/uufi/c/query/cloud`.
+  - **Response:** System publishes the model to `/uufi/c/config/cloud`.
   - **Structure:** Uses nested **Registries** (Section 5.1).
-
-### 2.3 Cloud Model Structure
-- **Nesting Rule:** To ensure interoperability, the cloud model MUST use a strictly defined nesting structure: `cloud` -> `registries` -> `{registry_id}` -> `devices` -> `{device_id}` -> `{subsystem_id}`.
-- **Subsystem Metadata:** Each subsystem object MUST include a `subsystem` field matching its `{subsystem_id}` to facilitate debugging and message routing.
 
 ## 3. Handshake Protocol
 
-The Handshake Protocol is the message sequence and associated behavior used to establish an active UUFI session between a Client and the System.
+Handshake is Client-initiated. The System MUST NOT initiate a handshake unless acting as a Client.
 
-### Sequence
-1. **State Declaration**: The Client publishes a UDMI `state` message to `/uufi/c/state/udmi`.
-   - **Payload**: MUST include the `setup` block.
-   - **Addressing**: Registry-less topic. `source` in envelope contains Client identity.
-2. **Configuration Confirmation**: The System publishes a UDMI `config` message to `/uufi/c/config/udmi`.
-   - **Payload**: MUST include `setup` and `reply` blocks.
-   - **Addressing**: Envelope `principal` MUST match Client's identity.
+### Step 1: State Declaration
+The Client publishes a UDMI `state` message to `/uufi/c/state/udmi`.
+- **Payload:** Must include `udmi.setup` (see Schema 10.2).
+- **Addressing:** Registry-less topic. `source` in envelope contains Client identity.
 
-### Behavior and Lifecycle
-- **Initiation**: Handshake is Client-initiated. The System MUST NOT initiate a handshake unless acting as a Client.
-- **Wait for Handshake**: The System MUST wait for at least one Client handshake before becoming fully active, but it MUST NOT block indefinitely if no Clients are present.
-- **Retries**: Clients MUST periodically republish the Step 1 state message every 5 seconds if a valid Step 2 confirmation has not been received, until the 60-second timeout.
-- **Activation**: A Client is **Active** when the `reply.transaction_id` matches the original `state.setup.transaction_id`.
-- **Timeout**: The Handshake MUST complete within 60s. On timeout, the Client MUST log a critical error and terminate (Fail-fast).
+### Step 2: Configuration Confirmation
+The System publishes a UDMI `config` message to `/uufi/c/config/udmi`.
+- **Payload:** Must include `udmi.setup` and `udmi.reply` (see Schema 10.3).
+- **Addressing:** Envelope `principal` MUST match Client's identity.
 
-### Identity and Addressing
-- **Principal Mapping**: For handshake replies, the System MUST use the `principal` or `source` from the received state message. The received message's `principal` MUST be used if present; otherwise, the `source` MUST be used as a fallback.
-- **Handshake Registry Discovery**: If the `source` field in the handshake Step 1 state message contains a forward slash `/`, System components MUST interpret the portion before the first slash as the `deviceRegistryId` and the portion after as the `deviceId` for the purpose of environmental identification and registry discovery.
-- **Matching**: When matching identities, implementations MUST only compare the base part of the identity (the portion before the first dot `.`) to allow for tool-specific tagging (e.g., `user.verifier` MUST match `user`).
-- **Differentiator Separator**: Implementations MUST use the dot `.` character to separate identity components (e.g., `butler.nonce`). Other separators (e.g., `-`, `_`) MUST NOT be used for this purpose to ensure consistent matching of base identities.
-- **Naming Schemes**: System components MUST NOT detect or reject identities with multiple components (e.g., `user.toolname`) as "manual differentiators" if they are part of a standardized naming scheme.
-- **Registry Discovery**: The System MUST provide a `deviceRegistryId` in the `config.udmi` handshake reply if the System has prior knowledge of the Client's registry. If provided, the `deviceRegistryId` MUST be placed within the `setup` block of the payload.
-- **Responsiveness**: MQTT message callback handlers MUST NOT perform long-running or blocking operations. Heavy processing MUST be offloaded to a separate thread. Implementations MUST ensure that messages originating from the same `source` or `principal` are processed in the order they were received, even when offloaded, to maintain protocol state integrity.
+**Retries:** The Client SHOULD periodically republish the Step 1 state message (e.g., every 5 seconds) if a valid Step 2 confirmation has not been received, until the 60-second timeout.
 
-### 3.1 Metadata and Topic Conventions
-- **Metadata Storage**: Device metadata (`make`, `model`) MUST be stored in a dedicated `meta` subsystem within the cloud model for consistency.
-- **Metadata Ingestion**: System components MUST ingest and cache `make` and `model` information from all available sources (registration, cloud updates, and state reports).
-- **Metadata Prioritization**: When ingesting metadata or versions, implementations MUST prioritize specific, non-fallback values. Known non-fallback values MUST NEVER be overwritten by uninitialized states (e.g., `"unknown"` or `"0.0.0"`).
-- **Topic Slashes**: All UUFI topics MUST start with a leading slash `/`.
-- **Version Strings**: Uninitialized or unknown versions (current, target, or LKG) MUST be represented as the string `"0.0.0"`. Implementations MUST treat a null or empty string as equivalent to `"0.0.0"` for comparison and MUST NOT overwrite a non-zero version with `"0.0.0"`.
-- **Blobset Config Keys**: Implementations MUST use standard UDMI keys in the `blobset` subfolder config payloads.
-- **Local Blobs**: For local file references, the `url` MUST use the `file://` scheme. Recipients MUST strip the scheme to resolve the path.
+**Activation:** The Client is **Active** when `udmi.reply.transaction_id` matches the original `state.udmi.setup.transaction_id`.
+
+### Registry ID Discovery
+- **Default:** `default`
+- **Discovery:** System may provide `{registryId}` in `config.udmi` during handshake.
+
+### Timeouts
+- **Window:** 60 seconds.
+- **Failure:** On timeout, the Client MUST log a critical error and terminate (Fail-fast).
 
 ## 4. Message Encapsulation
 
@@ -111,17 +84,15 @@ Inner JSON `payload` object MUST include:
 | **MQTT** | JSON Wrapper | Payload `payload` key |
 
 #### MQTT Constraints
-- **Redundancy:** Envelope fields MUST NOT include data encoded in the topic path (`subType`, `subFolder`, and if present, `deviceRegistryId`, `deviceId`). Implementations MUST reject messages where envelope fields duplicate topic-encoded data.
-- **Mandatory Fields:** The MQTT envelope MUST include `projectId`, `transactionId`, `publishTime`, `source`, `principal`, and `payload`.
+- **Redundancy:** Envelope fields MUST NOT include data encoded in the topic path (`subType`, `subFolder`, and if present, `deviceRegistryId`, `deviceId`).
 - **Nesting:** UDMI message data MUST be nested within the `payload` key.
 
 ## 5. Cloud Model Operations
 
 ### 5.1. Schema
 - **Operation:** `READ`, `CREATE`, `UPDATE`, `DELETE`, `BIND`, `UNBIND`.
-- **Registries:** Map of `{registry_id}` to a map containing a **mandatory** `devices` key, which is a map of `{device_id}` to a map where each key is a `{subsystem_id}` (e.g., `main`, `meta`, `system`) and each value is the corresponding subsystem state.
-- **CRITICAL Nesting Rule:** Implementations MUST NOT include an additional `subsystems` wrapper key between the `{device_id}` and the `{subsystem_id}` in any payload (especially `cloud` model and config messages). This is a foundational interoperability requirement. Subsystems MUST be direct children of the `{device_id}` key. Conversely, the `devices` level between `{registry_id}` and `{device_id}` MUST NOT be omitted. Extra or missing nesting levels WILL cause reconciliation failures in compliant orchestrators and MUST be flagged as a FAIL by verifiers.
-- **Detail:** Additional parameters as specified in the authoritative schema.
+- **Registries:** Map of `{registry_id}` to a map of `{device_id}` to a map of `{subsystem_id}` to subsystem state.
+- **Detail:** Optional parameters.
 
 ### 5.2. Update Semantics (Partial Merge)
 The `UPDATE` operation for the `cloud` subfolder is a partial merge at the device subsystem level. Existing fields not in the payload MUST NOT be modified.
@@ -139,59 +110,13 @@ The `UPDATE` operation for the `cloud` subfolder is a partial merge at the devic
 | Model Query | `query` | `cloud` | Publish |
 | Model Update | `model` | `cloud` | Publish |
 | Model Reply | `config` | `cloud` | Receive |
-| Blobset Config | `config` | `blobset` | Publish |
-| Blobset State | `state` | `blobset` | Receive |
-
-### 7.1 Transaction Identifiers
-- **Envelope Field:** MUST use `transactionId` (camelCase) in the MQTT and PubSub envelope.
-- **Payload Field:** For handshake messages (`udmi` subfolder), the `setup` and `reply` blocks MUST use `transaction_id` (snake_case) to maintain UDMI schema compatibility.
-- **Consistency:** The value of `transactionId` in the envelope MUST match the `transaction_id` in the payload for the same message.
+| Update Config | `config` | `blobset` | Publish |
+| Update State | `state` | `blobset` | Receive |
 
 ### 7.2 MQTT QoS
 - **Requirement:** QoS 1 (At Least Once) for all state and configuration messages.
 
-### 7.3 Idempotency
-- **Transaction ID:** MUST use a unique `transactionId` for message identification.
-- **Deduplication:** Track `transactionId`s for 5 minutes. Implementations MUST ensure that deduplication logic does not interfere with the Handshake protocol (Section 3), which MUST reflect the same `transactionId` between Step 1 and Step 2. Specifically, a message MUST NOT be rejected as a duplicate if it is a valid handshake reply (Step 2) to a previously sent handshake state (Step 1).
-
-## 8. Payload and Formatting Rules
-
-### 8.1. Payload Structure
-- **Nesting:** The `payload` object contains the fields of the UDMI message corresponding to the `subFolder` and `subType`.
-- **Subsystem Nesting:** For `blobset` config and state payloads, data MUST be nested within a subsystem-id key (e.g., `system`) to support multi-subsystem devices. For maximum compatibility with UDMI standards, implementations MUST include a `blobs` wrapper key within the `blobset` object, containing the subsystem-id keys. Implementations MUST handle both nested (with the `blobs` wrapper) and unnested (flat) payloads for backward compatibility and robust interoperability.
-
-- **UDMI Subfolder Nesting:** For messages using the `udmi` subfolder (e.g., handshakes), the payload data MUST be nested within a `udmi` key at the root of the `payload` object. Implementations MUST also handle flattened payloads for robustness.
-
-- **Mandatory Fields:** `timestamp` and `version` MUST be at the root of the `payload` object.
-- **Metadata:** The `make` and `model` fields are mandatory for all `blobset` subfolder payloads (state and config) within the subsystem nesting. These fields are essential for the System to locate the correct blob in the repository and MUST be included in every subsystem entry subject to reconciliation. Additionally, the `generation` field MUST be included in `blobset` config payloads to provide a temporal reference for the update command; it MUST follow the RFC 3339 minimal precision format (as defined in Section 8.2). Implementations MUST NOT use the version string as the value for the `generation` field.
-- **Blobset Config URL:** The `url` field in a `blobset` config payload MUST be a valid URI. Implementations MUST support the `file://` scheme for local file references. When a `file://` URI is provided, the recipient MUST strip the scheme and any leading slashes as appropriate for the local operating system to resolve the absolute or relative path.
-
-
-### 8.2. Timestamp Format
-- **Format:** RFC 3339 minimal precision (e.g., `2026-05-01T22:32:17Z`).
-- **Timezone:** UTC required (`Z` suffix).
-- **Precision:** System-originated messages MUST NOT include fractional seconds. Clients MUST be able to handle fractional seconds (microseconds) if provided by other components, and all implementations MUST handle them gracefully by ignoring extra precision if necessary.
-
-### 8.3. MQTT Specific Rules
-- **Redundancy Rule:** Implementations MUST reject messages where envelope fields duplicate topic-encoded data.
-- **Leading Slash:** For MQTT transport, all UUFI topics MUST start with a leading slash `/`. Implementations MUST NOT accept or publish to topics lacking the leading slash.
-- **Wildcards:** Subscription wildcards (e.g., `/#`) MUST also adhere to the leading slash rule and MUST be scoped to the connection-defined prefix to ensure consistent topic matching across the prefix tree.
-
-### 8.5. Identity Isolation
-To support multi-client environments on a shared messaging backbone (especially when topic prefixes are not used), implementations MUST strictly enforce identity isolation using the `principal` field:
-- **Filtering:** All components MUST filter incoming messages and reject those where the `principal` field does not match their own local identity (accounting for identity differentiators). Passive monitoring tools (e.g., observers and verifiers) MUST be exempt from this filtering to facilitate system-wide visibility.
-- **Enforcement:** For MQTT, if the `principal` field is missing from an incoming envelope, the message MUST be rejected to prevent cross-trial interference and ensure protocol compliance. Passive monitoring tools MUST also waive this requirement.
-- **Differentiators:** When matching identities, implementations MUST only compare the base part of the identity (the portion before the first dot `.`) to allow for tool-specific tagging (e.g., `user.verifier` MUST match `user`).
-
----
-
-# Appendix A: Schemas and Examples
-
-This appendix references the formal JSON schemas and provides message examples for the UUFI protocol. The **UDMI Schema Repository** is the authoritative source for all message structures.
-
-## A.1. Examples
-
-### A.1.1. Handshake (PubSub)
+### 7.1. Handshake (PubSub)
 
 **Attributes:**
 ```json
@@ -209,15 +134,17 @@ This appendix references the formal JSON schemas and provides message examples f
 {
   "version": "1.5.2",
   "timestamp": "2026-04-29T10:00:00Z",
-  "setup": {
-    "functions_ver": 9,
-    "transaction_id": "UUFI:sess123:001",
-    "msg_source": "client-id"
+  "udmi": {
+    "setup": {
+      "functions_ver": 9,
+      "transaction_id": "UUFI:sess123:001",
+      "msg_source": "client-id"
+    }
   }
 }
 ```
 
-### A.1.2. Pointset Config (MQTT)
+### 7.2. Pointset Config (MQTT)
 
 **Topic:** `/uufi/r/reg-1/d/dev-1/c/config/pointset`
 
@@ -229,48 +156,217 @@ This appendix references the formal JSON schemas and provides message examples f
   "payload": {
     "version": "1.5.2",
     "timestamp": "2026-04-29T10:05:00Z",
-    "points": {
-      "temp": { "set_value": 22.5 }
-    }
-  }
-}
-```
-
-### A.1.3. Blobset Config (MQTT)
-
-**Topic:** `/uufi/r/reg-1/d/dev-1/c/config/blobset`
-
-**Payload:**
-```json
-{
-  "transactionId": "UUFI:sess123:003",
-  "principal": "client-id",
-  "payload": {
-    "version": "1.5.2",
-    "timestamp": "2026-04-29T10:10:00Z",
-    "blobset": {
-      "blobs": {
-        "system": {
-          "phase": "apply",
-          "url": "file:///path/to/bundle.bin",
-          "sha256": "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-          "generation": "2026-04-29T10:10:00Z"
-        }
+    "pointset": {
+      "points": {
+        "temp": { "set_value": 22.5 }
       }
     }
   }
 }
 ```
 
-## A.2. Authoritative Schemas
+## 8. Reliability
 
-UUFI implementations MUST adhere to the following schemas from the UDMI repository:
+### MQTT QoS
+- **Requirement:** QoS 1 (At Least Once) for all state and configuration messages.
 
-| UUFI Component | Authoritative UDMI Schema |
-| :--- | :--- |
-| **Message Envelope** | `envelope.json` |
-| **Handshake State** | `state_udmi.json` |
-| **Handshake Config** | `config_udmi.json` |
-| **Cloud Model** | `model_cloud.json` |
-| **Blobset Config** | `config_blobset.json` |
-| **Blobset State** | `state_blobset.json` |
+### Idempotency
+- **Nonce:** MUST use an 8-digit hex nonce for message identification.
+- **Deduplication:** Track `nonce` values for 5 minutes. Implementations MUST NOT use `transactionId` for deduplication, as multiple messages (e.g., retried handshakes) may share the same `transactionId` while having unique `nonce` values.
+
+## 9. Compliance
+
+### 9.1. Payload Structure
+- **Nesting:** The `payload` object MUST contain exactly one top-level key matching the `subFolder` name.
+- **Subsystem Nesting:** For `blobset` config and state payloads, data MUST be nested within a subsystem-id key (e.g., `main`) to support multi-subsystem devices. For maximum compatibility with UDMI standards, implementations MUST include a `blobs` wrapper key within the `blobset` object, containing the subsystem-id keys. Implementations MUST handle both nested (with the `blobs` wrapper) and unnested (flat) payloads for backward compatibility and robust interoperability.
+- **Mandatory Fields:** `timestamp` and `version` MUST be at the root of the `payload` object.
+
+### 9.2. Timestamp Format
+...
+## 11. Local Repository Structure (Standardized)
+
+To ensure that tools from different implementations (e.g., a Trigger from Impl A and an Orchestrator from Impl B) can interoperate within the same local workspace, the following directory and file structures are standardized.
+
+### 11.1. Blob Repository
+Blobs MUST be stored in a directory structure following this pattern:
+`{base_dir}/{make}/{model}/{subsystem}/{version}/`
+
+Each version directory MUST contain:
+- `bundle.bin`: The binary blob content.
+- `sha256.txt`: A text file containing the hex-encoded SHA-256 hash of `bundle.bin`.
+
+### 11.2. Model Repository
+The cloud model, when stored as a local JSON file, MUST use the 3-level nesting defined in Section 10.4 (Registries -> Devices -> Subsystems).
+- **Format:** RFC 3339 minimal precision (e.g., `2026-05-01T22:32:17Z`).
+- **Timezone:** UTC required.
+- **Precision:** No microseconds.
+
+### 9.3. Redundancy Rule
+- **MQTT:** Implementations MUST NOT include redundant fields in the MQTT JSON envelope if those fields are already encoded in the topic path (`subType`, `subFolder`, and if present, `deviceRegistryId`, `deviceId`).
+- **Validation:** Implementations MUST reject messages where envelope fields duplicate topic-encoded data. However, fields NOT present in the topic path (e.g., `deviceRegistryId` in a registry-less topic) MUST NOT be rejected if present in the envelope.
+
+## 10. Schemas
+
+### 10.1. UUFI Message Envelope
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "UufiEnvelope",
+  "type": "object",
+  "properties": {
+    "projectId": { "type": "string", "description": "GCP Project ID" },
+    "deviceRegistryId": { "type": "string", "description": "Managed Registry ID" },
+    "deviceId": { "type": "string", "description": "Target/Source Device ID" },
+    "subFolder": { "type": "string", "description": "UDMI subFolder" },
+    "subType": { "type": "string", "description": "UDMI subType" },
+    "transactionId": { "type": "string", "description": "Tracking identifier" },
+    "publishTime": { "type": "string", "format": "date-time", "description": "Envelope wrapping timestamp" },
+    "source": { "type": "string", "description": "Client session identifier" },
+    "principal": { "type": "string", "description": "Session owner identity" },
+    "nonce": { "type": "string", "description": "Unique message instance ID (8-digit hex)" },
+    "payload": {
+      "type": "object",
+      "description": "UDMI message container",
+      "properties": {
+        "timestamp": { "type": "string", "format": "date-time", "description": "UDMI message generation time" },
+        "version": { "type": "string", "description": "UDMI schema version" }
+      },
+      "required": ["timestamp", "version"]
+    }
+  },
+  "required": ["payload"]
+}
+```
+
+### 10.2. Handshake State Payload
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HandshakeStatePayload",
+  "type": "object",
+  "properties": {
+    "version": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "udmi": {
+      "type": "object",
+      "properties": {
+        "setup": {
+          "type": "object",
+          "properties": {
+            "functions_ver": { "type": "integer", "description": "Expected UDMI functions version" },
+            "transaction_id": { "type": "string", "description": "Handshake transaction ID" },
+            "msg_source": { "type": "string", "description": "Originating client ID" },
+            "user": { "type": "string", "description": "Authenticated user ID" }
+          },
+          "required": ["functions_ver", "transaction_id"]
+        }
+      },
+      "required": ["setup"]
+    }
+  },
+  "required": ["version", "timestamp", "udmi"]
+}
+```
+
+### 10.3. Handshake Config Payload
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HandshakeConfigPayload",
+  "type": "object",
+  "properties": {
+    "version": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "udmi": {
+      "type": "object",
+      "properties": {
+        "setup": {
+          "type": "object",
+          "properties": {
+            "functions_min": { "type": "integer", "description": "Minimum supported functions version" },
+            "functions_max": { "type": "integer", "description": "Maximum supported functions version" },
+            "udmi_version": { "type": "string", "description": "System UDMI version" }
+          }
+        },
+        "reply": {
+          "type": "object",
+          "properties": {
+            "functions_ver": { "type": "integer", "description": "Reflected functions version" },
+            "transaction_id": { "type": "string", "description": "Reflected transaction ID" },
+            "msg_source": { "type": "string", "description": "Reflected client ID" }
+          },
+          "required": ["transaction_id"]
+        }
+      },
+      "required": ["setup", "reply"]
+    }
+  },
+  "required": ["version", "timestamp", "udmi"]
+}
+```
+
+### 10.4. Cloud Model Payload
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CloudModelPayload",
+  "type": "object",
+  "properties": {
+    "version": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "cloud": {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": ["READ", "CREATE", "UPDATE", "DELETE", "BIND", "UNBIND"],
+          "description": "Model operation type"
+        },
+        "registries": {
+          "type": "object",
+          "description": "Map of registry_id to device configurations",
+          "patternProperties": {
+            "^[a-zA-Z0-9_-]+$": {
+              "type": "object",
+              "properties": {
+                "devices": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^[a-zA-Z0-9_-]+$": {
+                      "type": "object",
+                      "description": "Map of subsystem_id to subsystem state",
+                      "patternProperties": {
+                        "^[a-zA-Z0-9_-]+$": {
+                          "type": "object",
+                          "description": "Device subsystem state",
+                          "properties": {
+                            "target_version": { "type": "string" },
+                            "current_version": { "type": "string" },
+                            "status": { "type": "string" },
+                            "lkg_version": { "type": "string" }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "detail": { "type": "object", "description": "Operation-specific parameters" }
+      },
+      "required": ["operation", "registries"]
+    }
+  },
+  "required": ["version", "timestamp", "cloud"]
+}
+```
+
+## 11. Command Line Interface (CLI)
+
+### 11.1. Robustness
+- **Unexpected Arguments:** All UUFI-compliant tools MUST NOT fail if they receive unexpected or unknown command-line arguments. They SHOULD ignore unknown arguments and proceed with execution.
+- **Argument Order:** Positional arguments SHOULD follow the order defined in the tool's usage string.
+```
+
