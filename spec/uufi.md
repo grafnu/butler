@@ -162,7 +162,7 @@ To prevent infinite feedback loops and minimize bus traffic, components MUST ign
 - **Prefix Isolation:** Implementations MUST strictly enforce the prefix tree for all outgoing and incoming messages. For incoming messages, components MUST validate that the topic starts with the connection-defined prefix (if one is specified in the connection string); messages from other prefixes MUST be ignored. To support system-wide monitoring, a specialized observer tool MAY utilize wildcard subscriptions (e.g., using `+` or `#` for the prefix segment) if the underlying transport and security policy allow it, but standard system components MUST remain isolated to their designated prefix.
 
 ### 8.4. Version String Format
-- **Default/Unknown Version:** Implementations MUST use the string `0.0.0` to represent an unknown, uninitialized, or null version (e.g., for `current_version`, `target_version`, or `lkg_version`).
+- **Default/Unknown Version:** Implementations MUST use the string `0.0.0` to represent an unknown, uninitialized, or null version (e.g., for `current_version`, `target_version`, or `lkg_version`). Implementations MUST handle the `0.0.0` version gracefully and MUST NOT crash or enter an invalid state when processing it.
 - **Persistence:** To ensure stability and prevent accidental data loss during partial merges, a non-zero version string (one that is NOT `0.0.0`) MUST NEVER be overwritten by `0.0.0`.
 
 ### 8.5. Metadata Fallback
