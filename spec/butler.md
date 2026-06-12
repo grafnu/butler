@@ -33,64 +33,55 @@ The root directory MUST ONLY contain the following files and directories:
 ## 2. Role and Behavior
 
 ### 2.1 Orchestrator Behavior
-**Butler** is the primary authority for the `lkg_version` in the cloud model and MUST NOT trust a device-reported `lkg_version` if it conflicts with a previously validated state. To prevent split-brain conditions, the Butler is the **sole authoritative Cloud Model Server** on the UUFI bus; other components (e.g., `mocket`, `verifier`) MUST NOT respond to `query/cloud` messages or unilaterally publish `config/cloud` messages.
-- **Discovery:** The Butler MUST dynamically discover registries and devices from incoming state reports or cloud updates. This includes the Handshake Step 1 state message, which MUST be used to populate the initial model entry for a device.
+The **Butler** is a stateless, reactive fleet reconciliation engine whose sole scope is to transition devices from their dynamically reported actual version to the expected/desired version specified in the immutable `site_model` (`system.software.<blob_id>`).
+- **Device Authority:** The device itself is the sole authoritative source of its current/actual software version and its `lkg_version`. The Butler MUST trust the device's reported state and MUST NOT attempt to track, persistent-store, or validate `lkg_version` history.
+- **Stateless Restarts:** If the Butler process restarts, all in-memory tracking is reset. The Butler MUST wait until it receives a dynamic state report from a device before it can determine the actual version and initiate reconciliation.
 - **Handshake Compliance:** Butler MUST NOT initiate its own handshake; it MUST instead respond to handshake state messages from Devices and Verifiers with the appropriate config reply as defined in UUFI.
 - **State Machine:**
-  - `quiescent`: Target Version == Current Version.
-  - `active`: Target Version != Current Version (Transitional state).
-  - `pending`: Update in progress (device has received command).
+  - `quiescent`: Expected/Desired Version == Actual/Current Version.
+  - `active`: Expected/Desired Version != Actual/Current Version (Reconciliation required; triggers an update command).
+  - `pending`: Update command has been sent to the device, awaiting dynamic state update showing completion or failure.
+  The expected/desired version is sourced from the immutable `site_model` file path `system.software.<blob_id> = 'version_tag'` (defined in `model_system.json`), where `<blob_id>` is the identifier of the target software. The actual/current version is dynamically reported by the device under the same path in state messages.
 
-- **Terminal States:** For the purpose of the orchestrator state machine, ONLY `success`, `failure`, and `quiescent` are considered terminal states. The `active` state MUST NOT be considered terminal and MUST trigger a reconciliation attempt if no update is already `pending`.
-- **Triggering:** The orchestrator re-evaluates state upon receiving device status reports. A null `current_version` is treated as `0.0.0` (see UUFI).
-- **Efficiency:** State transitions and model updates MUST be processed immediately upon receipt of relevant messages to minimize end-to-end latency. Implementations MUST NOT introduce any artificial delay or "settling time" before processing a state change or triggering a reconciliation.
-- **Timeout:** The Butler MUST wait for at least `BUTLER_TIMEOUT` (default: 60s) for a device to progress from the `pending` state before triggering a rollback.
+- **Triggering:** The orchestrator re-evaluates state and triggers update commands immediately upon receiving device status reports showing version drift (`expected != actual`), unless the device is already in a `pending` transition.
+- **No Rollback:** The Butler MUST NOT manage, track, or trigger rollbacks. If an update fails, the Butler simply reports the terminal state. Any rollback or reversion is the domain of the device itself (internally) or an administrator manually updating the expected version in the immutable `site_model`.
+- **Efficiency:** State transitions and version reconciliation MUST be processed immediately upon receipt of relevant state messages to minimize end-to-end latency.
 
 ### 2.2 Model and Update Management
-- **LKG Management:** Upon receiving a device report indicating a successful update where the `current_version` matches the `target_version`, the Butler MUST update the cloud model's `current_version` and `lkg_version`.
-- **Persistence:** The Butler MUST update the local model file whenever the cloud model state changes. To ensure consistent fleet visibility, device reports for terminal states (including `quiescent` at version `0.0.0`) MUST be synchronized with the cloud model if the reported state differs from the current model state.
+- **Local Model (Software Catalog Only):** Sourced from `BUTLER_MODEL_FILE` (default: `testing/model.json`), the on-disk Butler database acts exclusively as a **Software Catalog (Package Metadata Database)**. It MUST NOT store any device-specific information, `lkg_version`, or transient update states. It is strictly used to answer catalog queries (such as *"What potential versions for a particular make/model/blob are available?"* or *"What are the metadata parameters/bits for a particular make/model/blob?"*).
 
 ## 3. Functional Components
 
 ### 3.1 Blob Repository
-- **Structure:** `{base_dir}/{make}/{model}/{subsystem_id}/{version}/`
+- **Structure:** `{base_dir}/{make}/{model}/{blob_id}/{version}/` (where `{blob_id}` is the software or subsystem identifier).
 - **Contents:**
   - `bundle.bin`: The binary blob content.
   - `sha256.txt`: Hex-encoded SHA-256 hash of `bundle.bin`.
 - **Integrity:** Every blob requires a SHA256 hash for verification.
 
 ### 3.2 Model Repository (Desired State)
-- **Format:** The cloud model MUST follow the full schema defined in UUFI.
+- **Format:** The cloud model MUST follow the full schema defined in UUFI. The physical model follows the immutable `{site_id}/devices/{device_id}/` directory structure of the UDMI/UUFI site_model, where `{site_id}` is the directory name containing `devices` and represents the site/registry ID.
 - **Path Override:** `BUTLER_MODEL_FILE`.
 - **Atomicity:** Updates to the local model file MUST be atomic (e.g., write to temporary file then rename).
-- **Access:** Direct local access is restricted to `mocket`, `register`, and `trigger`.
-- **Primary Key:** Composite of `registry_id` and `device_id`.
+- **Access:** Direct local access is restricted to `trigger` (no device or external client has direct access to the local model file).
+- **Primary Key:** Composite of `site_id` (registry ID) and `device_id`.
 
-### 3.3 Device Conduit (Client-side / Mocket)
-- **Reporting:** Periodically publish `current_version`, `status`, and `lkg_version` via `blobset` state messages.
-- **Payload Structure:** `blobset` payloads MUST include `make` and `model` fields within the subsystem nesting to ensure the orchestrator can correctly identify the device type. For consistency across implementations, implementations MUST use the `blobs` wrapper key within the `blobset` state report.
+### 3.3 Device Conduit (Client-side / DUT)
+- **Reporting:** Periodically publish the actual/current version (under the standard `system.software.<blob_id>` path), `status`, and `lkg_version` via state messages.
+- **Payload Structure:** State reports MUST include `make` and `model` fields within the target `<blob_id>` nesting to ensure the orchestrator can correctly identify the device type. For consistency across implementations, implementations MUST use the `blobs` wrapper key within the `blobset` state report.
 - **Lifecycle:** `quiescent` -> `pending` (download/verify) -> `success` or `failure`.
 - **Transitions:** Transitions to `success` or `failure` MUST only occur from the `pending` state. A direct transition from `quiescent` to `success` or `failure` is a protocol violation. System and Verifier components MUST ensure that state reports are processed in the order they were generated to avoid false-positive violations.
-- **Robustness:** Devices MUST robustly handle immediate state change requests (back-to-back config updates) and ensure eventual consistency with the latest target state.
+- **Robustness:** Devices MUST robustly handle immediate state change requests (back-to-back config updates) and ensure eventual consistency with the latest expected/desired target state.
 
 ## 5. Operational Sequences
 
 ### 5.1 Update Flow
-1. **Initiation:** Model update via `register` or `trigger`.
-2. **Status Report:** Device (`mocket`) publishes status in `blobset` state.
-3. **Detection:** Butler detects version mismatch, fetches blob metadata.
-4. **Command:** Butler publishes `blobset` config payload.
-5. **Pending:** Device reports `pending` state and applies update.
-6. **Completion:** Device reports `success` and updated `lkg_version` in `blobset` state.
-7. **Sync:** Butler sends UUFI `UPDATE` (partial merge) to the cloud model for `current_version` and `lkg_version`.
-
-### 5.2 Rollback Flow
-<!-- ASSUMPTION: User direct command overrides the general spec edit restrictions of AGENTS.md -->
-1. **Failure Trigger:** A rollback is initiated when:
-   - A Device reports `failure` in its `blobset` state, **OR**
-   - A Device remains in the `pending` state for longer than `BUTLER_TIMEOUT` (reconciliation timeout).
-2. **Fetch LKG:** Butler requests/extracts the `lkg_version` from the authoritative cloud model.
-3. **Reversion:** Butler sends `UPDATE` to the cloud model to revert `target_version` to the `lkg_version`.
+1. **Initiation:** The expected/desired version is updated in the immutable `site_model` (e.g., via the `trigger` utility).
+2. **Status Report:** The Device (DUT) publishes its actual/current version and status in its State reports.
+3. **Detection:** The Butler detects a version mismatch between the desired version (site model) and actual version (device state), and queries the Software Catalog (`BUTLER_MODEL_FILE`) to find the available package metadata matching the device's `{make}/{model}/{blob_id}/{version}`.
+4. **Command:** The Butler publishes a `blobset` config payload containing the update package URL and validation parameters over the UUFI bus.
+5. **Pending:** The Device reports `pending` state and begins downloading/applying the update.
+6. **Completion:** The Device reports `success` or `failure` (along with its updated actual version and `lkg_version`) in its state reports, transitioning the active tracking loop. The Butler does NOT orchestrate rollbacks; rollback or reversion is managed internally by the device itself or by subsequent manual modification of the immutable `site_model` target.
 
 ## 6. Standard Tooling CLI Interface (bin/)
 
@@ -99,16 +90,14 @@ All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`). It
 To ensure interoperability and environmental isolation, tools MUST NOT fail if optional arguments (indicated by `[]`) are omitted, provided a valid default can be determined. When running in a multi-client environment (e.g., parallel testing), implementations MUST strictly adhere to the `Prefix Isolation` requirements defined in UUFI. Specifically, test runners (`smokeit`) MUST incorporate the provided connection prefix into all internally generated topics and child process arguments to prevent cross-trial interference.
 
 - **butler [conn_spec] [-f]**: Starts the system orchestrator.
-- **register [conn_spec] [registry_id] <device_id> [make] [model]**: Registers a device in the local model.
-- **trigger [conn_spec] [registry_id] <device_id> <subsystem_id> <version> <blob_path>**: Initiates a blobset update process.
+- **trigger [conn_spec] [site_id] <device_id> <blob_id> <version>**: Updates the expected/desired version in the immutable `site_model` on disk to trigger reconciliation.
 - **setup [conn_spec]**: Ensures the local environment (e.g., MQTT broker) is ready.
-- **mocket [conn_spec] <registry_id> <device_id> [-f]**: Starts a mock device client.
 - **verifier [conn_spec]**: Starts the independent verification tool.
 - **observe [conn_spec]**: Passive monitoring of the UUFI bus (output: `{topic}: {payload}`).
 - **smokeit [conn_spec]**: Basic integration test.
 
 ### 6.1 CLI Compatibility Note
-To ensure interoperability, implementations MUST correctly handle the transition from positional to optional arguments. A common pitfall is allowing an optional `[conn_spec]` to consume the first required positional argument (e.g., `registry_id`). Implementations MUST inspect the first positional argument and, if it does not match a valid connection schema (e.g., `mqtt://`), treat it as the first functional argument of the tool.
+To ensure interoperability, implementations MUST correctly handle the transition from positional to optional arguments. A common pitfall is allowing an optional `[conn_spec]` to consume the first required positional argument (e.g., `site_id`). Implementations MUST inspect the first positional argument and, if it does not match a valid connection schema (e.g., `mqtt://`), treat it as the first functional argument of the tool.
 
 The startup connectivity output MUST use the resolved numeric port (e.g., `1883`) for the `port` field; it MUST NOT be `None` or empty. If a connection string does not specify a path (and thus has no prefix), the `prefix` parameter MUST be output as `None` (e.g., `prefix=None`).
 
@@ -118,7 +107,7 @@ The startup connectivity output MUST use the resolved numeric port (e.g., `1883`
 - **`BUTLER_MODEL_FILE`**: Path to local model JSON (default: `testing/model.json`).
 - **`BUTLER_BLOBS_DIR`**: Base directory for blobs (default: `testing/blobs`).
 - **`BUTLER_TIMEOUT`**: Timeout for `pending` state transitions (default: `60`).
-- **`BUTLER_REGISTRY_ID`**: Default registry ID (default: `default`).
+- **`BUTLER_REGISTRY_ID`**: Default site/registry ID (default: `default`).
 
 ## 8. Robustness
 
@@ -131,8 +120,8 @@ The startup connectivity output MUST use the resolved numeric port (e.g., `1883`
 ### 9.1 Verifier (Active Observer)
 - **Handshake:** MUST complete UUFI handshake.
 - **Monitoring:** Track state transitions in the `blobset` subfolder.
-- **Reporting:** Publish validation results to `[/{prefix}]/uufi/r/{reg_id}/d/{dev_id}/c/events/validation`. For events related to a specific device, `{reg_id}` and `{dev_id}` MUST match the device. For self-reporting (e.g., handshake status), `{dev_id}` MUST be the verifier's identity (e.g., `verifier`) and `{reg_id}` MUST be `unknown` unless a specific registry has been discovered.
-- **Processing:** Verifier components MUST ensure that messages from the same device/subsystem are processed sequentially (e.g., via a message queue) to maintain accurate state tracking and avoid false-positive transition violations.
+- **Reporting:** Publish validation results to `[/{prefix}]/uufi/r/{site_id}/d/{device_id}/c/events/validation`. For events related to a specific device, `{site_id}` and `{device_id}` MUST match the device. For self-reporting (e.g., handshake status), `{device_id}` MUST be the verifier's identity (e.g., `verifier`) and `{site_id}` MUST be `unknown` unless a specific site/registry has been discovered.
+- **Processing:** Verifier components MUST ensure that messages from the same device/blob_id are processed sequentially (e.g., via a message queue) to maintain accurate state tracking and avoid false-positive transition violations.
 
 ### 9.2 Observer (Passive Observer)
 - **Output:** Raw wire format `{topic}: {payload}`.
@@ -140,19 +129,19 @@ The startup connectivity output MUST use the resolved numeric port (e.g., `1883`
 
 ### 9.3 Compliance Logging
 For automated interoperability testing and verification, implementations MUST adhere to the following log formats for critical lifecycle events:
-- State Transitions (Verifier): `VERIFIER [INFO]: State transition for {registry_id}/{device_id}/{subsystem}: {old_state} -> {new_state}`. To ensure backward-compatibility with single-device verification parsers, implementations may omit the `{registry_id}/{device_id}/` segment if verification is restricted to a single target device. The initial state before any report is received MUST be considered `unknown`. To ensure log clarity, verifiers MUST NOT log a transition if the `{new_state}` is identical to the `{old_state}`. This prohibition applies to both the standard output logging and the publication of validation events (Section 9.4) on the UUFI bus.
+- State Transitions (Verifier): `VERIFIER [INFO]: State transition for {site_id}/{device_id}/{blob_id}: {old_state} -> {new_state}`. To ensure backward-compatibility with single-device verification parsers, implementations may omit the `{site_id}/{device_id}/` segment if verification is restricted to a single target device. The initial state before any report is received MUST be considered `unknown`. To ensure log clarity, verifiers MUST NOT log a transition if the `{new_state}` is identical to the `{old_state}`. This prohibition applies to both the standard output logging and the publication of validation events (Section 9.4) on the UUFI bus.
 - Handshake Events (Verifier): `VERIFIER [INFO]: Handshake {started|completed} for {principal}`.
 - **Validation Errors (Verifier):** `VERIFIER [ERROR]: VALIDATION ERROR: {message}`.
-- **Terminal State (Orchestrator):** `[butler] Device {registry_id}/{device_id}/{subsystem} terminal state {status} with version {version}`. Terminal states MUST include `success`, `failure`, and `quiescent` (even if the version is `0.0.0`). This log MUST be generated whenever a device enters or reports one of these states.
+- **Terminal State (Orchestrator):** `[butler] Device {site_id}/{device_id}/{blob_id} terminal state {status} with version {version}`. Terminal states MUST include `success`, `failure`, and `quiescent` (even if the version is `"0.0.0"`). This log MUST be generated whenever a device enters or reports one of these states.
 Consistent log prefixes and formats are essential for multi-implementation integration testing. These messages MUST be printed exactly as specified, without additional prefixes (e.g., timestamps or thread IDs) that might interfere with automated log analysis.
 
 ### 9.4 Validation Event Schema
-- **Topic:** `[/{prefix}]/uufi/r/{registry_id}/d/{device_id}/c/events/validation`
+- **Topic:** `[/{prefix}]/uufi/r/{site_id}/d/{device_id}/c/events/validation`
 - **Payload:** The `validation` object within the `payload` MUST include:
   - `message`: A human-readable description of the validation event.
   - `level`: One of `INFO`, `WARN`, or `ERROR`.
   - `device_id`: (Optional) The ID of the device being validated.
-  - `subsystem_id`: (Optional) The ID of the subsystem being validated.
+  - `blob_id`: (Optional) The ID of the software/subsystem being validated (matches the `system.software.<blob_id>` key).
   - `status`: (Optional) The current state (e.g., `pending`, `success`).
   - `result`: (Optional) One of `pass` or `fail` (case-insensitive).
 
@@ -179,20 +168,17 @@ Run the verifier tool in a separate terminal. The verifier will perform its hand
 bin/verifier
 ```
 
-### 10.4. Registering and Starting a Mock Device (Mocket)
-1. **Register the Device:** Add a mock device definition to the Butler's local model repository:
-   ```bash
-   bin/register default dev-1 acme widget
-   ```
-2. **Start the Mock Client (Scope 2):** Run the simulated device in a separate terminal. It will execute the UUFI handshake with the Butler, transition to `quiescent`, and begin reporting its `blobset` status:
-   ```bash
-   bin/mocket default dev-1
-   ```
+### 10.4. Starting the Device Under Test (Pubber DUT)
+Launch the simulated on-premise device in a separate terminal using the same command as Scope 2:
+```bash
+bin/start_dut sites/udmi_site_model //mqtt/localhost AHU-1 "uufi-serial"
+```
+*Note:* The Butler orchestrator coordinates managed updates. While **Pubber** connects and handshakes successfully, it may fail to fully execute the specific firmware state transitions (`quiescent` -> `pending` -> `success`/`failure`) that a custom UDMI client might report. Let the tests fail on these steps if Pubber lacks full update state-machine capabilities; this is expected behavior to verify platform readiness.
 
 ### 10.5. Triggering a Managed Update (Functional Verification)
-Initiate a managed software update by specifying the target version and a path to the firmware/software blob. This functionally replaces the Scope 3 client-side config tests with a full orchestrator-driven update cycle:
+Initiate a managed software update by specifying the target version on the Pubber DUT. This functionally replaces the Scope 3 client-side config tests with a full orchestrator-driven update cycle:
 ```bash
-bin/trigger default dev-1 system 1.1.0 testing/blobs/acme/widget/system/1.1.0/bundle.bin
+bin/trigger default AHU-1 system 1.1.0
 ```
 
 ### 10.6. Running Automated Smoke Tests
