@@ -62,8 +62,7 @@ The **Butler** is a stateless, reactive fleet reconciliation engine whose sole s
 ### 3.2 Model Repository (Desired State)
 - **Format:** The cloud model MUST follow the full schema defined in UUFI. The physical model follows the immutable `{site_id}/devices/{device_id}/` directory structure of the UDMI/UUFI site_model, where `{site_id}` is the directory name containing `devices` and represents the site/registry ID.
 - **Path Override:** `BUTLER_MODEL_FILE`.
-- **Atomicity:** Updates to the local model file MUST be atomic (e.g., write to temporary file then rename).
-- **Access:** Direct local access is restricted to `trigger` (no device or external client has direct access to the local model file).
+- **Access:** The local model file is a read-only Software Catalog (no Butler CLI tools modify this database at runtime; any dynamic target version changes are processed reactively over the UUFI bus).
 - **Primary Key:** Composite of `site_id` (registry ID) and `device_id`.
 
 ### 3.3 Device Conduit (Client-side / DUT)
@@ -76,9 +75,9 @@ The **Butler** is a stateless, reactive fleet reconciliation engine whose sole s
 ## 5. Operational Sequences
 
 ### 5.1 Update Flow
-1. **Initiation:** The expected/desired version is updated in the immutable `site_model` (e.g., via the `trigger` utility).
+1. **Initiation:** The expected/desired version is updated in the live Cloud Model via the UDMI `site_trigger` utility (Scope 3) which updates the local model file on disk and publishes a corresponding `model/cloud` Model Update message over the UUFI bus, emulating a database update.
 2. **Status Report:** The Device (DUT) publishes its actual/current version and status in its State reports.
-3. **Detection:** The Butler detects a version mismatch between the desired version (site model) and actual version (device state), and queries the Software Catalog (`BUTLER_MODEL_FILE`) to find the available package metadata matching the device's `{make}/{model}/{blob_id}/{version}`.
+3. **Detection:** The Butler detects a version mismatch between the expected version (live Cloud Model) and actual version (device state), and queries the Software Catalog (`BUTLER_MODEL_FILE`) to find the available package metadata matching the device's `{make}/{model}/{blob_id}/{version}`.
 4. **Command:** The Butler publishes a `blobset` config payload containing the update package URL and validation parameters over the UUFI bus.
 5. **Pending:** The Device reports `pending` state and begins downloading/applying the update.
 6. **Completion:** The Device reports `success` or `failure` (along with its updated actual version and `lkg_version`) in its state reports, transitioning the active tracking loop. The Butler does NOT orchestrate rollbacks; rollback or reversion is managed internally by the device itself or by subsequent manual modification of the immutable `site_model` target.
@@ -90,7 +89,6 @@ All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`). It
 To ensure interoperability and environmental isolation, tools MUST NOT fail if optional arguments (indicated by `[]`) are omitted, provided a valid default can be determined. When running in a multi-client environment (e.g., parallel testing), implementations MUST strictly adhere to the `Prefix Isolation` requirements defined in UUFI. Specifically, test runners (`smokeit`) MUST incorporate the provided connection prefix into all internally generated topics and child process arguments to prevent cross-trial interference.
 
 - **butler [conn_spec] [-f]**: Starts the system orchestrator.
-- **trigger [conn_spec] [site_id] <device_id> <blob_id> <version>**: Updates the expected/desired version in the immutable `site_model` on disk to trigger reconciliation.
 - **setup [conn_spec]**: Ensures the local environment (e.g., MQTT broker) is ready.
 - **verifier [conn_spec]**: Starts the independent verification tool.
 - **observe [conn_spec]**: Passive monitoring of the UUFI bus (output: `{topic}: {payload}`).
@@ -176,9 +174,9 @@ bin/start_dut sites/udmi_site_model //mqtt/localhost AHU-1 "uufi-serial"
 *Note:* The Butler orchestrator coordinates managed updates. While **Pubber** connects and handshakes successfully, it may fail to fully execute the specific firmware state transitions (`quiescent` -> `pending` -> `success`/`failure`) that a custom UDMI client might report. Let the tests fail on these steps if Pubber lacks full update state-machine capabilities; this is expected behavior to verify platform readiness.
 
 ### 10.5. Triggering a Managed Update (Functional Verification)
-Initiate a managed software update by specifying the target version on the Pubber DUT. This functionally replaces the Scope 3 client-side config tests with a full orchestrator-driven update cycle:
+Initiate a managed software update by using UDMI's `site_trigger` utility to mutate the physical site model file on disk and publish the dynamic `model/cloud` update event over the UUFI bus:
 ```bash
-bin/trigger default AHU-1 system 1.1.0
+../udmi/bin/site_trigger sites/udmi_site_model AHU-1 system 1.1.0
 ```
 
 ### 10.6. Running Automated Smoke Tests
