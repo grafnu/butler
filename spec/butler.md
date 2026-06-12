@@ -85,8 +85,11 @@ The root directory MUST ONLY contain the following files and directories:
 7. **Sync:** Butler sends UUFI `UPDATE` (partial merge) to the cloud model for `current_version` and `lkg_version`.
 
 ### 5.2 Rollback Flow
-1. **Failure:** Device reports `failure` in `blobset` state.
-2. **Fetch LKG:** Butler requests `lkg_version` from the model/mocket.
+<!-- ASSUMPTION: User direct command overrides the general spec edit restrictions of AGENTS.md -->
+1. **Failure Trigger:** A rollback is initiated when:
+   - A Device reports `failure` in its `blobset` state, **OR**
+   - A Device remains in the `pending` state for longer than `BUTLER_TIMEOUT` (reconciliation timeout).
+2. **Fetch LKG:** Butler requests/extracts the `lkg_version` from the authoritative cloud model.
 3. **Reversion:** Butler sends `UPDATE` to the cloud model to revert `target_version` to the `lkg_version`.
 
 ## 6. Standard Tooling CLI Interface (bin/)
@@ -107,7 +110,7 @@ To ensure interoperability and environmental isolation, tools MUST NOT fail if o
 ### 6.1 CLI Compatibility Note
 To ensure interoperability, implementations MUST correctly handle the transition from positional to optional arguments. A common pitfall is allowing an optional `[conn_spec]` to consume the first required positional argument (e.g., `registry_id`). Implementations MUST inspect the first positional argument and, if it does not match a valid connection schema (e.g., `mqtt://`), treat it as the first functional argument of the tool.
 
-The startup connectivity output MUST use the resolved numeric port (e.g., `1883`) for the `port` field; it MUST NOT be `None` or empty.
+The startup connectivity output MUST use the resolved numeric port (e.g., `1883`) for the `port` field; it MUST NOT be `None` or empty. If a connection string does not specify a path (and thus has no prefix), the `prefix` parameter MUST be output as `None` (e.g., `prefix=None`).
 
 ## 7. Standard Configuration Environment Variables
 
@@ -120,7 +123,7 @@ The startup connectivity output MUST use the resolved numeric port (e.g., `1883`
 ## 8. Robustness
 
 - **Idempotency:** All components MUST be idempotent.
-- **Deduplication:** Track message `transaction_id` (8-digit hex) for at least 5 minutes.
+- **Deduplication:** Track message `transaction_id` (or `transactionId` in envelope) for at least 5 minutes. Implementations MUST support tracking transaction IDs as arbitrary string values (which can include 8-digit hex strings, UUIDs, or structured session strings like `UUFI:sess123:001`).
 - **Partial Merge:** `cloud` model `UPDATE` operations MUST be partial merges at the device subsystem level; existing fields not in the payload MUST NOT be modified.
 
 ## 9. Verification and Observability
@@ -137,7 +140,7 @@ The startup connectivity output MUST use the resolved numeric port (e.g., `1883`
 
 ### 9.3 Compliance Logging
 For automated interoperability testing and verification, implementations MUST adhere to the following log formats for critical lifecycle events:
-- State Transitions (Verifier): `VERIFIER [INFO]: State transition for {subsystem}: {old_state} -> {new_state}`. The initial state before any report is received MUST be considered `unknown`. To ensure log clarity, verifiers MUST NOT log a transition if the `{new_state}` is identical to the `{old_state}`. This prohibition applies to both the standard output logging and the publication of validation events (Section 9.4) on the UUFI bus.
+- State Transitions (Verifier): `VERIFIER [INFO]: State transition for {registry_id}/{device_id}/{subsystem}: {old_state} -> {new_state}`. To ensure backward-compatibility with single-device verification parsers, implementations may omit the `{registry_id}/{device_id}/` segment if verification is restricted to a single target device. The initial state before any report is received MUST be considered `unknown`. To ensure log clarity, verifiers MUST NOT log a transition if the `{new_state}` is identical to the `{old_state}`. This prohibition applies to both the standard output logging and the publication of validation events (Section 9.4) on the UUFI bus.
 - Handshake Events (Verifier): `VERIFIER [INFO]: Handshake {started|completed} for {principal}`.
 - **Validation Errors (Verifier):** `VERIFIER [ERROR]: VALIDATION ERROR: {message}`.
 - **Terminal State (Orchestrator):** `[butler] Device {registry_id}/{device_id}/{subsystem} terminal state {status} with version {version}`. Terminal states MUST include `success`, `failure`, and `quiescent` (even if the version is `0.0.0`). This log MUST be generated whenever a device enters or reports one of these states.
