@@ -1,6 +1,8 @@
 # Butler System Orchestrator
 
-The **Butler** is a declarative, state-based fleet management engine for device firmware updates. It coordinates updates across a fleet of devices by managing state machines for each device/subsystem pair using the UUFI interface.
+The **Butler** is a declarative, state-based fleet management engine for managed software updates. It coordinates updates across a
+fleet of devices by managing a state machine for individual device blob updates using the UUFI interface. UUFI is a message
+based interface as part of the UDMI system defined by the relative (from this file) path `../../../udmi/docs/specs/uufi.md`.
 
 ## 1. Project Structure
 
@@ -17,7 +19,7 @@ The root directory MUST ONLY contain the following files and directories:
 - **.gitignore**: Git exclusion patterns.
 
 ### Functional Components and Specifications
-- **spec/**: Formal system specifications (including `uufi.md` and `butler.md`).
+- **spec/**: Formal system specifications (primarily `butler.md`).
 - **bin/**: Operational executables and tooling.
 - **butler/**: Core Python implementation logic.
 - **README.md**: System overview and documentation.
@@ -31,16 +33,16 @@ The root directory MUST ONLY contain the following files and directories:
 ## 2. Role and Behavior
 
 ### 2.1 Orchestrator Behavior
-The **Butler** is the primary authority for the `lkg_version` in the cloud model and MUST NOT trust a device-reported `lkg_version` if it conflicts with a previously validated state. To prevent split-brain conditions, the Butler is the **sole authoritative Cloud Model Server** on the UUFI bus; other components (e.g., `mocket`, `verifier`) MUST NOT respond to `query/cloud` messages or unilaterally publish `config/cloud` messages.
+**Butler** is the primary authority for the `lkg_version` in the cloud model and MUST NOT trust a device-reported `lkg_version` if it conflicts with a previously validated state. To prevent split-brain conditions, the Butler is the **sole authoritative Cloud Model Server** on the UUFI bus; other components (e.g., `mocket`, `verifier`) MUST NOT respond to `query/cloud` messages or unilaterally publish `config/cloud` messages.
 - **Discovery:** The Butler MUST dynamically discover registries and devices from incoming state reports or cloud updates. This includes the Handshake Step 1 state message, which MUST be used to populate the initial model entry for a device.
-- **Handshake Compliance:** The Butler MUST NOT initiate its own handshake; it MUST instead respond to handshake state messages from Devices and Verifiers with the appropriate config reply as defined in UUFI Section 3.
+- **Handshake Compliance:** Butler MUST NOT initiate its own handshake; it MUST instead respond to handshake state messages from Devices and Verifiers with the appropriate config reply as defined in UUFI.
 - **State Machine:**
   - `quiescent`: Target Version == Current Version.
   - `active`: Target Version != Current Version (Transitional state).
   - `pending`: Update in progress (device has received command).
 
 - **Terminal States:** For the purpose of the orchestrator state machine, ONLY `success`, `failure`, and `quiescent` are considered terminal states. The `active` state MUST NOT be considered terminal and MUST trigger a reconciliation attempt if no update is already `pending`.
-- **Triggering:** The orchestrator re-evaluates state upon receiving device status reports. A null `current_version` is treated as `0.0.0` (see UUFI Section 8.4).
+- **Triggering:** The orchestrator re-evaluates state upon receiving device status reports. A null `current_version` is treated as `0.0.0` (see UUFI).
 - **Efficiency:** State transitions and model updates MUST be processed immediately upon receipt of relevant messages to minimize end-to-end latency. Implementations MUST NOT introduce any artificial delay or "settling time" before processing a state change or triggering a reconciliation.
 - **Timeout:** The Butler MUST wait for at least `BUTLER_TIMEOUT` (default: 60s) for a device to progress from the `pending` state before triggering a rollback.
 
@@ -58,7 +60,7 @@ The **Butler** is the primary authority for the `lkg_version` in the cloud model
 - **Integrity:** Every blob requires a SHA256 hash for verification.
 
 ### 3.2 Model Repository (Desired State)
-- **Format:** The cloud model MUST follow the full schema defined in UUFI Section 5.
+- **Format:** The cloud model MUST follow the full schema defined in UUFI.
 - **Path Override:** `BUTLER_MODEL_FILE`.
 - **Atomicity:** Updates to the local model file MUST be atomic (e.g., write to temporary file then rename).
 - **Access:** Direct local access is restricted to `mocket`, `register`, and `trigger`.
@@ -91,7 +93,7 @@ The **Butler** is the primary authority for the `lkg_version` in the cloud model
 
 All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`). It MUST be supported both as a positional first argument and via an explicit `--conn_spec` flag. On startup, all tools MUST output their connectivity parameters in a consistent format: `Conn spec: scheme={scheme}, host={host}, port={port}, principal={principal}, prefix={prefix}`. This output MUST be directed to `stderr` if the tool is designed to produce machine-readable data on `stdout` (e.g., `observe`).
 
-To ensure interoperability and environmental isolation, tools MUST NOT fail if optional arguments (indicated by `[]`) are omitted, provided a valid default can be determined. When running in a multi-client environment (e.g., parallel testing), implementations MUST strictly adhere to the `Prefix Isolation` requirements defined in UUFI Section 2.2. Specifically, test runners (`smokeit`) MUST incorporate the provided connection prefix into all internally generated topics and child process arguments to prevent cross-trial interference.
+To ensure interoperability and environmental isolation, tools MUST NOT fail if optional arguments (indicated by `[]`) are omitted, provided a valid default can be determined. When running in a multi-client environment (e.g., parallel testing), implementations MUST strictly adhere to the `Prefix Isolation` requirements defined in UUFI. Specifically, test runners (`smokeit`) MUST incorporate the provided connection prefix into all internally generated topics and child process arguments to prevent cross-trial interference.
 
 - **butler [conn_spec] [-f]**: Starts the system orchestrator.
 - **register [conn_spec] [registry_id] <device_id> [make] [model]**: Registers a device in the local model.
