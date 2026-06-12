@@ -28,6 +28,7 @@ The root directory MUST ONLY contain the following files and directories:
 - **impl/**: Cross-implementation testing workspace (including `test_summary.txt`).
 - **tmp/**: Temporary workspace (ephemeral).
 - **testing/**: Test assets and environment.
+- **udmi_blob_store/**: Static testing Software Catalog and blobs (parallels `udmi_site_model`).
 - **venv/**: Python virtual environment.
 
 ## 2. Role and Behavior
@@ -35,20 +36,22 @@ The root directory MUST ONLY contain the following files and directories:
 ### 2.1 Orchestrator Behavior
 The **Butler** is a stateless, reactive fleet reconciliation engine whose sole scope is to transition devices from their dynamically reported actual version to the expected/desired version specified in the immutable `site_model` (`system.software.<blob_id>`).
 - **Device Authority:** The device itself is the sole authoritative source of its current/actual software version and its `lkg_version`. The Butler MUST trust the device's reported state and MUST NOT attempt to track, persistent-store, or validate `lkg_version` history.
-- **Stateless Restarts:** If the Butler process restarts, all in-memory tracking is reset. The Butler MUST wait until it receives a dynamic state report from a device before it can determine the actual version and initiate reconciliation.
+- **Stateless Restarts & Network Discovery:** If the Butler process restarts, all in-memory tracking is reset. Sourcing of both expected and actual states occurs exclusively over the UUFI network interface (the Butler has no direct file-level access to the `site_model` on disk):
+  1. **Expected Version Discovery:** On startup, the Butler discovers expected/desired versions by publishing a UUFI Model Query (`query/cloud` as defined in `uufi.md`) to `/uufi/c/query/cloud`, where the UUFI gateway (which *does* have site-model access) replies with the expected version configurations.
+  2. **Actual Version Discovery:** The Butler simply waits until it receives a dynamic State update from a device to determine its actual version. In local test environments, this actual state report is typically initiated manually or triggered on-demand using standard testing utilities.
 - **Handshake Compliance:** Butler MUST NOT initiate its own handshake; it MUST instead respond to handshake state messages from Devices and Verifiers with the appropriate config reply as defined in UUFI.
 - **State Machine:**
   - `quiescent`: Expected/Desired Version == Actual/Current Version.
   - `active`: Expected/Desired Version != Actual/Current Version (Reconciliation required; triggers an update command).
   - `pending`: Update command has been sent to the device, awaiting dynamic state update showing completion or failure.
-  The expected/desired version is sourced from the immutable `site_model` file path `system.software.<blob_id> = 'version_tag'` (defined in `model_system.json`), where `<blob_id>` is the identifier of the target software. The actual/current version is dynamically reported by the device under the same path in state messages.
+  The expected/desired version is sourced over the UUFI bus from the Expected Cloud Model (`system.software.<blob_id> = 'version_tag'` as defined in `model_system.json`), where `<blob_id>` is the identifier of the target software. The actual/current version is dynamically reported by the device under the same path in state messages.
 
 - **Triggering:** The orchestrator re-evaluates state and triggers update commands immediately upon receiving device status reports showing version drift (`expected != actual`), unless the device is already in a `pending` transition.
 - **No Rollback:** The Butler MUST NOT manage, track, or trigger rollbacks. If an update fails, the Butler simply reports the terminal state. Any rollback or reversion is the domain of the device itself (internally) or an administrator manually updating the expected version in the immutable `site_model`.
 - **Efficiency:** State transitions and version reconciliation MUST be processed immediately upon receipt of relevant state messages to minimize end-to-end latency.
 
 ### 2.2 Model and Update Management
-- **Local Model (Software Catalog Only):** Sourced from `BUTLER_MODEL_FILE` (default: `testing/model.json`), the on-disk Butler database acts exclusively as a **Software Catalog (Package Metadata Database)**. It MUST NOT store any device-specific information, `lkg_version`, or transient update states. It is strictly used to answer catalog queries (such as *"What potential versions for a particular make/model/blob are available?"* or *"What are the metadata parameters/bits for a particular make/model/blob?"*).
+- **Local Model (Software Catalog Only):** Sourced from `BUTLER_MODEL_FILE` (default: `udmi_blob_store/model.json`), the on-disk Butler database acts exclusively as a **Software Catalog (Package Metadata Database)**. It MUST NOT store any device-specific information, `lkg_version`, or transient update states. It is strictly used to answer catalog queries (such as *"What potential versions for a particular make/model/blob are available?"* or *"What are the metadata parameters/bits for a particular make/model/blob?"*).
 
 ## 3. Functional Components
 
@@ -102,9 +105,9 @@ The startup connectivity output MUST use the resolved numeric port (e.g., `1883`
 ## 7. Standard Configuration Environment Variables
 
 - **`BUTLER_CONN_SPEC`**: Default connection specification URL.
-- **`BUTLER_MODEL_FILE`**: Path to local model JSON (default: `testing/model.json`).
+- **`BUTLER_MODEL_FILE`**: Path to local model JSON (default: `udmi_blob_store/model.json`).
 - **`BUTLER_BLOBSTORE_PROVIDER`**: Specifies the pluggable BlobStore implementation to use. Supported values are `local` (Reference Local Disk Storage) or `gcs` (GCP Google Cloud Storage). Default: `local`.
-- **`BUTLER_BLOBS_DIR`**: Base directory for local blobs when using the `local` provider (default: `testing/blobs`).
+- **`BUTLER_BLOBS_DIR`**: Base directory for local packages when using the `local` provider (default: `udmi_blob_store/packages`).
 - **`BUTLER_GCS_BUCKET`**: Target Google Cloud Storage bucket name when using the `gcs` provider (e.g., `my-update-bucket`).
 - **`BUTLER_TIMEOUT`**: Timeout for `pending` state transitions (default: `60`).
 - **`BUTLER_REGISTRY_ID`**: Default site/registry ID (default: `default`).
@@ -170,16 +173,16 @@ bin/verifier
 ```
 
 ### 10.4. Starting the Device Under Test (Pubber DUT)
-Launch the simulated on-premise device in a separate terminal using the same command as Scope 2:
+Launch the simulated on-premise device in a separate terminal using the same command as Scope 2, adjusted for the workspace directory path:
 ```bash
-bin/start_dut sites/udmi_site_model //mqtt/localhost AHU-1 "uufi-serial"
+../udmi/bin/start_dut ../udmi/sites/udmi_site_model //mqtt/localhost AHU-1 "uufi-serial"
 ```
 *Note:* The Butler orchestrator coordinates managed updates. While **Pubber** connects and handshakes successfully, it may fail to fully execute the specific firmware state transitions (`quiescent` -> `pending` -> `success`/`failure`) that a custom UDMI client might report. Let the tests fail on these steps if Pubber lacks full update state-machine capabilities; this is expected behavior to verify platform readiness.
 
 ### 10.5. Triggering a Managed Update (Functional Verification)
 Initiate a managed software update by using UDMI's `site_trigger` utility to mutate the physical site model file on disk and publish the dynamic `model/cloud` update event over the UUFI bus:
 ```bash
-../udmi/bin/site_trigger sites/udmi_site_model AHU-1 system 1.1.0
+../udmi/bin/site_trigger ../udmi/sites/udmi_site_model AHU-1 system 1.1.0
 ```
 
 ### 10.6. Running Automated Smoke Tests

@@ -37,16 +37,16 @@ This section details the specification of supported BlobStore providers. New pro
 This provider is optimized for local integration testing, offline development, and simple local deployments.
 
 #### 2.1.1. Storage Mapping
-*   **Base Configuration:** `BUTLER_BLOBS_DIR` (defaults to `testing/blobs`).
+*   **Base Configuration:** `BUTLER_BLOBS_DIR` (defaults to `udmi_blob_store/packages`).
 *   **Directory Path Structure:**
     `{BUTLER_BLOBS_DIR}/{make}/{model}/{blob_id}/{version}/`
 *   **File Layout:**
-    *   `bundle.bin`: The actual raw update binary blob.
-    *   `sha256.txt`: A single-line text file containing only the 64-character hex-encoded SHA-256 hash of `bundle.bin`.
+    *   `bundle.bin` or `bundle.txt`: The raw update package payload binary or text file.
+    *   *Note:* No separate hash files or database columns are required. The Local Disk provider calculates the SHA-256 hash of the payload file dynamically at runtime whenever `resolve_package_metadata` is invoked, preventing configuration skew.
 
 #### 2.1.2. URI Scheme
 *   **Scheme:** `file://`
-*   **Format:** `file://{absolute_or_relative_path_to_bundle.bin}`
+*   **Format:** `file://{absolute_or_relative_path_to_bundle_file}`
 *   **Resolution:** The recipient client strips the `file://` scheme to resolve the path on the local file system.
 
 #### 2.1.3. Security & Authentication
@@ -64,7 +64,7 @@ This provider is designed for highly scalable, production-grade cloud deployment
     `gs://{BUTLER_GCS_BUCKET}/{make}/{model}/{blob_id}/{version}/bundle.bin`
 *   **Metadata Layout:**
     *   `bundle.bin`: The binary package uploaded as a GCS object.
-    *   `sha256`: The hex-encoded SHA-256 hash stored directly as **custom GCS object metadata** (e.g., `x-goog-meta-sha256`) on `bundle.bin` to eliminate the need for a separate text file.
+    *   `sha256`: The hex-encoded SHA-256 hash stored directly as **custom GCS object metadata** (e.g., `x-goog-meta-sha256`) on `bundle.bin`. The GCS provider extracts this hash dynamically from the object metadata at runtime during `resolve_package_metadata` to eliminate the need for separate files or external databases.
 
 #### 2.2.2. URI Scheme
 *   **Scheme:** `https://`

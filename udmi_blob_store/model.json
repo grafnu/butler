@@ -1,0 +1,11 @@
+{
+  "acme": {
+    "widget": {
+      "system": {
+        "1.1.0": {
+          "url": "file://udmi_blob_store/packages/acme/widget/system/1.1.0/bundle.txt"
+        }
+      }
+    }
+  }
+}
