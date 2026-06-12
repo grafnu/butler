@@ -156,25 +156,25 @@ Consistent log prefixes and formats are essential for multi-implementation integ
   - `status`: (Optional) The current state (e.g., `pending`, `success`).
   - `result`: (Optional) One of `pass` or `fail` (case-insensitive).
 
-## 10. Development and Testing Workflow
+## 10. Development and Testing Workflow (Scope 4)
 <!-- ASSUMPTION: User direct command overrides the general spec edit restrictions of AGENTS.md -->
 
-This section outlines how to start and operate the Butler orchestrator and its supporting components in a local development environment. These steps assume that a local UUFI messaging bus has already been started as described in `uufi.md` Section 9.1.
+The fourth tier of the system verification pipeline builds directly on top of the generic UUFI development environment (reusing Scope 1: Infrastructure and Scope 2: Pubber DUT from `uufi.md` Section 9). It replaces the low-level UUFI test client (Scope 3) with the **Butler Orchestrator**, executing a complete state-based firmware update and rollback orchestration cycle over the active broker.
 
 ### 10.1. Local Environment Preparation
-First, run the Butler setup utility to initialize local workspace directories, local model files, and other Butler-specific resources:
+Ensure that a local UUFI infrastructure (Scope 1) has been started. Then, run the Butler setup utility to initialize local workspace directories, local model files, and other Butler-specific resources:
 ```bash
 bin/setup
 ```
 
 ### 10.2. Starting the Butler Orchestrator
-Launch the core Butler orchestrator. It will connect to the local MQTT broker and begin listening for device state messages and cloud model queries:
+Launch the core Butler orchestrator. It will connect to the running MQTT broker (Scope 1) and act as the authoritative Cloud Model Server on the UUFI bus:
 ```bash
 bin/butler
 ```
 
 ### 10.3. Starting the Independent Verifier
-Run the verifier tool in a separate terminal. The verifier will perform its handshake with the Butler and begin passive/active tracking of device state transitions:
+Run the verifier tool in a separate terminal. The verifier will perform its handshake with the Butler and begin passive/active tracking of device state transitions on the UUFI bus:
 ```bash
 bin/verifier
 ```
@@ -184,19 +184,19 @@ bin/verifier
    ```bash
    bin/register default dev-1 acme widget
    ```
-2. **Start the Mock Client:** Run the simulated device in a separate terminal. It will execute the UUFI handshake, transition to `quiescent`, and begin reporting its status:
+2. **Start the Mock Client (Scope 2):** Run the simulated device in a separate terminal. It will execute the UUFI handshake with the Butler, transition to `quiescent`, and begin reporting its `blobset` status:
    ```bash
    bin/mocket default dev-1
    ```
 
-### 10.5. Triggering a Managed Update
-Initiate a managed software update by specifying the target version and a path to the firmware/software blob:
+### 10.5. Triggering a Managed Update (Functional Verification)
+Initiate a managed software update by specifying the target version and a path to the firmware/software blob. This functionally replaces the Scope 3 client-side config tests with a full orchestrator-driven update cycle:
 ```bash
 bin/trigger default dev-1 system 1.1.0 testing/blobs/acme/widget/system/1.1.0/bundle.bin
 ```
 
 ### 10.6. Running Automated Smoke Tests
-To run a complete, non-interactive end-to-end integration test of the entire Butler system (including setup, registration, update, rollback, and verification phases), execute the automated test suite:
+To execute a fully automated, non-interactive integration run of Scope 4 (verifying the entire setup, registration, update, rollback, and verification lifecycle), run:
 ```bash
 bin/smokeit
 ```
