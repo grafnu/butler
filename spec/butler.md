@@ -155,3 +155,48 @@ Consistent log prefixes and formats are essential for multi-implementation integ
   - `subsystem_id`: (Optional) The ID of the subsystem being validated.
   - `status`: (Optional) The current state (e.g., `pending`, `success`).
   - `result`: (Optional) One of `pass` or `fail` (case-insensitive).
+
+## 10. Development and Testing Workflow
+<!-- ASSUMPTION: User direct command overrides the general spec edit restrictions of AGENTS.md -->
+
+This section outlines how to start and operate the Butler orchestrator and its supporting components in a local development environment. These steps assume that a local UUFI messaging bus has already been started as described in `uufi.md` Section 9.1.
+
+### 10.1. Local Environment Preparation
+First, run the Butler setup utility to initialize local workspace directories, local model files, and other Butler-specific resources:
+```bash
+bin/setup
+```
+
+### 10.2. Starting the Butler Orchestrator
+Launch the core Butler orchestrator. It will connect to the local MQTT broker and begin listening for device state messages and cloud model queries:
+```bash
+bin/butler
+```
+
+### 10.3. Starting the Independent Verifier
+Run the verifier tool in a separate terminal. The verifier will perform its handshake with the Butler and begin passive/active tracking of device state transitions:
+```bash
+bin/verifier
+```
+
+### 10.4. Registering and Starting a Mock Device (Mocket)
+1. **Register the Device:** Add a mock device definition to the Butler's local model repository:
+   ```bash
+   bin/register default dev-1 acme widget
+   ```
+2. **Start the Mock Client:** Run the simulated device in a separate terminal. It will execute the UUFI handshake, transition to `quiescent`, and begin reporting its status:
+   ```bash
+   bin/mocket default dev-1
+   ```
+
+### 10.5. Triggering a Managed Update
+Initiate a managed software update by specifying the target version and a path to the firmware/software blob:
+```bash
+bin/trigger default dev-1 system 1.1.0 testing/blobs/acme/widget/system/1.1.0/bundle.bin
+```
+
+### 10.6. Running Automated Smoke Tests
+To run a complete, non-interactive end-to-end integration test of the entire Butler system (including setup, registration, update, rollback, and verification phases), execute the automated test suite:
+```bash
+bin/smokeit
+```
