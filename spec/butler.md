@@ -103,9 +103,12 @@ The startup connectivity output MUST use the resolved numeric port (e.g., `1883`
 
 - **`BUTLER_CONN_SPEC`**: Default connection specification URL.
 - **`BUTLER_MODEL_FILE`**: Path to local model JSON (default: `testing/model.json`).
-- **`BUTLER_BLOBS_DIR`**: Base directory for blobs (default: `testing/blobs`).
+- **`BUTLER_BLOBSTORE_PROVIDER`**: Specifies the pluggable BlobStore implementation to use. Supported values are `local` (Reference Local Disk Storage) or `gcs` (GCP Google Cloud Storage). Default: `local`.
+- **`BUTLER_BLOBS_DIR`**: Base directory for local blobs when using the `local` provider (default: `testing/blobs`).
+- **`BUTLER_GCS_BUCKET`**: Target Google Cloud Storage bucket name when using the `gcs` provider (e.g., `my-update-bucket`).
 - **`BUTLER_TIMEOUT`**: Timeout for `pending` state transitions (default: `60`).
 - **`BUTLER_REGISTRY_ID`**: Default site/registry ID (default: `default`).
+- **`GOOGLE_APPLICATION_CREDENTIALS`**: Optional path to GCP Service Account JSON key file used by the `gcs` provider to authenticate and sign URLs.
 
 ## 8. Robustness
 
