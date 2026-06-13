@@ -24,7 +24,7 @@ brew services start mosquitto
 
 The Butler system is organized as follows:
 
-- **spec/**: Formal architectural and protocol specifications (e.g., `uufi.md`, `butler.md`).
+- **spec/**: Formal architectural and protocol specifications (e.g., `butler.md`, `blobstore.md`, `update.md`).
 - **bin/**: Operational executables and tooling for the system.
 - **butler/**: Core implementation logic (Python).
 - **README.md**: This overview document.

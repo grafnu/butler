@@ -8,7 +8,7 @@ mqtt and mosquitto are available on the system.
 
 If the BUTLER_CONN_SPEC env variable is defined, it should use that as the connectivity specification passed in to all tools.
 The tools should not use BUTLER_CONN_SPEC directly, but rather the caller should explicitly add it to the command line.
-The specification should conform to the `uufi.md` spec as defined. Otherwise, the tests should use `mqtt://<branchname>@localhost/` as
+The specification should conform to the `uufi.md` spec (located externally as part of UDMI) as defined. Otherwise, the tests should use `mqtt://<branchname>@localhost/` as
 the specification, where `<branchname>` is the current git branch (defaulting to `unknown` if not in a git directory).
 
 * For `mqtt` connections, the only valid hostname for testing is `localhost`
@@ -23,7 +23,7 @@ These top-level files/directories MUST NOT be removed or altered:
 * AUDIT.md: Audit an implementation for spec compliance.
 * MERGER.md: Specification merge logic.
 * WORKFLOW.md: Operational workflow definitions.
-* spec/: Formal system specifications (e.g., uufi.md, butler.md).
+* spec/: Formal system specifications (e.g., butler.md, blobstore.md, update.md).
 * .wincolor: Terminal configuration.
 * .gitignore: Git exclusion patterns.
 
