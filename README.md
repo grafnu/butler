@@ -33,6 +33,7 @@ The Butler system is organized as follows:
 - **.wincolor/.gitignore**: Environment and git configuration.
 - **impl/**: Cross-implementation testing workspace.
 - **testing/**: Test assets and simulation environments.
+- **udmi_blob_store/**: Static testing Software Catalog and blobs (parallels `udmi_site_model`).
 - **tmp/**: Ephemeral workspace for temporary files.
 - **venv/**: Python virtual environment.
 

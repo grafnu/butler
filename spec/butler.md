@@ -41,6 +41,7 @@ The **Butler** is a stateless, reactive fleet reconciliation engine whose sole s
   2. **Actual Version Discovery:** The Butler simply waits until it receives a dynamic State update from a device to determine its actual version. In local test environments, this actual state report is typically initiated manually or triggered on-demand using standard testing utilities.
 - **Handshake Compliance:** Butler MUST NOT initiate its own handshake; it MUST instead respond to handshake state messages from Devices and Verifiers with the appropriate config reply as defined in UUFI.
 - **State Machine:**
+  - `unknown`: Initial tracking state before any device report is received.
   - `quiescent`: Expected/Desired Version == Actual/Current Version.
   - `active`: Expected/Desired Version != Actual/Current Version (Reconciliation required; triggers an update command).
   - `pending`: Update command has been sent to the device, awaiting dynamic state update showing completion or failure.
@@ -177,7 +178,7 @@ bin/verifier
 ### 10.4. Starting the Device Under Test (Pubber DUT)
 Launch the simulated on-premise device in a separate terminal using the same command as Scope 2, adjusted for the workspace directory path:
 ```bash
-../udmi/bin/start_dut ../udmi/sites/udmi_site_model //mqtt/localhost AHU-1 "uufi-serial"
+../udmi/bin/start_dut ../udmi/sites/udmi_site_model mqtt://localhost/ AHU-1 "uufi-serial"
 ```
 *Note:* The Butler orchestrator coordinates managed updates. While **Pubber** connects and handshakes successfully, it may fail to fully execute the specific firmware state transitions (`quiescent` -> `pending` -> `success`/`failure`) that a custom UDMI client might report. Let the tests fail on these steps if Pubber lacks full update state-machine capabilities; this is expected behavior to verify platform readiness.
 

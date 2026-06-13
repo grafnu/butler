@@ -36,13 +36,28 @@ This section details the specification of supported BlobStore providers. New pro
 
 This provider is optimized for local integration testing, offline development, and simple local deployments.
 
-#### 2.1.1. Storage Mapping
+#### 2.1.1. Storage Mapping and Software Catalog Schema
 *   **Base Configuration:** `BUTLER_BLOBS_DIR` (defaults to `udmi_blob_store/packages`).
 *   **Directory Path Structure:**
     `{BUTLER_BLOBS_DIR}/{make}/{model}/{blob_id}/{version}/`
 *   **File Layout:**
     *   `bundle.bin` or `bundle.txt`: The raw update package payload binary or text file.
     *   *Note:* No separate hash files or database columns are required. The Local Disk provider calculates the SHA-256 hash of the payload file dynamically at runtime whenever `resolve_package_metadata` is invoked, preventing configuration skew.
+*   **Software Catalog Schema (`model.json`):** Sourced from the file specified by `BUTLER_MODEL_FILE` (default: `udmi_blob_store/model.json`), this database maps target software versions to their relative or absolute file package URIs. It MUST follow the nested JSON schema:
+    ```json
+    {
+      "{make}": {
+        "{model}": {
+          "{blob_id}": {
+            "{version}": {
+              "url": "file://{path_to_bundle_file}"
+            }
+          }
+        }
+      }
+    }
+    ```
+    During a metadata query (`resolve_package_metadata`), the local provider queries this database structure to resolve the package `url`, then dynamically calculates and returns the payload's SHA-256 hash.
 
 #### 2.1.2. URI Scheme
 *   **Scheme:** `file://`
