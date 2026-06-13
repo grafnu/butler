@@ -19,7 +19,7 @@ sequenceDiagram
     Note over Butler: Butler stores Actual Version in volatile memory
 
     Note over Admin, UUFI: 2. Initiation Phase (Database Mutation)
-    Admin->>UUFI: Mutate Expected Version in site_model<br/>(e.g., via bin/site_trigger)
+    Admin->>UUFI: Mutate Expected Version in site_model<br/>(e.g., via bin/site_trigger update)
     UUFI->>Butler: Model Update (Reports Expected Version)
 
     Note over Butler, BlobStore: 3. Query Phase (Metadata Retrieval)

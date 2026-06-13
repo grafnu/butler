@@ -185,7 +185,7 @@ Launch the simulated on-premise device in a separate terminal using the same com
 ### 10.5. Triggering a Managed Update (Functional Verification)
 Initiate a managed software update by using UDMI's `site_trigger` utility to mutate the physical site model file on disk and publish the dynamic `model/cloud` update event over the UUFI bus:
 ```bash
-../udmi/bin/site_trigger ../udmi/sites/udmi_site_model AHU-1 system 1.1.0
+../udmi/bin/site_trigger update ../udmi/sites/udmi_site_model AHU-1 system 1.1.0
 ```
 
 ### 10.6. Running Automated Smoke Tests
