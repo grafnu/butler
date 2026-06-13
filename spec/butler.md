@@ -91,6 +91,8 @@ All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`). It
 
 To ensure interoperability and environmental isolation, tools MUST NOT fail if optional arguments (indicated by `[]`) are omitted, provided a valid default can be determined. When running in a multi-client environment (e.g., parallel testing), implementations MUST strictly adhere to the `Prefix Isolation` requirements defined in UUFI. Specifically, test runners (`smokeit`) MUST incorporate the provided connection prefix into all internally generated topics and child process arguments to prevent cross-trial interference.
 
+These are the ONLY files that should be in the `bin/` directory.
+
 - **butler [conn_spec] [-f]**: Starts the system orchestrator.
 - **setup [conn_spec]**: Ensures the local environment (e.g., MQTT broker) is ready.
 - **verifier [conn_spec]**: Starts the independent verification tool.
