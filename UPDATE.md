@@ -13,6 +13,10 @@ unrecognized branch. This sequence is for implementation branches only.
 * Update the code to comply with the specifications in `spec/`
 * `git push`
 
+Ensure that the all the files listed in AGENTS.md that indicate
+they should not be removed or altered are the same as the `main` branch.
+Ensure there are no files that are not allowed as per AGENTS.md.
+
 The files in `spec/` should be considered immutable and not changed. All files
 not explicitly indicated to be functional work zones should be immutable.
 
