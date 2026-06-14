@@ -2,8 +2,6 @@
 
 This document defines the formal operational contract and implementation descriptions for the **BlobStore (Blob Repository)**. The BlobStore is designed as a modular, pluggable storage backend decoupled from the Butler core orchestrator and the UUFI bus, enabling separate deployment environments to use different storage architectures.
 
-<!-- ASSUMPTION: User direct command overrides the general spec edit restrictions of AGENTS.md to create this file -->
-
 ---
 
 ## 1. Core Provider Interface

@@ -69,46 +69,33 @@ To run the components individually and observe their behavior:
 ```bash
 bin/butler mqtt://localhost
 ```
-**Expected behavior:** The orchestrator starts and waits for state changes. It will periodically check the model for required updates.
+**Expected behavior:** The orchestrator starts, outputs its connectivity parameters to stderr, and reactively waits for model updates and state messages over the UUFI bus to coordinate updates.
 
 ### 2. Start the Verifier (Optional)
-The verifier monitors the bus and reports on the success or failure of update sequences.
+The verifier monitors the bus and validates device state transitions.
 ```bash
 bin/verifier mqtt://localhost
 ```
-**Expected behavior:** The verifier starts listening to the MQTT bus. It will output verification results to the bus.
+**Expected behavior:** The verifier starts, outputs its connectivity parameters, and listens to State and Config messages, logging compliant state transitions and any validation errors.
 
-### 3. Start an Observer (Optional)
-Watch the JSON message traffic in real-time:
+### 3. Start the Device Under Test (Pubber DUT)
+Using the standard UDMI/UUFI client located in the sibling repository:
 ```bash
-bin/observe mqtt://localhost
+../udmi/bin/start_dut ../udmi/sites/udmi_site_model mqtt://localhost/ AHU-1 "uufi-serial"
 ```
-**Expected behavior:** The observer will print formatted JSON messages for all traffic on the bus.
+**Expected behavior:** The simulated device starts up, connects to the local broker, and begins publishing periodic state reports including its current running software version.
 
-### 4. Register and Start a Mock Device
-In a new terminal:
+### 4. Trigger a Managed Update
+Initiate a managed software update by updating the expected version configuration in the site model and publishing a model update event over the UUFI bus:
 ```bash
-# Register the device in the model
-bin/register my-registry dev-001
-
-# Start the mock device
-bin/mocket mqtt://localhost my-registry dev-001
+../udmi/bin/site_trigger update ../udmi/sites/udmi_site_model AHU-1 system 1.1.0
 ```
-**Expected behavior:** 
-- `bin/register` will output "Registered device dev-001 in model."
-- `bin/mocket` will start and begin publishing periodic status messages. You should see these messages appearing in the **Observer** window.
-
-### 5. Trigger an Update
-Create a dummy firmware file and trigger an update for the device:
-```bash
-echo "V1.1 CONTENT" > fw_v1.1.0.bin
-bin/trigger my-registry dev-001 1.1.0 fw_v1.1.0.bin
-```
-**Expected behavior:** 
-- `bin/trigger` will report that the blob was stored and the target version was updated.
-- In the **Observer**, you should see an `update_payload` message sent from `butler` to `dev-001`.
-- In the **Mocket** output, you should see the device receiving the update, downloading the blob, and reporting `success`.
-- Finally, the **Butler** logs will show it updating the `current_version` in the model.
+**Expected behavior:**
+- The `site_trigger` utility updates the physical site model on disk and publishes a `model/cloud` update event.
+- The **Butler** detects the version drift, queries the Software Catalog (`udmi_blob_store/model.json`) for package metadata, and publishes a `blobset` config payload instructing the device to upgrade.
+- The **Device** (DUT) transitions to the `pending` state to apply the update.
+- Upon completion, the device reports `success` and its new actual version `1.1.0` in its state messages, transitioning the system to the `quiescent` state.
+- The **Verifier** logs state transitions and validation success.
 
 ## Testing
 
@@ -120,8 +107,8 @@ bin/smokeit mqtt://localhost
 **Expected behavior:** The script will launch temporary instances of the system components, run a sample update, and output "Smoke test passed" (or a detailed error if something is misconfigured).
 
 ## Documentation
-For detailed architectural specifications and component requirements, see:
-- `spec/butler.md`
-- `AGENTS.md` (Project-specific hints)
-stem_Architecture.md`
-- `AGENTS.md` (Project-specific hints)
+For detailed specifications and component requirements, see:
+- `spec/butler.md`: Main Butler orchestrator specification.
+- `spec/blobstore.md`: BlobStore provider interface and implementations.
+- `spec/update.md`: Software update message sequence diagram.
+- `AGENTS.md`: Mandates and instructions for agentic systems.

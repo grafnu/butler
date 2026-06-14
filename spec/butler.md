@@ -88,7 +88,7 @@ The **Butler** is a stateless, reactive fleet reconciliation engine whose sole s
 
 ## 6. Standard Tooling CLI Interface (bin/)
 
-All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`). It MUST be supported both as a positional first argument and via an explicit `--conn_spec` flag. On startup, all tools MUST output their connectivity parameters in a consistent format: `Conn spec: scheme={scheme}, host={host}, port={port}, principal={principal}, prefix={prefix}`. This output MUST be directed to `stderr` if the tool is designed to produce machine-readable data on `stdout` (e.g., `observe`).
+All tools MUST support the `<conn_spec>` argument (e.g., `mqtt://localhost`). It MUST be supported both as a positional first argument and via an explicit `--conn_spec` flag. On startup, all tools MUST output their connectivity parameters in a consistent format: `Conn spec: scheme={scheme}, host={host}, port={port}, principal={principal}, prefix={prefix}`. This output MUST be directed to `stderr` if the tool is designed to produce machine-readable data on `stdout`.
 
 To ensure interoperability and environmental isolation, tools MUST NOT fail if optional arguments (indicated by `[]`) are omitted, provided a valid default can be determined. When running in a multi-client environment (e.g., parallel testing), implementations MUST strictly adhere to the `Prefix Isolation` requirements defined in UUFI. Specifically, test runners (`smokeit`) MUST incorporate the provided connection prefix into all internally generated topics and child process arguments to prevent cross-trial interference.
 
@@ -97,7 +97,6 @@ These are the ONLY files that should be in the `bin/` directory.
 - **butler [conn_spec] [-f]**: Starts the system orchestrator.
 - **setup [conn_spec]**: Ensures the local environment (e.g., MQTT broker) is ready.
 - **verifier [conn_spec]**: Starts the independent verification tool.
-- **observe [conn_spec]**: Passive monitoring of the UUFI bus (output: `{topic}: {payload}`).
 - **smokeit [conn_spec]**: Basic integration test.
 
 ### 6.1 CLI Compatibility Note
@@ -130,19 +129,15 @@ The startup connectivity output MUST use the resolved numeric port (e.g., `1883`
 - **Reporting:** Publish validation results to `[/{prefix}]/uufi/r/{site_id}/d/{device_id}/c/events/validation`. For events related to a specific device, `{site_id}` and `{device_id}` MUST match the device. For self-reporting (e.g., handshake status), `{device_id}` MUST be the verifier's identity (e.g., `verifier`) and `{site_id}` MUST be `unknown` unless a specific site/registry has been discovered.
 - **Processing:** Verifier components MUST ensure that messages from the same device/blob_id are processed sequentially (e.g., via a message queue) to maintain accurate state tracking and avoid false-positive transition violations.
 
-### 9.2 Observer (Passive Observer)
-- **Output:** Raw wire format `{topic}: {payload}`.
-- **Constraints:** Unbuffered, exactly one line per message, no truncation. Implementations MUST NOT output any additional text (e.g., connection status, "RECEIVE" labels) beyond the message itself. The startup connectivity output required by Section 6 MUST be directed to `stderr` for the Observer tool to ensure that `stdout` contains only message data. Implementations MUST ensure that message output is thread-safe and that each message is followed by a newline character, even when multiple messages arrive simultaneously. Observers MUST NOT perform message deduplication (as defined in Section 8); they MUST output all received messages.
-
-### 9.3 Compliance Logging
+### 9.2 Compliance Logging
 For automated interoperability testing and verification, implementations MUST adhere to the following log formats for critical lifecycle events:
-- State Transitions (Verifier): `VERIFIER [INFO]: State transition for {site_id}/{device_id}/{blob_id}: {old_state} -> {new_state}`. To ensure backward-compatibility with single-device verification parsers, implementations may omit the `{site_id}/{device_id}/` segment if verification is restricted to a single target device. The initial state before any report is received MUST be considered `unknown`. To ensure log clarity, verifiers MUST NOT log a transition if the `{new_state}` is identical to the `{old_state}`. This prohibition applies to both the standard output logging and the publication of validation events (Section 9.4) on the UUFI bus.
+- State Transitions (Verifier): `VERIFIER [INFO]: State transition for {site_id}/{device_id}/{blob_id}: {old_state} -> {new_state}`. To ensure backward-compatibility with single-device verification parsers, implementations may omit the `{site_id}/{device_id}/` segment if verification is restricted to a single target device. The initial state before any report is received MUST be considered `unknown`. To ensure log clarity, verifiers MUST NOT log a transition if the `{new_state}` is identical to the `{old_state}`. This prohibition applies to both the standard output logging and the publication of validation events (Section 9.3) on the UUFI bus.
 - Handshake Events (Verifier): `VERIFIER [INFO]: Handshake {started|completed} for {principal}`.
 - **Validation Errors (Verifier):** `VERIFIER [ERROR]: VALIDATION ERROR: {message}`.
 - **Terminal State (Orchestrator):** `[butler] Device {site_id}/{device_id}/{blob_id} terminal state {status} with version {version}`. Terminal states MUST include `success`, `failure`, and `quiescent` (even if the version is `"0.0.0"`). This log MUST be generated whenever a device enters or reports one of these states.
 Consistent log prefixes and formats are essential for multi-implementation integration testing. These messages MUST be printed exactly as specified, without additional prefixes (e.g., timestamps or thread IDs) that might interfere with automated log analysis.
 
-### 9.4 Validation Event Schema
+### 9.3 Validation Event Schema
 - **Topic:** `[/{prefix}]/uufi/r/{site_id}/d/{device_id}/c/events/validation`
 - **Payload:** The `validation` object within the `payload` MUST include:
   - `message`: A human-readable description of the validation event.
@@ -153,9 +148,8 @@ Consistent log prefixes and formats are essential for multi-implementation integ
   - `result`: (Optional) One of `pass` or `fail` (case-insensitive).
 
 ## 10. Development and Testing Workflow (Scope 4)
-<!-- ASSUMPTION: User direct command overrides the general spec edit restrictions of AGENTS.md -->
 
-The fourth tier of the system verification pipeline builds directly on top of the generic UUFI development environment (reusing Scope 1: Infrastructure and Scope 2: Pubber DUT from `uufi.md` Section 9). It replaces the low-level UUFI test client (Scope 3) with the **Butler Orchestrator**, executing a complete state-based firmware update and rollback orchestration cycle over the active broker.
+Butler testing replaces the low-level UUFI test client with the **Butler Orchestrator**, executing a complete state-based firmware update and rollback orchestration cycle over the active broker (as supplid by UDMI).
 
 ### 10.1. Local Environment Preparation
 Ensure that a local UUFI infrastructure (Scope 1) has been started. Then, run the Butler setup utility to initialize local workspace directories, local model files, and other Butler-specific resources:

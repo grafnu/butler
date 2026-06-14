@@ -2,8 +2,6 @@
 
 This document contains a sequence diagram illustrating the expected semantic message exchanges for a successful software update orchestration cycle under the Unified UDMI Functional Interface (UUFI) protocol.
 
-<!-- ASSUMPTION: User direct command overrides the general spec edit restrictions of AGENTS.md to create this file -->
-
 ## Sequence Diagram
 
 ```mermaid
