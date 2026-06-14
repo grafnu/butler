@@ -39,12 +39,12 @@ The **Butler** is a stateless, reactive fleet reconciliation engine whose sole s
 - **Stateless Restarts & Network Discovery:** If the Butler process restarts, all in-memory tracking is reset. Sourcing of both expected and actual states occurs exclusively over the UUFI network interface (the Butler has no direct file-level access to the `site_model` on disk):
   1. **Expected Version Discovery:** On startup, the Butler discovers expected/desired versions by publishing a UUFI Model Query (`query/cloud` as defined in `uufi.md`) to `/uufi/c/query/cloud`, where the UUFI gateway (which *does* have site-model access) replies with the expected version configurations.
   2. **Actual Version Discovery:** The Butler simply waits until it receives a dynamic State update from a device to determine its actual version. In local test environments, this actual state report is typically initiated manually or triggered on-demand using standard testing utilities.
-- **Handshake Compliance:** Butler MUST NOT initiate its own handshake; it MUST instead respond to handshake state messages from Devices and Verifiers with the appropriate config reply as defined in UUFI.
+- **Handshake Compliance:** Butler MUST NOT initiate its own handshake; it MUST instead respond to handshake state messages from Devices and Verifiers with the appropriate config reply as defined in UUFI. Handshake message structures and sequence steps are governed exclusively by the external `<UDMI>/docs/specs/uufi.md` specification; local implementations MUST NOT introduce custom local handshake parameters.
 - **State Machine:**
   - `unknown`: Initial tracking state before any device report is received.
   - `quiescent`: Expected/Desired Version == Actual/Current Version.
   - `active`: Expected/Desired Version != Actual/Current Version (Reconciliation required; triggers an update command).
-  - `pending`: Update command has been sent to the device, awaiting dynamic state update showing completion or failure.
+  - `pending`: Update command has been sent to the device, awaiting dynamic state update showing completion or failure. If a transition remains in `pending` for longer than `BUTLER_TIMEOUT` seconds, the orchestrator MUST log a transition timeout warning and automatically retry publishing the update command (up to a maximum of 3 retry attempts, spaced `BUTLER_TIMEOUT` seconds apart). If all 3 retry attempts are exhausted without receiving a status report, the orchestrator MUST log a terminal failure warning, transition the volatile tracking state for that device to `failed` (or `unknown`), and cease sending further commands until a new state report or model update is received.
   The expected/desired version is sourced over the UUFI bus from the Expected Cloud Model (`system.software.<blob_id> = 'version_tag'` as defined in `model_system.json`), where `<blob_id>` is the identifier of the target software. The actual/current version is dynamically reported by the device under the same path in state messages.
 
 - **Triggering:** The orchestrator re-evaluates state and triggers update commands immediately upon receiving device status reports showing version drift (`expected != actual`), unless the device is already in a `pending` transition.
@@ -52,7 +52,7 @@ The **Butler** is a stateless, reactive fleet reconciliation engine whose sole s
 - **Efficiency:** State transitions and version reconciliation MUST be processed immediately upon receipt of relevant state messages to minimize end-to-end latency.
 
 ### 2.2 Model and Update Management
-- **Local Model (Software Catalog Only):** Sourced from `BUTLER_MODEL_FILE` (default: `udmi_blob_store/model.json`), the on-disk Butler database acts exclusively as a **Software Catalog (Package Metadata Database)**. It MUST NOT store any device-specific information, `lkg_version`, or transient update states. It is strictly used to answer catalog queries (such as *"What potential versions for a particular make/model/blob are available?"* or *"What are the metadata parameters/bits for a particular make/model/blob?"*).
+- **Local Model (Software Catalog Only):** Sourced from `BUTLER_MODEL_FILE` (default: `udmi_blob_store/model.json`), the on-disk Butler database acts exclusively as a **Software Catalog (Package Metadata Database)**. It MUST NOT store any device-specific information, `lkg_version`, or transient update states. It is strictly used to answer catalog queries (such as *"What potential versions for a particular make/model/blob are available?"* or *"What are the metadata parameters/bits for a particular make/model/blob?"*). To ensure any newly registered or updated packages are instantly available and prevent out-of-sync cache errors, the Butler MUST query the physical file on disk dynamically for every metadata and package resolution query.
 
 ## 3. Functional Components
 
@@ -67,7 +67,7 @@ The **Butler** is a stateless, reactive fleet reconciliation engine whose sole s
 - **Format:** The cloud model MUST follow the full schema defined in UUFI. The physical model follows the immutable `{site_id}/devices/{device_id}/` directory structure of the UDMI/UUFI site_model, where `{site_id}` is the directory name containing `devices` and represents the site/registry ID.
 - **Path Override:** `BUTLER_MODEL_FILE`.
 - **Access:** The local model file is a read-only Software Catalog (no Butler CLI tools modify this database at runtime; any dynamic target version changes are processed reactively over the UUFI bus).
-- **Primary Key:** Composite of `site_id` (registry ID) and `device_id`.
+- **Primary Key:** Composite of `site_id` (registry ID) and `device_id`. Every component MUST explicitly supply or discover `site_id` (registry ID) from either arguments, configurations, or message envelopes. There is NO automatic fallback value (such as 'default'); if `site_id` cannot be explicitly determined, the component MUST terminate with a fatal error.
 
 ### 3.3 Device Conduit (Client-side / DUT)
 - **Reporting:** Periodically publish the actual/current version (under the standard `system.software.<blob_id>` path), `status`, and `lkg_version` via state messages.
@@ -112,13 +112,13 @@ The startup connectivity output MUST use the resolved numeric port (e.g., `1883`
 - **`BUTLER_BLOBS_DIR`**: Base directory for local packages when using the `local` provider (default: `udmi_blob_store/packages`).
 - **`BUTLER_GCS_BUCKET`**: Target Google Cloud Storage bucket name when using the `gcs` provider (e.g., `my-update-bucket`).
 - **`BUTLER_TIMEOUT`**: Timeout for `pending` state transitions (default: `60`).
-- **`BUTLER_REGISTRY_ID`**: Default site/registry ID (default: `default`).
+- **`BUTLER_REGISTRY_ID`**: Specifies the site/registry ID to be used explicitly when not supplied as a positional CLI argument. If neither `BUTLER_REGISTRY_ID` nor a positional argument provides the site ID, components MUST fail immediately.
 - **`GOOGLE_APPLICATION_CREDENTIALS`**: Optional path to GCP Service Account JSON key file used by the `gcs` provider to authenticate and sign URLs.
 
 ## 8. Robustness
 
 - **Idempotency:** All components MUST be idempotent.
-- **Deduplication:** Track message `transaction_id` (or `transactionId` in envelope) for at least 5 minutes. Implementations MUST support tracking transaction IDs as arbitrary string values (which can include 8-digit hex strings, UUIDs, or structured session strings like `UUFI:sess123:001`).
+- **Deduplication:** Track message `transaction_id` (or `transactionId` in envelope) for at least 5 minutes. Implementations MUST support tracking transaction IDs as arbitrary string values (which can include 8-digit hex strings, UUIDs, or structured session strings like `UUFI:sess123:001`). This deduplication filter MUST be applied to incoming Model Update and Command/Config messages to prevent duplicate transition actions, but MUST NOT discard or skip processing of incoming Device State reports (which are authoritative and must always be processed immediately).
 - **Partial Merge:** `cloud` model `UPDATE` operations MUST be partial merges at the device subsystem level; existing fields not in the payload MUST NOT be modified.
 
 ## 9. Verification and Observability
@@ -131,7 +131,7 @@ The startup connectivity output MUST use the resolved numeric port (e.g., `1883`
 
 ### 9.2 Compliance Logging
 For automated interoperability testing and verification, implementations MUST adhere to the following log formats for critical lifecycle events:
-- State Transitions (Verifier): `VERIFIER [INFO]: State transition for {site_id}/{device_id}/{blob_id}: {old_state} -> {new_state}`. To ensure backward-compatibility with single-device verification parsers, implementations may omit the `{site_id}/{device_id}/` segment if verification is restricted to a single target device. The initial state before any report is received MUST be considered `unknown`. To ensure log clarity, verifiers MUST NOT log a transition if the `{new_state}` is identical to the `{old_state}`. This prohibition applies to both the standard output logging and the publication of validation events (Section 9.3) on the UUFI bus.
+- State Transitions (Verifier): `VERIFIER [INFO]: State transition for {site_id}/{device_id}/{blob_id}: {old_state} -> {new_state}`. To ensure strict consistency and automated parser reliability, verifiers MUST always output this format containing the full `{site_id}/{device_id}/` segment. The initial state before any report is received MUST be considered `unknown`. To ensure log clarity, verifiers MUST NOT log a transition if the `{new_state}` is identical to the `{old_state}`. This prohibition applies to both the standard output logging and the publication of validation events (Section 9.3) on the UUFI bus.
 - Handshake Events (Verifier): `VERIFIER [INFO]: Handshake {started|completed} for {principal}`.
 - **Validation Errors (Verifier):** `VERIFIER [ERROR]: VALIDATION ERROR: {message}`.
 - **Terminal State (Orchestrator):** `[butler] Device {site_id}/{device_id}/{blob_id} terminal state {status} with version {version}`. Terminal states MUST include `success`, `failure`, and `quiescent` (even if the version is `"0.0.0"`). This log MUST be generated whenever a device enters or reports one of these states.

@@ -47,9 +47,7 @@ primarily for `verifier` the other for `butler`. Both implementations
 should use the **same** connectivity specification (as defined in
 `AGENTS.md`) to ensure they can communicate.
 
-Run `observe` (found in `impl/{ID}/bin/observe`) twice, once from each
-implementation, and capture the output to separate log files
-`impl/{ID}.log`.
+Run and capture the output/logs of both the `butler` and `verifier` processes to separate log files `impl/{ID}.log`.
 
 If the smoke test fails, indicating that there is an incompatibility
 in the implementations, diagnose and analyze to determine what the
