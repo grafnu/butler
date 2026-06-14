@@ -81,14 +81,14 @@ bin/verifier mqtt://localhost
 ### 3. Start the Device Under Test (Pubber DUT)
 Using the standard UDMI/UUFI client located in the sibling repository:
 ```bash
-../udmi/bin/start_dut ../udmi/sites/udmi_site_model mqtt://localhost/ AHU-1 "uufi-serial"
+<UDMI>/bin/start_dut <UDMI>/sites/udmi_site_model mqtt://localhost/ AHU-1 "uufi-serial"
 ```
 **Expected behavior:** The simulated device starts up, connects to the local broker, and begins publishing periodic state reports including its current running software version.
 
 ### 4. Trigger a Managed Update
 Initiate a managed software update by updating the expected version configuration in the site model and publishing a model update event over the UUFI bus:
 ```bash
-../udmi/bin/site_trigger update ../udmi/sites/udmi_site_model AHU-1 system 1.1.0
+<UDMI>/bin/site_trigger update <UDMI>/sites/udmi_site_model AHU-1 system 1.1.0
 ```
 **Expected behavior:**
 - The `site_trigger` utility updates the physical site model on disk and publishes a `model/cloud` update event.

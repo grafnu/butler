@@ -2,7 +2,7 @@
 
 The **Butler** is a declarative, state-based fleet management engine for managed software updates. It coordinates updates across a
 fleet of devices by managing a state machine for individual device blob updates using the UUFI interface. UUFI is a message
-based interface as part of the UDMI system defined by the relative (from this file) path `../../../udmi/docs/specs/uufi.md`.
+based interface as part of the UDMI system defined by the path `<UDMI>/docs/specs/uufi.md`.
 
 ## 1. Project Structure
 
@@ -172,14 +172,14 @@ bin/verifier
 ### 10.4. Starting the Device Under Test (Pubber DUT)
 Launch the simulated on-premise device in a separate terminal using the same command as Scope 2, adjusted for the workspace directory path:
 ```bash
-../udmi/bin/start_dut ../udmi/sites/udmi_site_model mqtt://localhost/ AHU-1 "uufi-serial"
+<UDMI>/bin/start_dut <UDMI>/sites/udmi_site_model mqtt://localhost/ AHU-1 "uufi-serial"
 ```
 *Note:* The Butler orchestrator coordinates managed updates. While **Pubber** connects and handshakes successfully, it may fail to fully execute the specific firmware state transitions (`quiescent` -> `pending` -> `success`/`failure`) that a custom UDMI client might report. Let the tests fail on these steps if Pubber lacks full update state-machine capabilities; this is expected behavior to verify platform readiness.
 
 ### 10.5. Triggering a Managed Update (Functional Verification)
 Initiate a managed software update by using UDMI's `site_trigger` utility to mutate the physical site model file on disk and publish the dynamic `model/cloud` update event over the UUFI bus:
 ```bash
-../udmi/bin/site_trigger update ../udmi/sites/udmi_site_model AHU-1 system 1.1.0
+<UDMI>/bin/site_trigger update <UDMI>/sites/udmi_site_model AHU-1 system 1.1.0
 ```
 
 ### 10.6. Running Automated Smoke Tests
