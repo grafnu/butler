@@ -8,11 +8,13 @@ mqtt and mosquitto are available on the system.
 
 If the BUTLER_CONN_SPEC env variable is defined, it should use that as the connectivity specification passed in to all tools.
 The tools should not use BUTLER_CONN_SPEC directly, but rather the caller should explicitly add it to the command line.
-The specification should conform to the `uufi.md` spec (located externally as part of UDMI) as defined. Otherwise, the tests should use `mqtt://<branchname>@localhost/` as
+The specification should conform to the `uufi.md` spec (located within the local `udmi/` directory under `udmi/docs/specs/uufi.md`) as defined. Otherwise, the tests should use `mqtt://<branchname>@localhost/` as
 the specification, where `<branchname>` is the current git branch (defaulting to `unknown` if not in a git directory).
 
+The `udmi/` directory must exist as a local subdirectory directly within the workspace (e.g., extracted from an archive or populated by any other means). All tools must verify this filesystem layout on startup and immediately raise a hard error if the local `udmi/` directory is not found (this is the only startup requirement that will cause a hard fail). There are no requirements placed on source control mechanism or git cloning for this subdirectory.
+
 * For `mqtt` connections, the only valid hostname for testing is `localhost`
-  * Only the `setup` utility should perform a connectivity check and start a local mqtt server if necessary.
+  * The `setup` utility should perform a connectivity check to see if the local broker is running. If the broker is not running, the setup utility must invoke the local UDMI tool (specifically `udmi/bin/start_local`) to start the broker automatically.
 * For `pubsub` connections, it can be assumed that the necessary authentication and cloud resources will already be setup.
   * The tools should perform a connectivity check but not try to change anything in the cloud.
 

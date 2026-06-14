@@ -55,11 +55,11 @@ mosquitto
 ```
 
 ### 3. Initialize the System
-Run the setup script to prepare the communication bus. Note that this script will attempt to start the `mosquitto` broker if it is not already running on the default port (1883):
+Run the setup script to prepare the communication bus and perform a connectivity check. If the local MQTT broker is not already running, the setup script will automatically invoke the local UDMI tool (specifically `udmi/bin/start_local`) to start it:
 ```bash
 bin/setup mqtt://localhost
 ```
-**Expected behavior:** The script should output "Bus setup complete."
+**Expected behavior:** The script verifies that the local `udmi/` subdirectory exists (raising a hard fail on startup if it is missing), checks connection status, starts the broker using `udmi/bin/start_local` if necessary, and outputs "Bus setup complete."
 
 ## Manual Operation
 
@@ -79,16 +79,16 @@ bin/verifier mqtt://localhost
 **Expected behavior:** The verifier starts, outputs its connectivity parameters, and listens to State and Config messages, logging compliant state transitions and any validation errors.
 
 ### 3. Start the Device Under Test (Pubber DUT)
-Using the standard UDMI/UUFI client located in the sibling repository:
+Using the standard UDMI/UUFI client located in the local `udmi/` subdirectory:
 ```bash
-<UDMI>/bin/start_dut <UDMI>/sites/udmi_site_model mqtt://localhost/ AHU-1 "uufi-serial"
+./udmi/bin/start_dut ./udmi/sites/udmi_site_model mqtt://localhost/ AHU-1 "uufi-serial"
 ```
 **Expected behavior:** The simulated device starts up, connects to the local broker, and begins publishing periodic state reports including its current running software version.
 
 ### 4. Trigger a Managed Update
 Initiate a managed software update by updating the expected version configuration in the site model and publishing a model update event over the UUFI bus:
 ```bash
-<UDMI>/bin/site_trigger update <UDMI>/sites/udmi_site_model AHU-1 system 1.1.0
+./udmi/bin/site_trigger update ./udmi/sites/udmi_site_model AHU-1 system 1.1.0
 ```
 **Expected behavior:**
 - The `site_trigger` utility updates the physical site model on disk and publishes a `model/cloud` update event.

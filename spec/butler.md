@@ -2,7 +2,7 @@
 
 The **Butler** is a declarative, state-based fleet management engine for managed software updates. It coordinates updates across a
 fleet of devices by managing a state machine for individual device blob updates using the UUFI interface. UUFI is a message
-based interface as part of the UDMI system defined by the path `<UDMI>/docs/specs/uufi.md`.
+based interface as part of the UDMI system defined by the path `udmi/docs/specs/uufi.md` within the local `udmi/` subdirectory.
 
 ## 1. Project Structure
 
@@ -39,7 +39,7 @@ The **Butler** is a stateless, reactive fleet reconciliation engine whose sole s
 - **Stateless Restarts & Network Discovery:** If the Butler process restarts, all in-memory tracking is reset. Sourcing of both expected and actual states occurs exclusively over the UUFI network interface (the Butler has no direct file-level access to the `site_model` on disk):
   1. **Expected Version Discovery:** On startup, the Butler discovers expected/desired versions by publishing a UUFI Model Query (`query/cloud` as defined in `uufi.md`) to `/uufi/c/query/cloud`, where the UUFI gateway (which *does* have site-model access) replies with the expected version configurations.
   2. **Actual Version Discovery:** The Butler simply waits until it receives a dynamic State update from a device to determine its actual version. In local test environments, this actual state report is typically initiated manually or triggered on-demand using standard testing utilities.
-- **Handshake Compliance:** Butler MUST NOT initiate its own handshake; it MUST instead respond to handshake state messages from Devices and Verifiers with the appropriate config reply as defined in UUFI. Handshake message structures and sequence steps are governed exclusively by the external `<UDMI>/docs/specs/uufi.md` specification; local implementations MUST NOT introduce custom local handshake parameters.
+- **Handshake Compliance:** Butler MUST NOT initiate its own handshake; it MUST instead respond to handshake state messages from Devices and Verifiers with the appropriate config reply as defined in UUFI. Handshake message structures and sequence steps are governed exclusively by the local `udmi/docs/specs/uufi.md` specification; local implementations MUST NOT introduce custom local handshake parameters.
 - **State Machine:**
   - `unknown`: Initial tracking state before any device report is received.
   - `quiescent`: Expected/Desired Version == Actual/Current Version.
@@ -152,7 +152,7 @@ Consistent log prefixes and formats are essential for multi-implementation integ
 Butler testing replaces the low-level UUFI test client with the **Butler Orchestrator**, executing a complete state-based firmware update and rollback orchestration cycle over the active broker (as supplid by UDMI).
 
 ### 10.1. Local Environment Preparation
-Ensure that a local UUFI infrastructure (Scope 1) has been started. Then, run the Butler setup utility to initialize local workspace directories, local model files, and other Butler-specific resources:
+Run the Butler setup utility to prepare the environment (initializing local workspace directories, local model files, and other Butler-specific resources). The utility must first verify that the local `udmi/` directory exists directly within the workspace, immediately raising a hard fail if it is missing. It then performs a connectivity check and, if the local broker is not already running, automatically invokes the local UDMI tool (specifically `udmi/bin/start_local`) to start it:
 ```bash
 bin/setup
 ```
@@ -172,14 +172,14 @@ bin/verifier
 ### 10.4. Starting the Device Under Test (Pubber DUT)
 Launch the simulated on-premise device in a separate terminal using the same command as Scope 2, adjusted for the workspace directory path:
 ```bash
-<UDMI>/bin/start_dut <UDMI>/sites/udmi_site_model mqtt://localhost/ AHU-1 "uufi-serial"
+./udmi/bin/start_dut ./udmi/sites/udmi_site_model mqtt://localhost/ AHU-1 "uufi-serial"
 ```
 *Note:* The Butler orchestrator coordinates managed updates. While **Pubber** connects and handshakes successfully, it may fail to fully execute the specific firmware state transitions (`quiescent` -> `pending` -> `success`/`failure`) that a custom UDMI client might report. Let the tests fail on these steps if Pubber lacks full update state-machine capabilities; this is expected behavior to verify platform readiness.
 
 ### 10.5. Triggering a Managed Update (Functional Verification)
 Initiate a managed software update by using UDMI's `site_trigger` utility to mutate the physical site model file on disk and publish the dynamic `model/cloud` update event over the UUFI bus:
 ```bash
-<UDMI>/bin/site_trigger update <UDMI>/sites/udmi_site_model AHU-1 system 1.1.0
+./udmi/bin/site_trigger update ./udmi/sites/udmi_site_model AHU-1 system 1.1.0
 ```
 
 ### 10.6. Running Automated Smoke Tests
