@@ -4,5 +4,5 @@ testing/
 tmp/
 blobs/
 impl/
-udmi/
+udmi
 out/
