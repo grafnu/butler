@@ -148,42 +148,57 @@ Consistent log prefixes and formats are essential for multi-implementation integ
   - `result`: (Optional) One of `pass` or `fail` (case-insensitive).
 
 ## 10. Development and Testing Workflow (Scope 4)
+<!-- ASSUMPTION: User direct command overrides the general spec edit restrictions of AGENTS.md -->
 
-Butler testing replaces the low-level UUFI test client with the **Butler Orchestrator**, executing a complete state-based firmware update and rollback orchestration cycle over the active broker (as supplid by UDMI).
+The fourth tier of the system verification pipeline builds directly on top of the generic UUFI development environment (reusing Scope 1: Infrastructure and Scope 2: Pubber DUT from `uufi.md` Section 9). It replaces the low-level UUFI test client (Scope 3) with the **Butler Orchestrator**, executing a complete state-based firmware update and rollback orchestration cycle over the active broker.
+
+To ensure that multiple disparate implementations can be run side-by-side using the same UDMI install directory without conflicts, created systems MUST be run independently in their respective local directories. This requires:
+1. **Model Cloning:** Run the UDMI `bin/clone_model` tool from the working directory to create a copy of the `udmi_site_model` for testing.
+2. **Port Selection:** Choose and use a unique port (e.g., in the range `40000-50000`) for running the local MQTT broker to prevent port conflicts with other side-by-side runs.
+3. **Working Directory Execution:** Execute all UDMI commands from their respective working directories.
 
 ### 10.1. Local Environment Preparation
-Run the Butler setup utility to prepare the environment (initializing local workspace directories, local model files, and other Butler-specific resources). The utility must first verify that the local `udmi/` directory exists directly within the workspace, immediately raising a hard fail if it is missing. It then performs a connectivity check and, if the local broker is not already running, automatically invokes the local UDMI tool (specifically `udmi/bin/start_local`) to start it:
+First, create a local copy of the test site model by executing `bin/clone_model` from the UDMI subdirectory of your working directory:
 ```bash
-bin/setup
+./udmi/bin/clone_model
+```
+
+Next, run the Butler setup utility to prepare the environment (initializing local workspace directories, local model files, and other Butler-specific resources). The utility must first verify that the local `udmi/` directory exists directly within the workspace, immediately raising a hard fail if it is missing. Define your chosen unique port (e.g. `40050`) as a shell variable, perform a connectivity check on that port, and, if the local broker is not already running on that port, automatically invoke the local UDMI tool (specifically `udmi/bin/start_local`) to start it on that unique port:
+```bash
+# Define your unique port
+mqtt_port=40050
+
+# Run the setup script using the port variable
+bin/setup mqtt://localhost:$mqtt_port/
 ```
 
 ### 10.2. Starting the Butler Orchestrator
-Launch the core Butler orchestrator. It will connect to the running MQTT broker (Scope 1) and act as the authoritative Cloud Model Server on the UUFI bus:
+Launch the core Butler orchestrator. It will connect to the running MQTT broker on the unique port and act as the authoritative Cloud Model Server on the UUFI bus:
 ```bash
-bin/butler
+bin/butler mqtt://localhost:$mqtt_port/
 ```
 
 ### 10.3. Starting the Independent Verifier
-Run the verifier tool in a separate terminal. The verifier will perform its handshake with the Butler and begin passive/active tracking of device state transitions on the UUFI bus:
+Run the verifier tool in a separate terminal:
 ```bash
-bin/verifier
+bin/verifier mqtt://localhost:$mqtt_port/
 ```
 
 ### 10.4. Starting the Device Under Test (Pubber DUT)
-Launch the simulated on-premise device in a separate terminal using the same command as Scope 2, adjusted for the workspace directory path:
+Launch the simulated on-premise device in a separate terminal, executing the UDMI command from your working directory and pointing to your unique port and cloned site model:
 ```bash
-./udmi/bin/start_dut ./udmi/sites/udmi_site_model mqtt://localhost/ AHU-1 "uufi-serial"
+./udmi/bin/start_dut ./udmi/sites/udmi_site_model mqtt://localhost:$mqtt_port/ AHU-1 "uufi-serial"
 ```
 *Note:* The Butler orchestrator coordinates managed updates. While **Pubber** connects and handshakes successfully, it may fail to fully execute the specific firmware state transitions (`quiescent` -> `pending` -> `success`/`failure`) that a custom UDMI client might report. Let the tests fail on these steps if Pubber lacks full update state-machine capabilities; this is expected behavior to verify platform readiness.
 
 ### 10.5. Triggering a Managed Update (Functional Verification)
-Initiate a managed software update by using UDMI's `site_trigger` utility to mutate the physical site model file on disk and publish the dynamic `model/cloud` update event over the UUFI bus:
+Initiate a managed software update by using UDMI's `site_trigger` utility (executed from your working directory) to mutate the physical site model file on disk and publish the dynamic `model/cloud` update event over the UUFI bus on the unique port:
 ```bash
 ./udmi/bin/site_trigger update ./udmi/sites/udmi_site_model AHU-1 system 1.1.0
 ```
 
 ### 10.6. Running Automated Smoke Tests
-To execute a fully automated, non-interactive integration run of Scope 4 (verifying the entire setup, registration, update, rollback, and verification lifecycle), run:
+To execute a fully automated, non-interactive integration run of Scope 4 (verifying the entire setup, registration, update, rollback, and verification lifecycle) on the chosen unique port, run:
 ```bash
-bin/smokeit
+bin/smokeit mqtt://localhost:$mqtt_port/
 ```
