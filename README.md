@@ -6,20 +6,20 @@ Butler is a declarative, state-based property management system for device firmw
 
 The system requires Python 3.8+, Java, and Mosquitto.
 
-### 1. Mandatory Local UDMI Subdirectory Setup
-The local `./udmi/` directory must exist directly within the workspace root. Since it is excluded from source control (via `.gitignore`), you must populate it prior to running any system setup or bootstrapping:
-- **Obtain UDMI:** Extract or clone the correct version of the UDMI repository directly into the `./udmi` subdirectory of this workspace.
-- **Expected Layout:** The `./udmi/` subdirectory must contain standard UDMI CLI utilities inside `bin/` (such as `setup_base`, `start_local`, `clone_model`, `start_dut`, `site_trigger`) and the formal UUFI specification file at `docs/specs/uufi.md`.
-- **Relative Path Resolution:** To ensure interoperability across multiple directories, all components (including the Device Under Test) MUST resolve relative `file://` paths specified in the Software Catalog (`model.json`) relative to the workspace/project root directory (not relative to the `./udmi` or execution directory).
-- **Keep Up to Date:** If the `./udmi/` subdirectory is configured as a git repository, ensure it matches the current active branch and keep it up to date (e.g., by executing `git pull` in that directory).
+### 1. Mandatory Peer UDMI Directory/Link Setup
+The `udmi` (directory or link) MUST exist as a peer directly sibling to the repository directory (e.g., at `../udmi` relative to the repository root directory). If this sibling directory or symlink is missing, it is an unrecoverable error.
+- **Shared Resource Constraint:** The peer `../udmi` directory is a **shared, read-only resource** that is only suitable for running standard immutable executables or referencing specifications. Do NOT modify any files directly inside `../udmi/` (such as running setup tasks or cloning models there) to avoid execution conflicts in multi-client/multi-implementation environments.
+- **Expected Layout:** The peer `../udmi/` directory must contain standard UDMI CLI utilities inside `bin/` (such as `setup_base`, `start_local`, `clone_model`, `start_dut`, `site_trigger`) and the formal UUFI specification file at `docs/specs/uufi.md`.
+- **Relative Path Resolution:** To ensure interoperability across multiple directories, all components (including the Device Under Test) MUST resolve relative `file://` paths specified in the Software Catalog (`model.json`) relative to the workspace/project root directory (not relative to the peer `../udmi` or local execution directory).
+- **Keep Up to Date:** If the `../udmi/` peer subdirectory is configured as a git repository, ensure it matches the current active branch and keep it up to date (e.g., by executing `git pull` in that directory).
 
 ### 2. Install System Dependencies
 To simplify system bootstrapping, you can delegate the installation of all system-level dependencies (such as Mosquitto, mosquitto-clients, expect, and development packages) to the UDMI setup utility:
 
 ```bash
-./udmi/bin/setup_base
+../udmi/bin/setup_base
 ```
-*Note on Privileges:* Running `./udmi/bin/setup_base` is **optional** if you already have the required dependencies (Python 3.8+, Java 11+, Mosquitto broker, mosquitto-clients, and expect) pre-installed on your system.
+*Note on Privileges:* Running `../udmi/bin/setup_base` is **optional** if you already have the required dependencies (Python 3.8+, Java 11+, Mosquitto broker, mosquitto-clients, and expect) pre-installed on your system.
 *(On macOS, please install Mosquitto and Java via Homebrew manually: `brew install mosquitto openjdk`)*
 
 ## Project Structure
@@ -60,26 +60,27 @@ The communication bus specification complies with the `uufi.md` specification (`
 - **Environment Variable**: If the `BUTLER_CONN_SPEC` environment variable is defined in the shell, you must explicitly pass that specification value as the connection argument to all tools:
   ```bash
   # Example if BUTLER_CONN_SPEC is set
-  bin/setup udmi_site_model $BUTLER_CONN_SPEC
+  bin/setup $BUTLER_CONN_SPEC
   ```
 
 ### 3. Initialize the Local Workspace and Broker Setup
 To prevent execution conflicts when running multiple disparate implementations side-by-side using the same UDMI install directory, always run from your respective local working directory and use unique ports and cloned site models.
 
-First, create a local clone of the test site model under your working directory's UDMI subdirectory:
+First, copy the pre-existing test site model from the shared peer `../udmi` directory into a local `testing/udmi_site_model` directory. This creates an isolated local workspace site model that we can safely modify during testing without affecting other parallel trials or the shared resource:
 ```bash
-./udmi/bin/clone_model
+mkdir -p testing
+cp -r ../udmi/sites/udmi_site_model testing/udmi_site_model
 ```
 
-Next, define your chosen unique port (e.g., `40050`) as a shell variable, run the setup script to prepare the communication bus, and perform a connectivity check. If the local MQTT broker is not already running on that port, the setup script will automatically invoke the local UDMI tool (specifically `udmi/bin/start_local`) to start it on that unique port. Note that the `<site_id>` parameter (e.g. `udmi_site_model`) must be supplied as the first positional argument to the setup script:
+Next, define your chosen unique port (e.g., `40050`) as a shell variable, run the setup script to prepare the communication bus, and perform a connectivity check. If the local MQTT broker is not already running on that port, the setup script will automatically invoke the peer UDMI tool (specifically `../udmi/bin/start_local`) to start it on that unique port:
 ```bash
 # Define your unique port
 mqtt_port=40050
 
-# Run the setup script using the port variable and target site ID
-bin/setup udmi_site_model mqtt://localhost:$mqtt_port/
+# Run the setup script using the port variable
+bin/setup mqtt://localhost:$mqtt_port/
 ```
-**Expected behavior:** The setup utility verifies that the local `udmi/` subdirectory exists (raising a hard fail on startup if it is missing). It then checks port `$mqtt_port` connectivity and automatically invokes the UDMI local setup utility (`./udmi/bin/start_local`) to start and configure the local MQTT broker in non-sudo mode on your unique port.
+**Expected behavior:** The setup utility verifies that the sibling/peer `../udmi` directory or link exists (raising a hard fail on startup if it is missing). It then checks port `$mqtt_port` connectivity and automatically invokes the UDMI local setup utility (`../udmi/bin/start_local`) to start and configure the local MQTT broker in non-sudo mode on your unique port.
 
 ## Manual Operation
 
@@ -89,31 +90,31 @@ To run the components individually and observe their behavior:
 
 ### 1. Start the Orchestrator
 ```bash
-bin/butler udmi_site_model mqtt://localhost:$mqtt_port/
+bin/butler mqtt://localhost:$mqtt_port/
 ```
 **Expected behavior:** The orchestrator starts, outputs its connectivity parameters to stderr, and reactively waits for model updates and state messages over the UUFI bus on the unique port to coordinate updates.
 
 ### 2. Start the Verifier (Optional)
 The verifier monitors the bus and validates device state transitions.
 ```bash
-bin/verifier udmi_site_model mqtt://localhost:$mqtt_port/
+bin/verifier mqtt://localhost:$mqtt_port/
 ```
 **Expected behavior:** The verifier starts, outputs its connectivity parameters, and listens to State and Config messages, logging compliant state transitions and any validation errors.
 
 ### 3. Start the Device Under Test (Pubber DUT)
-Using the standard UDMI/UUFI client located in the local `udmi/` subdirectory (executed from your working directory):
+Using the standard UDMI/UUFI client located in the peer `../udmi/` directory (executed from your working directory and pointing to your local site model copy):
 ```bash
-./udmi/bin/start_dut ./udmi/sites/udmi_site_model mqtt://localhost:$mqtt_port/ AHU-1 "uufi-serial"
+../udmi/bin/start_dut testing/udmi_site_model mqtt://localhost:$mqtt_port/ AHU-1 "uufi-serial"
 ```
 **Expected behavior:** The simulated device starts up, connects to the local broker on the unique port, and begins publishing periodic state reports including its current running software version.
 
 ### 4. Trigger a Managed Update
-Initiate a managed software update by updating the expected version configuration in the site model and publishing a model update event over the UUFI bus:
+Initiate a managed software update by updating the expected version configuration in the local site model and publishing a model update event over the UUFI bus:
 ```bash
-./udmi/bin/site_trigger update ./udmi/sites/udmi_site_model AHU-1 system 1.1.0
+../udmi/bin/site_trigger update testing/udmi_site_model AHU-1 system 1.1.0
 ```
 **Expected behavior:**
-- The `site_trigger` utility updates the physical site model on disk and publishes a `model/cloud` update event.
+- The `site_trigger` utility (located in the peer `../udmi/bin/`) updates the local physical site model on disk and publishes a `model/cloud` update event.
 - The **Butler** detects the version drift, queries the Software Catalog (`udmi_blob_store/model.json`) for package metadata, and publishes a `blobset` config payload instructing the device to upgrade.
 - The **Device** (DUT) transitions to the `pending` state to apply the update.
 - Upon completion, the device reports `success` and its new actual version `1.1.0` in its state messages, transitioning the system to the `quiescent` state.
@@ -124,7 +125,7 @@ Initiate a managed software update by updating the expected version configuratio
 ### Smoke Test
 Run a quick end-to-end smoke test that verifies basic component connectivity on the unique port:
 ```bash
-bin/smokeit udmi_site_model mqtt://localhost:$mqtt_port/
+bin/smokeit mqtt://localhost:$mqtt_port/
 ```
 **Expected behavior:** The script will launch temporary instances of the system components, run a sample update, and output "Smoke test passed" (or a detailed error if something is misconfigured). To ensure reliable execution against standard Pubber devices, the `smokeit` utility will log any Pubber-specific state transition limitations as soft warnings rather than hard failures.
 

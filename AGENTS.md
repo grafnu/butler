@@ -8,24 +8,27 @@ mqtt and mosquitto are available on the system.
 
 If the BUTLER_CONN_SPEC env variable is defined, it should use that as the connectivity specification passed in to all tools.
 The tools should not use BUTLER_CONN_SPEC directly, but rather the caller should explicitly add it to the command line.
-The specification should conform to the `uufi.md` spec (located within the local `udmi/` directory under `udmi/docs/specs/uufi.md`) as defined. Otherwise, the tests should use `mqtt://<branchname>@localhost/` as
+The specification should conform to the `uufi.md` spec (located within the peer `udmi/` directory under `../udmi/docs/specs/uufi.md`) as defined. Otherwise, the tests should use `mqtt://<branchname>@localhost/` as
 the specification, where `<branchname>` is the current git branch (defaulting to `unknown` if not in a git directory).
 
-<!-- ASSUMPTION: User direct command overrides the file edit restriction on AGENTS.md for this setup update. -->
-The `udmi/` directory must exist as a local subdirectory directly within the workspace (e.g., extracted from an archive or populated by any other means). All tools must verify this filesystem layout on startup and immediately raise a hard error if the local `udmi/` directory is not found (this is the only startup requirement that will cause a hard fail).
+<!-- ASSUMPTION: Sibling/Peer udmi directory (at ../udmi) is a shared, read-only resource. User direct command overrides the file edit restriction on AGENTS.md for this setup update. -->
+The `udmi` (directory or link) must exist as a peer directory directly sibling to the repository directory (e.g., at `../udmi` relative to the workspace root). All tools must verify this filesystem layout on startup and immediately raise a hard error if the sibling/peer `udmi` directory or link is not found (this is the only startup requirement that will cause a hard fail).
 
-**Expected Directory Structure and Utilities:**
-- `udmi/bin/setup_base`: Sudo/system package setup script (optional if system dependencies like mosquitto, openjdk, and expect are already satisfied).
-- `udmi/bin/start_local`: Tool used to automatically spin up a local broker if not already running on the testing port.
-- `udmi/bin/clone_model`: Tool used to clone standard site models locally.
-- `udmi/bin/start_dut`: Tool used to launch the Pubber Device Under Test.
-- `udmi/bin/site_trigger`: Tool used to simulate expected version model updates over the UUFI bus.
-- `udmi/docs/specs/uufi.md`: Formal communication bus specification.
+**Shared and Read-Only Resource Constraints:**
+The peer `udmi` directory/link is a shared resource and MUST be treated as read-only. It is only suitable for running standard immutable executables or referencing static specs/metadata. Modifying files directly within `../udmi/` (such as cloning site models there) is strictly prohibited to prevent race conditions during multi-implementation runs.
 
-There are no requirements placed on source control mechanism or git cloning for this subdirectory. *If* the `udmi/` directory is a git repo, then it should be kept up to date with the currently configured branch (using a `git pull` in that directory).
+**Expected Peer Directory Structure and Utilities:**
+- `../udmi/bin/setup_base`: Sudo/system package setup script (optional if system dependencies like mosquitto, openjdk, and expect are already satisfied).
+- `../udmi/bin/start_local`: Tool used to automatically spin up a local broker if not already running on the testing port.
+- `../udmi/bin/clone_model`: Tool used to clone standard site models (for reference).
+- `../udmi/bin/start_dut`: Tool used to launch the Pubber Device Under Test.
+- `../udmi/bin/site_trigger`: Tool used to simulate expected version model updates over the UUFI bus.
+- `../udmi/docs/specs/uufi.md`: Formal communication bus specification.
+
+There are no requirements placed on source control mechanism or git cloning for this peer directory. *If* the peer `udmi` directory is a git repo, then it should be kept up to date with the currently configured branch (using a `git pull` in that directory).
 
 **Relative Path Resolution Rule:**
-All components MUST resolve relative `file://` paths defined in the Software Catalog (`model.json`) relative to the project workspace root directory, regardless of which subdirectory (including `./udmi/`) they are executed from. This ensures path consistency across testing configurations.
+All components MUST resolve relative `file://` paths defined in the Software Catalog (`model.json`) relative to the project workspace root directory, regardless of which subdirectory they are executed from. This ensures path consistency across testing configurations.
 
 
 * For `mqtt` connections, the only valid hostname for testing is `localhost`

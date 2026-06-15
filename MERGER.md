@@ -97,8 +97,8 @@ mqtt_port=$(python3 -c "import socket; s = socket.socket(); s.bind(('', 0)); pri
 echo "Using dynamic free port: $mqtt_port"
 
 # Run setup and smokeit utilizing the unique port
-impl/A/bin/setup udmi_site_model mqtt://localhost:$mqtt_port/
-impl/A/bin/smokeit udmi_site_model mqtt://localhost:$mqtt_port/
+impl/A/bin/setup mqtt://localhost:$mqtt_port/
+impl/A/bin/smokeit mqtt://localhost:$mqtt_port/
 ```
 
 Run the tests all in parallel at the same time, using different

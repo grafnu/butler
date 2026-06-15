@@ -60,7 +60,7 @@ This provider is optimized for local integration testing, offline development, a
 #### 2.1.2. URI Scheme
 *   **Scheme:** `file://`
 *   **Format:** `file://{absolute_or_relative_path_to_bundle_file}`
-*   **Resolution:** The recipient client strips the `file://` scheme to resolve the path on the local file system. To ensure path consistency when components (such as the Device Under Test) are executed from different working directories (like the `./udmi/` subdirectory), all components MUST resolve relative path structures (e.g., `file://udmi_blob_store/packages/...`) relative to the project/workspace root directory.
+*   **Resolution:** The recipient client strips the `file://` scheme to resolve the path on the local file system. To ensure path consistency when components (such as the Device Under Test) are executed from different working directories (like the peer `../udmi` directory or subdirectories), all components MUST resolve relative path structures (e.g., `file://udmi_blob_store/packages/...`) relative to the project/workspace root directory.
 
 #### 2.1.3. Security & Authentication
 *   **Mechanism:** Standard POSIX file-level read permissions. No cryptographic signatures or network-level authentication headers are required.

@@ -2,7 +2,7 @@
 
 The **Butler** is a declarative, state-based fleet management engine for managed software updates. It coordinates updates across a
 fleet of devices by managing a state machine for individual device blob updates using the UUFI interface. UUFI is a message
-based interface as part of the UDMI system defined by the path `udmi/docs/specs/uufi.md` within the local `udmi/` subdirectory.
+based interface as part of the UDMI system defined by the path `docs/specs/uufi.md` within the peer `udmi/` directory (at `../udmi/docs/specs/uufi.md` relative to the workspace root).
 
 ## 1. Project Structure
 
@@ -39,7 +39,7 @@ The **Butler** is a stateless, reactive fleet reconciliation engine whose sole s
 - **Stateless Restarts & Network Discovery:** If the Butler process restarts, all in-memory tracking is reset. Sourcing of both expected and actual states occurs exclusively over the UUFI network interface (the Butler has no direct file-level access to the `site_model` on disk):
   1. **Expected Version Discovery:** On startup, the Butler discovers expected/desired versions by publishing a UUFI Model Query (`query/cloud` as defined in `uufi.md`) to `/uufi/c/query/cloud`, where the UUFI gateway (which *does* have site-model access) replies with the expected version configurations.
   2. **Actual Version Discovery:** The Butler simply waits until it receives a dynamic State update from a device to determine its actual version. In local test environments, this actual state report is typically initiated manually or triggered on-demand using standard testing utilities.
-- **Handshake Compliance:** Butler MUST NOT initiate its own handshake; it MUST instead respond to handshake state messages from Devices and Verifiers with the appropriate config reply as defined in UUFI. Handshake message structures and sequence steps are governed exclusively by the local `udmi/docs/specs/uufi.md` specification; local implementations MUST NOT introduce custom local handshake parameters.
+- **Handshake Compliance:** Butler MUST NOT initiate its own handshake; it MUST instead respond to handshake state messages from Devices and Verifiers with the appropriate config reply as defined in UUFI. Handshake message structures and sequence steps are governed exclusively by the peer `../udmi/docs/specs/uufi.md` specification; local implementations MUST NOT introduce custom local handshake parameters.
 - **State Machine:**
   - `unknown`: Initial tracking state before any device report is received.
   - `quiescent`: Expected/Desired Version == Actual/Current Version.
@@ -66,7 +66,7 @@ The **Butler** is a stateless, reactive fleet reconciliation engine whose sole s
 ### 3.2 Model Repository (Desired State)
 - **Outsourced Functionality:** Sourcing and managing the Model Repository (expected configuration and desired state of devices) is completely outsourced to the UDMI environment and handled reactively over the UUFI communication bus. The Butler orchestrator MUST NOT have direct file-system access to the site model, nor does it store any device configuration.
 - **UUFI Sourcing:** The expected/desired versions are discovered and updated strictly via UUFI messages (e.g., publishing a UUFI Model Query `query/cloud` and receiving Model Update events over the bus).
-- **Registry & Device ID (Primary Key):** Composite of `site_id` (registry ID) and `device_id`. Every component MUST explicitly supply or discover `site_id` (registry ID) from either arguments, configurations, or message envelopes. There is NO automatic fallback value (such as 'default'); if `site_id` cannot be explicitly determined, the component MUST terminate with a fatal error.
+- **Global Fleet Scope (Non-Site-Specific):** One instance of Butler (and all other tools) MUST work globally for all sites and devices. There should be NO parameter at all (explicit or implicit) to control or limit which site or registry they process. Butler reactively subscribes to and processes message streams for all site IDs (`site_id`) and device IDs (`device_id`) encountered over the UUFI bus.
 
 ### 3.3 Device Conduit (Client-side / DUT)
 - **Reporting:** Periodically publish the actual/current version (under the standard `system.software.<blob_id>` path), `status`, and `lkg_version` via state messages.
@@ -93,15 +93,13 @@ To ensure interoperability and environmental isolation, tools MUST NOT fail if o
 
 These are the ONLY files that should be in the `bin/` directory.
 
-- **butler <site_id> [conn_spec] [-f]**: Starts the system orchestrator.
-- **setup <site_id> [conn_spec]**: Ensures the local environment (e.g., MQTT broker) is ready.
-- **verifier <site_id> [conn_spec]**: Starts the independent verification tool.
-- **smokeit <site_id> [conn_spec]**: Basic integration test.
+- **butler [conn_spec] [-f]**: Starts the system orchestrator.
+- **setup [conn_spec]**: Ensures the local environment (e.g., MQTT broker) is ready.
+- **verifier [conn_spec]**: Starts the independent verification tool.
+- **smokeit [conn_spec]**: Basic integration test.
 
 ### 6.1 CLI Compatibility Note
-To ensure interoperability, implementations MUST correctly handle the transition from positional to optional arguments. A common pitfall is allowing an optional `[conn_spec]` to consume the first required positional argument (e.g., `site_id`). Implementations MUST inspect the first positional argument and, if it does not match a valid connection schema (e.g., `mqtt://`), treat it as the first functional argument of the tool.
-
-The startup connectivity output MUST use the resolved numeric port (e.g., `1883`) for the `port` field; it MUST NOT be `None` or empty. If a connection string does not specify a path (and thus has no prefix), the `prefix` parameter MUST be output as `None` (e.g., `prefix=None`).
+To ensure interoperability, the startup connectivity output MUST use the resolved numeric port (e.g., `1883`) for the `port` field; it MUST NOT be `None` or empty. If a connection string does not specify a path (and thus has no prefix), the `prefix` parameter MUST be output as `None` (e.g., `prefix=None`).
 
 ## 7. Standard Configuration Environment Variables
 
@@ -111,7 +109,6 @@ The startup connectivity output MUST use the resolved numeric port (e.g., `1883`
 - **`BUTLER_BLOBS_DIR`**: Base directory for local packages when using the `local` provider (default: `udmi_blob_store/packages`).
 - **`BUTLER_GCS_BUCKET`**: Target Google Cloud Storage bucket name when using the `gcs` provider (e.g., `my-update-bucket`).
 - **`BUTLER_TIMEOUT`**: Timeout for `pending` state transitions (default: `60`).
-- **`BUTLER_REGISTRY_ID`**: Specifies the site/registry ID to be used explicitly when not supplied as a positional CLI argument. If neither `BUTLER_REGISTRY_ID` nor a positional argument provides the site ID, components MUST fail immediately.
 - **`GOOGLE_APPLICATION_CREDENTIALS`**: Optional path to GCP Service Account JSON key file used by the `gcs` provider to authenticate and sign URLs.
 
 ## 8. Robustness
@@ -151,53 +148,54 @@ Consistent log prefixes and formats are essential for multi-implementation integ
 
 The fourth tier of the system verification pipeline builds directly on top of the generic UUFI development environment (reusing Scope 1: Infrastructure and Scope 2: Pubber DUT from `uufi.md` Section 9). It replaces the low-level UUFI test client (Scope 3) with the **Butler Orchestrator**, executing a complete state-based firmware update and rollback orchestration cycle over the active broker.
 
-To ensure that multiple disparate implementations can be run side-by-side using the same UDMI install directory without conflicts, created systems MUST be run independently in their respective local directories. This requires:
-1. **Model Cloning:** Run the UDMI `bin/clone_model` tool from the working directory to create a copy of the `udmi_site_model` for testing.
+To ensure that multiple disparate implementations can be run side-by-side using the same shared UDMI installation without conflicts, created systems MUST be run independently in their respective local directories. This requires:
+1. **Model Cloning:** Copy the pre-existing test site model from the shared peer `../udmi/sites/udmi_site_model` directory into your local `testing/udmi_site_model` workspace directory.
 2. **Port Selection:** Choose and use a unique port (e.g., in the range `40000-50000`) for running the local MQTT broker to prevent port conflicts with other side-by-side runs.
-3. **Working Directory Execution:** Execute all UDMI commands from their respective working directories.
+3. **Working Directory Execution:** Execute all UDMI commands using the executables in the shared peer `../udmi/bin/` folder.
 
 ### 10.1. Local Environment Preparation
-First, create a local copy of the test site model by executing `bin/clone_model` from the UDMI subdirectory of your working directory:
+First, copy the pre-existing test site model from the shared peer `../udmi` directory into a local `testing/udmi_site_model` directory to establish an isolated local site model copy:
 ```bash
-./udmi/bin/clone_model
+mkdir -p testing
+cp -r ../udmi/sites/udmi_site_model testing/udmi_site_model
 ```
 
-Next, run the Butler setup utility to prepare the environment (initializing local workspace directories, local model files, and other Butler-specific resources). The utility must first verify that the local `udmi/` directory exists directly within the workspace, immediately raising a hard fail if it is missing. Define your chosen unique port (e.g. `40050`) as a shell variable, perform a connectivity check on that port, and, if the local broker is not already running on that port, automatically invoke the local UDMI tool (specifically `udmi/bin/start_local`) to start it on that unique port:
+Next, run the Butler setup utility to prepare the environment (initializing local workspace directories, local model files, and other Butler-specific resources). The utility must first verify that the sibling/peer `../udmi` directory or link exists directly, immediately raising a hard fail if it is missing. Define your chosen unique port (e.g. `40050`) as a shell variable, perform a connectivity check on that port, and, if the local broker is not already running on that port, automatically invoke the peer UDMI tool (specifically `../udmi/bin/start_local`) to start it on that unique port:
 ```bash
 # Define your unique port
 mqtt_port=40050
 
-# Run the setup script using the port variable and site ID
-bin/setup udmi_site_model mqtt://localhost:$mqtt_port/
+# Run the setup script using the port variable
+bin/setup mqtt://localhost:$mqtt_port/
 ```
 
 ### 10.2. Starting the Butler Orchestrator
 Launch the core Butler orchestrator. It will connect to the running MQTT broker on the unique port and act as the authoritative Cloud Model Server on the UUFI bus:
 ```bash
-bin/butler udmi_site_model mqtt://localhost:$mqtt_port/
+bin/butler mqtt://localhost:$mqtt_port/
 ```
 
 ### 10.3. Starting the Independent Verifier
 Run the verifier tool in a separate terminal:
 ```bash
-bin/verifier udmi_site_model mqtt://localhost:$mqtt_port/
+bin/verifier mqtt://localhost:$mqtt_port/
 ```
 
 ### 10.4. Starting the Device Under Test (Pubber DUT)
-Launch the simulated on-premise device in a separate terminal, executing the UDMI command from your working directory and pointing to your unique port and cloned site model:
+Launch the simulated on-premise device in a separate terminal, executing the UDMI command from the peer directory and pointing to your unique port and local site model copy:
 ```bash
-./udmi/bin/start_dut ./udmi/sites/udmi_site_model mqtt://localhost:$mqtt_port/ AHU-1 "uufi-serial"
+../udmi/bin/start_dut testing/udmi_site_model mqtt://localhost:$mqtt_port/ AHU-1 "uufi-serial"
 ```
 *Note:* The Butler orchestrator coordinates managed updates. While **Pubber** connects and handshakes successfully, it may fail to fully execute the specific firmware state transitions (`quiescent` -> `pending` -> `success`/`failure`) that a custom UDMI client might report. Let the tests fail on these steps if Pubber lacks full update state-machine capabilities; this is expected behavior to verify platform readiness.
 
 ### 10.5. Triggering a Managed Update (Functional Verification)
-Initiate a managed software update by using UDMI's `site_trigger` utility (executed from your working directory) to mutate the physical site model file on disk and publish the dynamic `model/cloud` update event over the UUFI bus on the unique port:
+Initiate a managed software update by using UDMI's `site_trigger` utility (located in the peer `../udmi/bin/` folder) to mutate the physical site model file on disk and publish the dynamic `model/cloud` update event over the UUFI bus on the unique port:
 ```bash
-./udmi/bin/site_trigger update ./udmi/sites/udmi_site_model AHU-1 system 1.1.0
+../udmi/bin/site_trigger update testing/udmi_site_model AHU-1 system 1.1.0
 ```
 
 ### 10.6. Running Automated Smoke Tests
 To execute a fully automated, non-interactive integration run of Scope 4 (verifying the entire setup, registration, update, rollback, and verification lifecycle) on the chosen unique port, run:
 ```bash
-bin/smokeit udmi_site_model mqtt://localhost:$mqtt_port/
+bin/smokeit mqtt://localhost:$mqtt_port/
 ```
