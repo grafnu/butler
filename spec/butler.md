@@ -64,10 +64,9 @@ The **Butler** is a stateless, reactive fleet reconciliation engine whose sole s
 - **Integrity:** Every blob requires a SHA256 hash for verification.
 
 ### 3.2 Model Repository (Desired State)
-- **Format:** The cloud model MUST follow the full schema defined in UUFI. The physical model follows the immutable `{site_id}/devices/{device_id}/` directory structure of the UDMI/UUFI site_model, where `{site_id}` is the directory name containing `devices` and represents the site/registry ID.
-- **Path Override:** `BUTLER_MODEL_FILE`.
-- **Access:** The local model file is a read-only Software Catalog (no Butler CLI tools modify this database at runtime; any dynamic target version changes are processed reactively over the UUFI bus).
-- **Primary Key:** Composite of `site_id` (registry ID) and `device_id`. Every component MUST explicitly supply or discover `site_id` (registry ID) from either arguments, configurations, or message envelopes. There is NO automatic fallback value (such as 'default'); if `site_id` cannot be explicitly determined, the component MUST terminate with a fatal error.
+- **Outsourced Functionality:** Sourcing and managing the Model Repository (expected configuration and desired state of devices) is completely outsourced to the UDMI environment and handled reactively over the UUFI communication bus. The Butler orchestrator MUST NOT have direct file-system access to the site model, nor does it store any device configuration.
+- **UUFI Sourcing:** The expected/desired versions are discovered and updated strictly via UUFI messages (e.g., publishing a UUFI Model Query `query/cloud` and receiving Model Update events over the bus).
+- **Registry & Device ID (Primary Key):** Composite of `site_id` (registry ID) and `device_id`. Every component MUST explicitly supply or discover `site_id` (registry ID) from either arguments, configurations, or message envelopes. There is NO automatic fallback value (such as 'default'); if `site_id` cannot be explicitly determined, the component MUST terminate with a fatal error.
 
 ### 3.3 Device Conduit (Client-side / DUT)
 - **Reporting:** Periodically publish the actual/current version (under the standard `system.software.<blob_id>` path), `status`, and `lkg_version` via state messages.
@@ -94,10 +93,10 @@ To ensure interoperability and environmental isolation, tools MUST NOT fail if o
 
 These are the ONLY files that should be in the `bin/` directory.
 
-- **butler [conn_spec] [-f]**: Starts the system orchestrator.
-- **setup [conn_spec]**: Ensures the local environment (e.g., MQTT broker) is ready.
-- **verifier [conn_spec]**: Starts the independent verification tool.
-- **smokeit [conn_spec]**: Basic integration test.
+- **butler <site_id> [conn_spec] [-f]**: Starts the system orchestrator.
+- **setup <site_id> [conn_spec]**: Ensures the local environment (e.g., MQTT broker) is ready.
+- **verifier <site_id> [conn_spec]**: Starts the independent verification tool.
+- **smokeit <site_id> [conn_spec]**: Basic integration test.
 
 ### 6.1 CLI Compatibility Note
 To ensure interoperability, implementations MUST correctly handle the transition from positional to optional arguments. A common pitfall is allowing an optional `[conn_spec]` to consume the first required positional argument (e.g., `site_id`). Implementations MUST inspect the first positional argument and, if it does not match a valid connection schema (e.g., `mqtt://`), treat it as the first functional argument of the tool.
@@ -168,20 +167,20 @@ Next, run the Butler setup utility to prepare the environment (initializing loca
 # Define your unique port
 mqtt_port=40050
 
-# Run the setup script using the port variable
-bin/setup mqtt://localhost:$mqtt_port/
+# Run the setup script using the port variable and site ID
+bin/setup udmi_site_model mqtt://localhost:$mqtt_port/
 ```
 
 ### 10.2. Starting the Butler Orchestrator
 Launch the core Butler orchestrator. It will connect to the running MQTT broker on the unique port and act as the authoritative Cloud Model Server on the UUFI bus:
 ```bash
-bin/butler mqtt://localhost:$mqtt_port/
+bin/butler udmi_site_model mqtt://localhost:$mqtt_port/
 ```
 
 ### 10.3. Starting the Independent Verifier
 Run the verifier tool in a separate terminal:
 ```bash
-bin/verifier mqtt://localhost:$mqtt_port/
+bin/verifier udmi_site_model mqtt://localhost:$mqtt_port/
 ```
 
 ### 10.4. Starting the Device Under Test (Pubber DUT)
@@ -200,5 +199,5 @@ Initiate a managed software update by using UDMI's `site_trigger` utility (execu
 ### 10.6. Running Automated Smoke Tests
 To execute a fully automated, non-interactive integration run of Scope 4 (verifying the entire setup, registration, update, rollback, and verification lifecycle) on the chosen unique port, run:
 ```bash
-bin/smokeit mqtt://localhost:$mqtt_port/
+bin/smokeit udmi_site_model mqtt://localhost:$mqtt_port/
 ```

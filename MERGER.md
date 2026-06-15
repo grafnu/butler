@@ -30,15 +30,33 @@ First merge `origin/main` into this branch to make sure all specs and
 other details are up to date.
 
 There are (should be) multiple working subdirectories, each one
-containing a different version of an implementation.  Check the remote
+containing a different version of an implementation. Check the remote
 branches of the form `impl_ID`. Each one is a different implementation
-of the butler spec. Clone each one into the `impl/ID` directory
-(replacing the `_` with the file separator `/`). If they already
-exist, do a fetch and hard reset to make sure they are exact copies of
-the remote origin branch.
+of the butler spec. 
 
-The `venv` based off of `butler/requirements.txt` needs to be setup for each
-subdirectory independently.
+**Cloning and Syncing Branches:**
+To prepare the implementations for testing, list and clone them using the following bash sequence:
+```bash
+# List all remote branches matching impl_*
+git branch -r | grep "origin/impl_"
+
+# Clone/Reset each branch into the corresponding impl/{ID} folder
+# Example for impl_A:
+mkdir -p impl/A
+git clone --branch impl_A --depth 1 https://github.com/google/vibrant.git impl/A
+# Or, if they already exist, sync and hard reset:
+cd impl/A && git fetch origin impl_A && git reset --hard origin/impl_A && cd ../..
+```
+
+**Setting up Independent Virtual Environments:**
+Each implementation must run within its own isolated Python virtual environment based on its specific `requirements.txt`:
+```bash
+# Example for impl/A:
+python3 -m venv impl/A/venv
+source impl/A/venv/bin/activate
+pip install -r impl/A/butler/requirements.txt
+deactivate
+```
 
 Execute the functional equivalent of `smokeit` (found in
 `impl/{ID}/bin/smokeit`) except use the appropriate tools from
@@ -70,6 +88,18 @@ Run the setup and tests multiple times, once for each impl as
 `butler` with another impl as `verifier`. If there are N
 implementations then there should be exactly N*(N-1) test runs.
 Every combination of `butler` & `verifier` should be tested.
+
+**Dynamic Port Allocation for Parallel Runs:**
+To prevent parallel tests from conflicting and causing socket bind/port collisions, you MUST dynamically allocate a unique free port for each parallel broker instance. You can programmatically obtain a free local TCP port in bash using Python's built-in socket utility:
+```bash
+# Allocate a dynamic free port
+mqtt_port=$(python3 -c "import socket; s = socket.socket(); s.bind(('', 0)); print(s.getsockname()[1]); s.close()")
+echo "Using dynamic free port: $mqtt_port"
+
+# Run setup and smokeit utilizing the unique port
+impl/A/bin/setup udmi_site_model mqtt://localhost:$mqtt_port/
+impl/A/bin/smokeit udmi_site_model mqtt://localhost:$mqtt_port/
+```
 
 Run the tests all in parallel at the same time, using different
 prefixes to disambiguate the working sets. All trial runs should

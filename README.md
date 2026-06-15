@@ -9,6 +9,8 @@ The system requires Python 3.8+, Java, and Mosquitto.
 ### 1. Mandatory Local UDMI Subdirectory Setup
 The local `./udmi/` directory must exist directly within the workspace root. Since it is excluded from source control (via `.gitignore`), you must populate it prior to running any system setup or bootstrapping:
 - **Obtain UDMI:** Extract or clone the correct version of the UDMI repository directly into the `./udmi` subdirectory of this workspace.
+- **Expected Layout:** The `./udmi/` subdirectory must contain standard UDMI CLI utilities inside `bin/` (such as `setup_base`, `start_local`, `clone_model`, `start_dut`, `site_trigger`) and the formal UUFI specification file at `docs/specs/uufi.md`.
+- **Relative Path Resolution:** To ensure interoperability across multiple directories, all components (including the Device Under Test) MUST resolve relative `file://` paths specified in the Software Catalog (`model.json`) relative to the workspace/project root directory (not relative to the `./udmi` or execution directory).
 - **Keep Up to Date:** If the `./udmi/` subdirectory is configured as a git repository, ensure it matches the current active branch and keep it up to date (e.g., by executing `git pull` in that directory).
 
 ### 2. Install System Dependencies
@@ -17,6 +19,7 @@ To simplify system bootstrapping, you can delegate the installation of all syste
 ```bash
 ./udmi/bin/setup_base
 ```
+*Note on Privileges:* Running `./udmi/bin/setup_base` is **optional** if you already have the required dependencies (Python 3.8+, Java 11+, Mosquitto broker, mosquitto-clients, and expect) pre-installed on your system.
 *(On macOS, please install Mosquitto and Java via Homebrew manually: `brew install mosquitto openjdk`)*
 
 ## Project Structure
@@ -57,7 +60,7 @@ The communication bus specification complies with the `uufi.md` specification (`
 - **Environment Variable**: If the `BUTLER_CONN_SPEC` environment variable is defined in the shell, you must explicitly pass that specification value as the connection argument to all tools:
   ```bash
   # Example if BUTLER_CONN_SPEC is set
-  bin/setup $BUTLER_CONN_SPEC
+  bin/setup udmi_site_model $BUTLER_CONN_SPEC
   ```
 
 ### 3. Initialize the Local Workspace and Broker Setup
@@ -68,13 +71,13 @@ First, create a local clone of the test site model under your working directory'
 ./udmi/bin/clone_model
 ```
 
-Next, define your chosen unique port (e.g., `40050`) as a shell variable, run the setup script to prepare the communication bus, and perform a connectivity check. If the local MQTT broker is not already running on that port, the setup script will automatically invoke the local UDMI tool (specifically `udmi/bin/start_local`) to start it on that unique port:
+Next, define your chosen unique port (e.g., `40050`) as a shell variable, run the setup script to prepare the communication bus, and perform a connectivity check. If the local MQTT broker is not already running on that port, the setup script will automatically invoke the local UDMI tool (specifically `udmi/bin/start_local`) to start it on that unique port. Note that the `<site_id>` parameter (e.g. `udmi_site_model`) must be supplied as the first positional argument to the setup script:
 ```bash
 # Define your unique port
 mqtt_port=40050
 
-# Run the setup script using the port variable
-bin/setup mqtt://localhost:$mqtt_port/
+# Run the setup script using the port variable and target site ID
+bin/setup udmi_site_model mqtt://localhost:$mqtt_port/
 ```
 **Expected behavior:** The setup utility verifies that the local `udmi/` subdirectory exists (raising a hard fail on startup if it is missing). It then checks port `$mqtt_port` connectivity and automatically invokes the UDMI local setup utility (`./udmi/bin/start_local`) to start and configure the local MQTT broker in non-sudo mode on your unique port.
 
@@ -86,14 +89,14 @@ To run the components individually and observe their behavior:
 
 ### 1. Start the Orchestrator
 ```bash
-bin/butler mqtt://localhost:$mqtt_port/
+bin/butler udmi_site_model mqtt://localhost:$mqtt_port/
 ```
 **Expected behavior:** The orchestrator starts, outputs its connectivity parameters to stderr, and reactively waits for model updates and state messages over the UUFI bus on the unique port to coordinate updates.
 
 ### 2. Start the Verifier (Optional)
 The verifier monitors the bus and validates device state transitions.
 ```bash
-bin/verifier mqtt://localhost:$mqtt_port/
+bin/verifier udmi_site_model mqtt://localhost:$mqtt_port/
 ```
 **Expected behavior:** The verifier starts, outputs its connectivity parameters, and listens to State and Config messages, logging compliant state transitions and any validation errors.
 
@@ -121,9 +124,9 @@ Initiate a managed software update by updating the expected version configuratio
 ### Smoke Test
 Run a quick end-to-end smoke test that verifies basic component connectivity on the unique port:
 ```bash
-bin/smokeit mqtt://localhost:$mqtt_port/
+bin/smokeit udmi_site_model mqtt://localhost:$mqtt_port/
 ```
-**Expected behavior:** The script will launch temporary instances of the system components, run a sample update, and output "Smoke test passed" (or a detailed error if something is misconfigured).
+**Expected behavior:** The script will launch temporary instances of the system components, run a sample update, and output "Smoke test passed" (or a detailed error if something is misconfigured). To ensure reliable execution against standard Pubber devices, the `smokeit` utility will log any Pubber-specific state transition limitations as soft warnings rather than hard failures.
 
 ## Documentation
 For detailed specifications and component requirements, see:

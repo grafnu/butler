@@ -11,8 +11,21 @@ The tools should not use BUTLER_CONN_SPEC directly, but rather the caller should
 The specification should conform to the `uufi.md` spec (located within the local `udmi/` directory under `udmi/docs/specs/uufi.md`) as defined. Otherwise, the tests should use `mqtt://<branchname>@localhost/` as
 the specification, where `<branchname>` is the current git branch (defaulting to `unknown` if not in a git directory).
 
-The `udmi/` directory must exist as a local subdirectory directly within the workspace (e.g., extracted from an archive or populated by any other means). All tools must verify this filesystem layout on startup and immediately raise a hard error if the local `udmi/` directory is not found (this is the only startup requirement that will cause a hard fail). There are no requirements placed on source control mechanism or git cloning for this subdirectory. *If* the `udmi/` directory
-is a git repo, then it should be kept up to date with the currently configured branch (using a `git pull` in that directory).
+<!-- ASSUMPTION: User direct command overrides the file edit restriction on AGENTS.md for this setup update. -->
+The `udmi/` directory must exist as a local subdirectory directly within the workspace (e.g., extracted from an archive or populated by any other means). All tools must verify this filesystem layout on startup and immediately raise a hard error if the local `udmi/` directory is not found (this is the only startup requirement that will cause a hard fail).
+
+**Expected Directory Structure and Utilities:**
+- `udmi/bin/setup_base`: Sudo/system package setup script (optional if system dependencies like mosquitto, openjdk, and expect are already satisfied).
+- `udmi/bin/start_local`: Tool used to automatically spin up a local broker if not already running on the testing port.
+- `udmi/bin/clone_model`: Tool used to clone standard site models locally.
+- `udmi/bin/start_dut`: Tool used to launch the Pubber Device Under Test.
+- `udmi/bin/site_trigger`: Tool used to simulate expected version model updates over the UUFI bus.
+- `udmi/docs/specs/uufi.md`: Formal communication bus specification.
+
+There are no requirements placed on source control mechanism or git cloning for this subdirectory. *If* the `udmi/` directory is a git repo, then it should be kept up to date with the currently configured branch (using a `git pull` in that directory).
+
+**Relative Path Resolution Rule:**
+All components MUST resolve relative `file://` paths defined in the Software Catalog (`model.json`) relative to the project workspace root directory, regardless of which subdirectory (including `./udmi/`) they are executed from. This ensures path consistency across testing configurations.
 
 
 * For `mqtt` connections, the only valid hostname for testing is `localhost`
