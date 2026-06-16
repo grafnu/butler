@@ -7,5 +7,14 @@
         }
       }
     }
+  },
+  "BOS": {
+    "pubber": {
+      "system": {
+        "1.2.0": {
+          "url": "file://udmi_blob_store/packages/BOS/pubber/system/1.2.0/bundle.txt"
+        }
+      }
+    }
   }
 }

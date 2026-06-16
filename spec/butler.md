@@ -101,6 +101,19 @@ These are the ONLY files that should be in the `bin/` directory.
 ### 6.1 CLI Compatibility Note
 To ensure interoperability, the startup connectivity output MUST use the resolved numeric port (e.g., `1883`) for the `port` field; it MUST NOT be `None` or empty. If a connection string does not specify a path (and thus has no prefix), the `prefix` parameter MUST be output as `None` (e.g., `prefix=None`).
 
+### 6.1 UDMI Tools Dependency & Prohibition of Custom Tooling
+Implementations MUST NOT create, bundle, or include custom executable tooling, device clients, or auxiliary scripts (such as custom mock device clients, "mockets", or passive traffic observers) within the workspace.
+* **Hard Dependency on UDMI:** UDMI is considered a hard dependency of the Butler orchestrator.
+* **No Custom Device Simulation (DUT):** Under no circumstances shall an implementation attempt to create, bundle, or execute its own custom simulated device client (DUT) for any purpose (including local development, debugging, and automated integration/smoke testing). All device simulation must be performed strictly using the standard Java-based UDMI DUT client (`./udmi/bin/start_dut` / `pubber`). 
+* **Standard Simulators & Observers:** For device simulation and traffic observation, implementations MUST use standard UDMI/UUFI tools exclusively (specifically `./udmi/bin/start_dut` for starting simulated devices/Pubber, and `./udmi/bin/observe_uufi` for passive topic tree traffic monitoring).
+* **Automated Smoke Testing (`smokeit`):** The automated integration test runner (`smokeit`) MUST NOT embed, spawn, or execute any custom device simulation logic or programmatic inline mock devices. It MUST use the standard UDMI DUT client for verifying device connectivity, handshakes, and baseline integration.
+* **Automatic Audit Verification:** Automated compliance verifiers and audits (e.g., `AUDIT.md`) MUST verify the strict cleanliness of the `bin/` directory and codebase. The presence of any custom simulated device clients or additional executable files beyond the four core tools (`butler`, `setup`, `verifier`, `smokeit`) constitutes an immediate and fatal protocol compliance violation.
+
+### 6.2 CLI Compatibility Note
+To ensure interoperability, implementations MUST correctly handle the transition from positional to optional arguments. A common pitfall is allowing an optional `[conn_spec]` to consume the first required positional argument (e.g., `site_id`). Implementations MUST inspect the first positional argument and, if it does not match a valid connection schema (e.g., `mqtt://`), treat it as the first functional argument of the tool.
+
+The startup connectivity output MUST use the resolved numeric port (e.g., `1883`) for the `port` field; it MUST NOT be `None` or empty. If a connection string does not specify a path (and thus has no prefix), the `prefix` parameter MUST be output as `None` (e.g., `prefix=None`).
+
 ## 7. Standard Configuration Environment Variables
 
 - **`BUTLER_CONN_SPEC`**: Default connection specification URL.
