@@ -88,5 +88,12 @@ Before finishing, the implementation MUST be verified to prevent regressions:
      ```bash
      git push
      ```
+---
 
+## Testing and Spec improvements
+
+1. **Iterative Suggestions**
+   - Display any suggestions for this document that would make future testing runs easier or more consistent.
+   - Display any suggestions for the Butler spec that would improve testability.
+   - Display any suggestions on improvements to the overal workflow to increase speed or reliability.
 
