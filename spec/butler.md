@@ -94,7 +94,7 @@ To ensure interoperability and environmental isolation, tools MUST NOT fail if o
 These are the ONLY files that should be in the `bin/` directory.
 
 - **butler [conn_spec] [-f]**: Starts the system orchestrator.
-- **setup [conn_spec]**: Ensures the local environment (e.g., MQTT broker) is ready.
+- **setup [conn_spec] [--offline]**: Ensures the local environment (e.g., MQTT broker) is ready. The `--offline` flag allows validating dependencies safely inside hermetic, offline test sandboxes without causing network-related pip warnings or retry latency.
 - **verifier [conn_spec]**: Starts the independent verification tool.
 - **smokeit [conn_spec]**: Basic integration test.
 
@@ -123,6 +123,7 @@ The startup connectivity output MUST use the resolved numeric port (e.g., `1883`
 - **`BUTLER_GCS_BUCKET`**: Target Google Cloud Storage bucket name when using the `gcs` provider (e.g., `my-update-bucket`).
 - **`BUTLER_TIMEOUT`**: Timeout for `pending` state transitions (default: `60`).
 - **`GOOGLE_APPLICATION_CREDENTIALS`**: Optional path to GCP Service Account JSON key file used by the `gcs` provider to authenticate and sign URLs.
+- **`UDMIS_REFLECTOR_CONFIG`**: Path or configuration parameters for the UDMIS reflector, used to dynamically configure the reflector and bypass hardcoded cloud model dependencies to enhance portability.
 
 ## 8. Robustness
 
@@ -165,12 +166,13 @@ The fourth tier of the system verification pipeline builds directly on top of th
 
 To ensure that multiple disparate implementations can be run side-by-side using the same shared UDMI installation without conflicts, created systems MUST be run independently in their respective local directories. This requires:
 1. **Model Cloning:** Copy the pre-existing test site model from the shared peer UDMI sites directory into your local workspace testing directory.
-2. **Port Selection:** Choose and use a unique, branch-specific port in the range `40000-50000` (inclusive of `40000`, exclusive of `50000`, i.e., `40000-49999`) for running the local MQTT broker to prevent port conflicts with other side-by-side runs. Implementations MUST calculate this port systematically using the SHA256 cryptographic hash of the active git branch name to align port-selection behavior across all implementation branches:
+2. **Port Selection & Handshake Verification:** Choose and use a unique, branch-specific port in the range `40000-50000` (inclusive of `40000`, exclusive of `50000`, i.e., `40000-49999`) for running the local MQTT broker to prevent port conflicts with other side-by-side runs. Implementations MUST calculate this port systematically using the SHA256 cryptographic hash of the active git branch name to align port-selection behavior across all implementation branches:
    - **Branch Name Extraction:** Determine the active git branch name. If the environment is not a git repository or the branch name cannot be resolved, default to the string `"unknown"`.
    - **Hash Computation:** Compute the SHA256 hash of the resolved branch name string (encoded in UTF-8).
    - **Integer Conversion:** Convert the SHA256 digest bytes (or the hex-encoded digest string) to an integer.
    - **Range Mapping:** Map the integer to the 10,000-port range using modulo, and apply the offset `40000`:
      `port = 40000 + (hash_integer % 10000)`
+   - **Dynamic Port Handshake Verification:** During broker startup, the setup script or test runner MUST perform a socket-scanning check to ensure the calculated port is unoccupied by another daemon process on the host. If a port collision is detected, the utility MUST dynamically negotiate an alternative free port (e.g., by scanning sequentially upward from the initial port or utilizing OS port allocation) to guarantee a clean connection handshake.
 3. **Working Directory Execution:** Execute all UDMI commands using the executables in the shared peer UDMI folder.
 
 ### 10.1. Local Environment Preparation
@@ -178,6 +180,7 @@ To ensure that multiple disparate implementations can be run side-by-side using 
 #### 10.1.1. Automatic Environment & Pip Requirement Validation
 Before copying the site model or configuring resources, the setup pipeline MUST validate the Python runtime environment. If a virtual environment (`venv`) is not currently active, it should be activated or created. Additionally, we must verify that all packages specified in the requirements file (`butler/requirements.txt`) are fully satisfied; if they are not, they must be automatically installed using `pip`.
 The validation sequence MUST dynamically establish the Python virtual environment and automatically execute `pip install` to satisfy dependency requirements prior to executing setup utilities.
+If the `--offline` flag is provided to the setup utility, it MUST NOT attempt to make remote network calls for package verification or installation. Instead, it must either perform package verification using local caches or ignore missing dependencies to guarantee safe, warning-free offline execution inside hermetic test sandboxes without experiencing download retry latencies.
 
 #### 10.1.2. Isolated Site Model Setup
 Establish an isolated copy of the pre-existing test site model by copying the model from the shared peer UDMI sites directory (`../udmi/sites/udmi_site_model`) into the local workspace testing directory (`testing/udmi_site_model`).
@@ -205,9 +208,10 @@ To execute a fully automated, non-interactive integration run of Scope 4 (verify
 Any automated integration test harness (such as `bin/smokeit`) MUST adhere to the following strict operational requirements to ensure reliable, isolated side-by-side executions:
 1. **MQTT Event Loop Activation:** Every MQTT client instance instantiated by the test harness (including log-reading watchers and cloud-mutation triggers) MUST run a background network event loop (via `loop_start()` or equivalent) to actively read and process incoming broker packets (such as QoS=1 `PUBACK` confirmations). Clients MUST NOT call `wait_for_publish()` without an active event loop running, to prevent execution hangs.
 2. **Working Directory and Log Path Resolution:** The test harness MUST execute all external utilities (including `start_dut` or `pubber`) with the working directory explicitly set to the isolated workspace root. Because external utilities write their log outputs (specifically `pubber.log`) relative to their execution working directory, the test harness MUST resolve and monitor the log file path relative to its own local execution directory (e.g., `out/pubber.log` under the workspace root), rather than reading from any global or shared peer directories (such as the peer `udmi` folder), ensuring complete isolation of side-by-side test runs.
-3. **UDMIS Startup Synchronization:** The test harness MUST implement a startup synchronization delay (e.g., waiting for `pod_ready.txt` or a standard timeout of at least 15 seconds) after starting the local UDMIS service pod and BEFORE launching the simulated device (DUT), ensuring all dynamic security roles and MQTT subscriptions are active before the client-initiated handshake begins.
+3. **UDMIS Startup Synchronization & Parallel Daemon Bootstrapping:** The test harness MUST implement a startup synchronization delay (e.g., waiting for `pod_ready.txt` or a standard timeout of at least 15 seconds) after starting the local UDMIS service pod and BEFORE launching the simulated device (DUT), ensuring all dynamic security roles and MQTT subscriptions are active before the client-initiated handshake begins. To optimize execution latency and minimize overall integration test times, the test harness (such as `bin/smokeit`) MUST spin up the Butler Orchestrator and Verifier concurrently in parallel threads or background processes while this synchronization delay is running, rather than waiting for the synchronization period to completely finish before starting those daemons.
 4. **Process Group Isolation and Cleanup:** To prevent lingering orphan or daemon processes (such as background `java`, `etcd`, or `mosquitto` processes) from remaining active on the host after a test run concludes or fails, the test harness MUST launch all background services (including Butler, Verifier, UDMIS, and the simulated DUT) in distinct, isolated process groups (e.g., using `preexec_fn=os.setsid` or equivalent process group detachment). Upon termination, the test harness MUST signal the entire process group (e.g., sending `SIGTERM` to the process group ID via `killpg`) to guarantee that all spawned sub-children are successfully reaped and terminated.
-   - **Signal Hooking and Exit Traps:** Runner scripts and test harnesses MUST register signal handlers/traps for standard termination signals (specifically `SIGINT` and `SIGTERM`) and normal exits:
+   - **Signal Hooking and Exit Traps:** Runner scripts and test harnesses (specifically `bin/smokeit`) MUST register signal handlers/traps for standard termination signals (specifically `SIGINT` and `SIGTERM`) and normal exits to guarantee the immediate and clean teardown of all background processes (specifically `etcd`, `mosquitto`, and UDMIS/`java`) on unexpected user interrupts, completely preventing leaked ports and zombie processes during rapid local development:
      - *Python Harnesses:* MUST catch `KeyboardInterrupt` and register handlers with Python's signal module to invoke process group termination on all active child process groups.
      - *Bash Runner Scripts:* MUST register a trap on standard exit and termination signals to automatically terminate all background jobs.
    - This automatic cleanup MUST occur reliably on both success and failure, preventing port leakage, zombie processes, and resource conflicts between rapid sequential test cycles.
+5. **Dynamic Reflector Mapping:** The UDMIS reflector component MUST utilize dynamic configurations based on local environment variables to bypass hardcoded cloud model dependencies, enhancing portability across different testing environments.
