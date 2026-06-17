@@ -212,3 +212,9 @@ To execute a fully automated, non-interactive integration run of Scope 4 (verify
 ```bash
 bin/smokeit mqtt://localhost:$mqtt_port/
 ```
+
+### 10.7. Automated Smoke Test Specifications
+Any automated integration test harness (such as `bin/smokeit`) MUST adhere to the following strict operational requirements to ensure reliable, isolated side-by-side executions:
+1. **MQTT Event Loop Activation:** Every MQTT client instance instantiated by the test harness (including log-reading watchers and cloud-mutation triggers) MUST run a background network event loop (via `loop_start()` or equivalent) to actively read and process incoming broker packets (such as QoS=1 `PUBACK` confirmations). Clients MUST NOT call `wait_for_publish()` without an active event loop running, to prevent execution hangs.
+2. **Working Directory and Log Path Resolution:** The test harness MUST execute all external utilities (including `start_dut` or `pubber`) with the working directory explicitly set to the isolated workspace root. Because external utilities write their log outputs (specifically `pubber.log`) relative to their execution working directory, the test harness MUST resolve and monitor the log file path relative to its own local execution directory (e.g., `out/pubber.log` under the workspace root), rather than reading from any global or shared peer directories (such as the peer `udmi` folder), ensuring complete isolation of side-by-side test runs.
+3. **UDMIS Startup Synchronization:** The test harness MUST implement a startup synchronization delay (e.g., waiting for `pod_ready.txt` or a standard timeout of at least 15 seconds) after starting the local UDMIS service pod and BEFORE launching the simulated device (DUT), ensuring all dynamic security roles and MQTT subscriptions are active before the client-initiated handshake begins.

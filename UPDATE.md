@@ -55,6 +55,7 @@ Before finishing, the implementation MUST be verified to prevent regressions:
      ```bash
      bin/setup
      ```
+   - **Shared Port Prohibition:** To allow simultaneous test runs on the same machine, sharing default MQTT ports (e.g., `1883`, `8883`) or etcd ports is strictly prohibited. The system MUST dynamically allocate or negotiate isolated, non-default ports for the local MQTT broker and etcd instances (such as a random high port or an offset derived from the workspace/branch) to completely prevent cross-instance interference.
    - *No Diagnosis of UDMIS Errors:* The system MUST NOT attempt to diagnose or fix any potential errors with UDMIS. Specifically, when starting the broker or DUT, it should either work as specified or report an error. The system should either start up and work as intended, or fail with a clear error indicating that the UDMIS specification or system is broken.
    - *Blobstore Provider Configuration:* During this automated update flow, the system must default to a local provider. It is acceptable to specify a non-local `BUTLER_BLOBSTORE_PROVIDER` (such as `gcs`) ONLY if it is explicitly configured via environment variables and all necessary authentication and cloud resources are already set up.
 
