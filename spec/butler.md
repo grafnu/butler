@@ -104,7 +104,7 @@ To ensure interoperability, the startup connectivity output MUST use the resolve
 ### 6.1 UDMI Tools Dependency & Prohibition of Custom Tooling
 Implementations MUST NOT create, bundle, or include custom executable tooling, device clients, or auxiliary scripts (such as custom mock device clients, "mockets", or passive traffic observers) within the workspace.
 * **Hard Dependency on UDMI:** UDMI is considered a hard dependency of the Butler orchestrator.
-* **No Custom Device Simulation (DUT):** Under no circumstances shall an implementation attempt to create, bundle, or execute its own custom simulated device client (DUT) for any purpose (including local development, debugging, and automated integration/smoke testing). All device simulation must be performed strictly using the standard Java-based UDMI DUT client (`./udmi/bin/start_dut` / `pubber`). 
+* **No Custom Device Simulation (DUT):** Under no circumstances shall an implementation attempt to create, bundle, or execute its own custom simulated device client (DUT) for any purpose (including local development, debugging, and automated integration/smoke testing). All device simulation must be performed strictly using the standard Java-based UDMI DUT client (`./udmi/bin/start_dut` / `pubber`).
 * **Standard Simulators & Observers:** For device simulation and traffic observation, implementations MUST use standard UDMI/UUFI tools exclusively (specifically `./udmi/bin/start_dut` for starting simulated devices/Pubber, and `./udmi/bin/observe_uufi` for passive topic tree traffic monitoring).
 * **Automated Smoke Testing (`smokeit`):** The automated integration test runner (`smokeit`) MUST NOT embed, spawn, or execute any custom device simulation logic or programmatic inline mock devices. It MUST use the standard UDMI DUT client for verifying device connectivity, handshakes, and baseline integration.
 * **Automatic Audit Verification:** Automated compliance verifiers and audits (e.g., `AUDIT.md`) MUST verify the strict cleanliness of the `bin/` directory and codebase. The presence of any custom simulated device clients or additional executable files beyond the four core tools (`butler`, `setup`, `verifier`, `smokeit`) constitutes an immediate and fatal protocol compliance violation.
@@ -129,6 +129,9 @@ The startup connectivity output MUST use the resolved numeric port (e.g., `1883`
 - **Idempotency:** All components MUST be idempotent.
 - **Deduplication:** Track message `transaction_id` (or `transactionId` in envelope) for at least 5 minutes. Implementations MUST support tracking transaction IDs as arbitrary string values (which can include 8-digit hex strings, UUIDs, or structured session strings like `UUFI:sess123:001`). This deduplication filter MUST be applied to incoming Model Update and Command/Config messages to prevent duplicate transition actions, but MUST NOT discard or skip processing of incoming Device State reports (which are authoritative and must always be processed immediately).
 - **Partial Merge:** `cloud` model `UPDATE` operations MUST be partial merges at the device subsystem level; existing fields not in the payload MUST NOT be modified.
+- **Envelope Key Standardization:** To prevent integration-time validator warnings (such as `"redundant subType in envelope"` and `"redundant deviceRegistryId in envelope"`), implementations MUST adhere to strict envelope schema rules:
+  - **`subType` Elimination:** The `subType` attribute MUST NOT be included in the envelope of device state (`state`) or command/config (`config`) messages where the topic structure itself or the context already determines the subtype.
+  - **`deviceRegistryId` Minimization:** The `deviceRegistryId` (representing the `site_id` in local UUFI contexts) MUST NOT be populated in local device-scoped message envelopes where the registry identity is already fully established or implied by the endpoint topic path, ensuring standard compliant validation.
 
 ## 9. Verification and Observability
 
@@ -157,61 +160,46 @@ Consistent log prefixes and formats are essential for multi-implementation integ
   - `result`: (Optional) One of `pass` or `fail` (case-insensitive).
 
 ## 10. Development and Testing Workflow (Scope 4)
-<!-- ASSUMPTION: User direct command overrides the general spec edit restrictions of AGENTS.md -->
 
 The fourth tier of the system verification pipeline builds directly on top of the generic UUFI development environment (reusing Scope 1: Infrastructure and Scope 2: Pubber DUT from `uufi.md` Section 9). It replaces the low-level UUFI test client (Scope 3) with the **Butler Orchestrator**, executing a complete state-based firmware update and rollback orchestration cycle over the active broker.
 
 To ensure that multiple disparate implementations can be run side-by-side using the same shared UDMI installation without conflicts, created systems MUST be run independently in their respective local directories. This requires:
-1. **Model Cloning:** Copy the pre-existing test site model from the shared peer `../udmi/sites/udmi_site_model` directory into your local `testing/udmi_site_model` workspace directory.
-2. **Port Selection:** Choose and use a unique port (e.g., in the range `40000-50000`) for running the local MQTT broker to prevent port conflicts with other side-by-side runs.
-3. **Working Directory Execution:** Execute all UDMI commands using the executables in the shared peer `../udmi/bin/` folder.
+1. **Model Cloning:** Copy the pre-existing test site model from the shared peer UDMI sites directory into your local workspace testing directory.
+2. **Port Selection:** Choose and use a unique, branch-specific port in the range `40000-50000` (inclusive of `40000`, exclusive of `50000`, i.e., `40000-49999`) for running the local MQTT broker to prevent port conflicts with other side-by-side runs. Implementations MUST calculate this port systematically using the SHA256 cryptographic hash of the active git branch name to align port-selection behavior across all implementation branches:
+   - **Branch Name Extraction:** Determine the active git branch name. If the environment is not a git repository or the branch name cannot be resolved, default to the string `"unknown"`.
+   - **Hash Computation:** Compute the SHA256 hash of the resolved branch name string (encoded in UTF-8).
+   - **Integer Conversion:** Convert the SHA256 digest bytes (or the hex-encoded digest string) to an integer.
+   - **Range Mapping:** Map the integer to the 10,000-port range using modulo, and apply the offset `40000`:
+     `port = 40000 + (hash_integer % 10000)`
+3. **Working Directory Execution:** Execute all UDMI commands using the executables in the shared peer UDMI folder.
 
 ### 10.1. Local Environment Preparation
-First, copy the pre-existing test site model from the shared peer `../udmi` directory into a local `testing/udmi_site_model` directory to establish an isolated local site model copy:
-```bash
-mkdir -p testing
-cp -r ../udmi/sites/udmi_site_model testing/udmi_site_model
-```
 
-Next, run the Butler setup utility to prepare the environment (initializing local workspace directories, local model files, and other Butler-specific resources). The utility must first verify that the sibling/peer `../udmi` directory or link exists directly, immediately raising a hard fail if it is missing. Define your chosen unique port (e.g. `40050`) as a shell variable, perform a connectivity check on that port, and, if the local broker is not already running on that port, automatically invoke the peer UDMI tool (specifically `../udmi/bin/start_local`) to start it on that unique port:
-```bash
-# Define your unique port
-mqtt_port=40050
+#### 10.1.1. Automatic Environment & Pip Requirement Validation
+Before copying the site model or configuring resources, the setup pipeline MUST validate the Python runtime environment. If a virtual environment (`venv`) is not currently active, it should be activated or created. Additionally, we must verify that all packages specified in the requirements file (`butler/requirements.txt`) are fully satisfied; if they are not, they must be automatically installed using `pip`.
+The validation sequence MUST dynamically establish the Python virtual environment and automatically execute `pip install` to satisfy dependency requirements prior to executing setup utilities.
 
-# Run the setup script using the port variable
-bin/setup mqtt://localhost:$mqtt_port/
-```
+#### 10.1.2. Isolated Site Model Setup
+Establish an isolated copy of the pre-existing test site model by copying the model from the shared peer UDMI sites directory (`../udmi/sites/udmi_site_model`) into the local workspace testing directory (`testing/udmi_site_model`).
+
+#### 10.1.3. Running Setup and Starting the Broker
+Next, run the Butler setup utility to prepare the environment (initializing local workspace directories, local model files, and other Butler-specific resources). The utility MUST first verify that the sibling/peer UDMI directory or link exists directly, immediately raising a hard fail if it is missing. Execute the setup utility pointing to the dynamically resolved branch-specific port. If the local broker is not already running on that port, the setup utility MUST automatically invoke the peer UDMI start utility to start it on that unique port.
 
 ### 10.2. Starting the Butler Orchestrator
-Launch the core Butler orchestrator. It will connect to the running MQTT broker on the unique port and act as the authoritative Cloud Model Server on the UUFI bus:
-```bash
-bin/butler mqtt://localhost:$mqtt_port/
-```
+Launch the core Butler orchestrator. It MUST connect to the running MQTT broker on the dynamically resolved branch-specific port and act as the authoritative Cloud Model Server on the UUFI bus.
 
 ### 10.3. Starting the Independent Verifier
-Run the verifier tool in a separate terminal:
-```bash
-bin/verifier mqtt://localhost:$mqtt_port/
-```
+Run the verifier tool in a separate terminal, pointing it to connect to the dynamically resolved branch-specific port on localhost to perform active verification.
 
 ### 10.4. Starting the Device Under Test (Pubber DUT)
-Launch the simulated on-premise device in a separate terminal, executing the UDMI command from the peer directory and pointing to your unique port and local site model copy:
-```bash
-../udmi/bin/start_dut testing/udmi_site_model mqtt://localhost:$mqtt_port/ AHU-1 "uufi-serial"
-```
+Launch the simulated on-premise device in a separate terminal using the standard Java-based UDMI DUT client (`pubber`). Point the client to the isolated site model copy (`testing/udmi_site_model`) and the dynamically resolved branch-specific port.
 *Note:* The Butler orchestrator coordinates managed updates. While **Pubber** connects and handshakes successfully, it may fail to fully execute the specific firmware state transitions (`quiescent` -> `pending` -> `success`/`failure`) that a custom UDMI client might report. Let the tests fail on these steps if Pubber lacks full update state-machine capabilities; this is expected behavior to verify platform readiness.
 
 ### 10.5. Triggering a Managed Update (Functional Verification)
-Initiate a managed software update by using UDMI's `site_trigger` utility (located in the peer `../udmi/bin/` folder) to mutate the physical site model file on disk and publish the dynamic `model/cloud` update event over the UUFI bus on the unique port:
-```bash
-../udmi/bin/site_trigger update testing/udmi_site_model AHU-1 system 1.1.0
-```
+Initiate a managed software update by using UDMI's site trigger utility (located in the peer UDMI folder) to mutate the physical site model file on disk and publish the dynamic update event over the UUFI bus on the dynamically resolved branch-specific port.
 
 ### 10.6. Running Automated Smoke Tests
-To execute a fully automated, non-interactive integration run of Scope 4 (verifying the entire setup, registration, update, rollback, and verification lifecycle) on the chosen unique port, run:
-```bash
-bin/smokeit mqtt://localhost:$mqtt_port/
-```
+To execute a fully automated, non-interactive integration run of Scope 4 (verifying the entire setup, registration, update, rollback, and verification lifecycle), execute the `smokeit` test utility pointing to the dynamically resolved branch-specific port.
 
 ### 10.7. Automated Smoke Test Specifications
 Any automated integration test harness (such as `bin/smokeit`) MUST adhere to the following strict operational requirements to ensure reliable, isolated side-by-side executions:
@@ -219,3 +207,7 @@ Any automated integration test harness (such as `bin/smokeit`) MUST adhere to th
 2. **Working Directory and Log Path Resolution:** The test harness MUST execute all external utilities (including `start_dut` or `pubber`) with the working directory explicitly set to the isolated workspace root. Because external utilities write their log outputs (specifically `pubber.log`) relative to their execution working directory, the test harness MUST resolve and monitor the log file path relative to its own local execution directory (e.g., `out/pubber.log` under the workspace root), rather than reading from any global or shared peer directories (such as the peer `udmi` folder), ensuring complete isolation of side-by-side test runs.
 3. **UDMIS Startup Synchronization:** The test harness MUST implement a startup synchronization delay (e.g., waiting for `pod_ready.txt` or a standard timeout of at least 15 seconds) after starting the local UDMIS service pod and BEFORE launching the simulated device (DUT), ensuring all dynamic security roles and MQTT subscriptions are active before the client-initiated handshake begins.
 4. **Process Group Isolation and Cleanup:** To prevent lingering orphan or daemon processes (such as background `java`, `etcd`, or `mosquitto` processes) from remaining active on the host after a test run concludes or fails, the test harness MUST launch all background services (including Butler, Verifier, UDMIS, and the simulated DUT) in distinct, isolated process groups (e.g., using `preexec_fn=os.setsid` or equivalent process group detachment). Upon termination, the test harness MUST signal the entire process group (e.g., sending `SIGTERM` to the process group ID via `killpg`) to guarantee that all spawned sub-children are successfully reaped and terminated.
+   - **Signal Hooking and Exit Traps:** Runner scripts and test harnesses MUST register signal handlers/traps for standard termination signals (specifically `SIGINT` and `SIGTERM`) and normal exits:
+     - *Python Harnesses:* MUST catch `KeyboardInterrupt` and register handlers with Python's signal module to invoke process group termination on all active child process groups.
+     - *Bash Runner Scripts:* MUST register a trap on standard exit and termination signals to automatically terminate all background jobs.
+   - This automatic cleanup MUST occur reliably on both success and failure, preventing port leakage, zombie processes, and resource conflicts between rapid sequential test cycles.
