@@ -55,6 +55,7 @@ Before finishing, the implementation MUST be verified to prevent regressions:
      ```bash
      bin/setup
      ```
+   - *No Diagnosis of UDMIS Errors:* The system MUST NOT attempt to diagnose or fix any potential errors with UDMIS. Specifically, when starting the broker or DUT, it should either work as specified or report an error. The system should either start up and work as intended, or fail with a clear error indicating that the UDMIS specification or system is broken.
    - *Blobstore Provider Configuration:* During this automated update flow, the system must default to a local provider. It is acceptable to specify a non-local `BUTLER_BLOBSTORE_PROVIDER` (such as `gcs`) ONLY if it is explicitly configured via environment variables and all necessary authentication and cloud resources are already set up.
 
 2. **Execute Code Quality & Unit Tests:**
