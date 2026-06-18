@@ -83,7 +83,7 @@ The **Butler** is a stateless, reactive fleet reconciliation engine whose sole s
 3. **Detection:** The Butler detects a version mismatch between the expected version (live Cloud Model) and actual version (device state), and queries the Software Catalog (`BUTLER_MODEL_FILE`) to find the available package metadata matching the device's `{make}/{model}/{blob_id}/{version}`.
 4. **Command:** The Butler publishes a `blobset` config payload containing the update package URL and validation parameters over the UUFI bus.
 5. **Pending:** The Device reports `pending` state and begins downloading/applying the update.
-6. **Completion:** The Device reports `success` or `failure` (along with its updated actual version and `lkg_version`) in its state reports, transitioning the active tracking loop. The Butler does NOT orchestrate rollbacks; rollback or reversion is managed internally by the device itself or by subsequent manual modification of the immutable `site_model` target.
+6. **Completion:** The Device reports `success` or `failure` (along with its updated actual version and `lkg_version`) in its state reports, transitioning the active tracking loop. The Butler does NOT orchestrate rollbacks; rollback or reversion is managed internally by the device itself or by subsequent manual modification of the immutable `site_model` target. **Compliance Note:** The Orchestrator MUST NEVER trigger an update command to revert a device to an older LKG version upon failure or timeout.
 
 ## 6. Standard Tooling CLI Interface (bin/)
 
