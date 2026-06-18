@@ -71,8 +71,8 @@ Before finishing, the implementation MUST be verified to prevent regressions:
 
 2. **Commit and Push Procedure:**
    - Stage and commit only the allowed changed files (do not use global or untargeted add commands unprompted).
-   - If no functional code changes were required to comply with the specs, create an empty commit to signal the successful run.
-   - If changes were made, propose a clear, concise commit message explaining the updates.
+   - If no functional code changes were required to comply with the specs, create an empty commit with a simple "No changes required" message in the git commit log to signal the successful run.
+   - If changes were made, propose a clear, concise commit message explaining the updates. The system should only summarize *changes* that were actually made and should not describe what tests or checks were performed.
    - Push the committed branch to the remote repository.
 
 ---
