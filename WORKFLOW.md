@@ -1,36 +1,123 @@
-# Updating workflow
+# Developer Workflow and Environment Setup
 
-This document describes the overall workflow for updating the _butler_ spec
-across multiple implementations and resolution. The input is a proposed change
-to the spec, and the output is a release version.
+This document provides a comprehensive guide for setting up the development environment and executing the spec-driven development, integration, and verification lifecycle for the **Butler Managed Update System**.
 
-## Repository structure.
+---
 
-There are three main kinds of branches involved in the overall workflow:
+## 1. Environment Setup
 
-* **`main`**: The branch where the core specifications are managed.
-* **`impl_X`**: A number of independent implementations of the spec.
-* **`gemerger`**: The point of reconciliation (aka `gemerger`) where multiple implementations are cross-tested.
+### Prerequisites
+To develop, build, and test the Butler system, you need the following pre-installed on your system:
+- **Python 3.8+** (Python 3.13 is recommended and utilized in current virtual environments)
+- **Java 11+**
+- **Mosquitto** broker and clients (`mosquitto-clients`)
+- **expect** and development packages (Linux packages)
 
-The ultimate output of the workflow is an implementation in the `gemerger` branch, which is
-a promoted version of one of the versions from an `impl` branch, which source their
-behavioral specifications from the `main` branch. Additionally, if there are relevant
-changes to the spec from the `gemerger` branch, they are migrated back into `main` through
-a metered review process.
+### Step 1: Peer UDMI Directory/Symlink Setup
+The `udmi` directory (or symlink to it) **MUST** exist as a peer directly sibling to the project repository (at `../udmi` relative to the repository root directory).
+- This is a shared, read-only resource. Never modify files inside `../udmi` directly or clone site models there.
+- Ensure it is up to date:
+  ```bash
+  cd ../udmi
+  git pull  # if configured as a git repository
+  ```
 
-## Workflow stages.
+### Step 2: Install System Dependencies
+Install necessary system packages (such as Mosquitto, mosquitto-clients, and expect) by delegating to the UDMI setup utility (Linux-only, macOS developers should use Homebrew):
+```bash
+../udmi/bin/setup_base
+```
+*Note on Privileges:* Running `../udmi/bin/setup_base` is **optional** if you already have the required dependencies pre-installed on your system.
 
-The process involves a number of regimented steps for progressing a specification through the various stages.
+### Spec-Driven Code Generation (REBUILD.md)
+On the clean `main` branch or when bootstrapping a brand-new implementation, the implementation directories `butler/` (core Python logic) and `bin/` (operational executables) may not be pre-populated or checked into the repository.
+- **When to use `REBUILD.md`:** If you are setting up a new implementation from scratch, or need to perform a completely clean, spec-driven rebuild of the codebase to align with changes in `spec/`, you must invoke the agentic build pipeline using `gemini -p @REBUILD.md`.
+- **Process Overview:** The agentic build pipeline completely deletes existing `butler/` and `bin/` directories, parses the formal architectural and protocol specifications in `spec/` (e.g., `butler.md`, `blobstore.md`, `update.md`), and automatically generates/bootstraps compliant source code and wrapper scripts.
 
-The input to this workflow is a proposed _feature_, as a change to the spec, and the output is a promoted _release_.
+---
 
-* _feature_ --> `main`: Features are imported into the main branch as the starting point for an update workflow.
-  * Merge request into `main`
-* `main` --> `impl_X`: The spec is merged into any number of `impl_X` branches and then agentically instantiated.
-  * Automatic merge.
-* `impl_A` + `impl_B` + ... --> `gemerger`: Multiple `impl_X` branches are copied (not merged) into the `gemerger` branch.
-  * Cloned (not merged) versions of multiple implementations into a single workspace.
-* `gemerger` --> `main`: If necessary, recommended spec changes from `gemerger` are extracted and merged back into `main`.
-  * PR generated against the `main` branch (if necessary).
-* `impl_X` --> _release_: As needed, a (one of several) implementation branch is promoted (exported) to an active state.
-  * Tagged version as the explicit release (if testing complete).
+## 2. The Spec-Driven Agentic Development Workflow
+
+The Butler Managed Update System follows a **spec-driven agentic lifecycle** that maintains alignment across multiple disparate implementations (`impl_<id>`), reconciling spec updates back into the `main` branch.
+
+Below is the workflow sequence detailing how to update specifications, update implementation code, run cross-implementation tests, and merge specification updates back to the `main` branch.
+
+```
+                  +-----------------------+
+                  |    impl_<id> Branch   | <-------------------+
+                  |  gemini -p @UPDATE.md |                     |
+                  +-----------+-----------+                     |
+                              |                                 |
+                              v                                 | checkout spec/
+                  +-----------------------+                     |
+                  |    gemerger Branch    |                     |
+                  |  gemini -p @MERGER.md |                     |
+                  +-----------+-----------+                     |
+                              |                                 |
+                              v                                 |
+                  +-----------------------+                     |
+                  |      main Branch      | --------------------+
+                  |     checkout spec     |
+                  +-----------------------+
+```
+
+### Phase 1: Implementation Update and Spec Auditing (`impl_<id>` Branches)
+
+When core specifications under `spec/` in `main` are updated, those changes must be pulled into each implementation branch (`impl_<id>`) and the implementation code updated to comply. This step is automated via the Gemini developer agent using the `UPDATE.md` instructions.
+
+For each implementation branch `impl_<id>` (where `<id>` is the implementation identifier, e.g., `A`, `B`, `C`, or `D`), execute the following in separate terminal windows:
+
+1. **Update and Audit the Implementation:**
+   ```bash
+   cd ../impl_<id>
+   gemini -p @UPDATE.md
+   ```
+   *Action:* Gemini merges `origin/main` into the current branch, parses specifications, and delegates environment preparation, dependency management, port validation, and local smoke testing (`bin/smokeit`) on isolated, branch-mapped MQTT/testing ports directly to the implementation-specific automated scripts and setup skills.
+
+2. **Verify Commit Histories:**
+   After the automated agent processes complete, verify the generated commit messages and ensure the repository remains in a clean, compliant state:
+   ```bash
+   git log
+   ```
+
+### Phase 2: Cross-Implementation Interoperability Testing (`gemerger` Branch)
+
+Once all implementations have updated and verified themselves against the updated specification, reconcile them on the `gemerger` branch to ensure they are fully interoperable. This is automated via the Gemini developer agent using the `MERGER.md` instructions.
+
+Switch to the `gemerger` directory:
+```bash
+cd ../gemerger/
+gemini -p @MERGER.md
+```
+*Action:* Under the hood, Gemini runs a complete cross-implementation matrix:
+- Concurrently fetches and clones/syncs all remote `impl_*` branches into `gemerger/impl/`.
+- Delegates the creation and management of isolated python virtual environments directly to each implementation's own setup skills.
+- Generates and executes the complete `N * (N - 1)` cross-implementation test runs (running each implementation as `butler` against every other implementation as `verifier`, and vice-versa) on dynamically allocated local TCP ports to avoid collisions.
+- Collects test logs into `impl/{ID}.log` and summarizes the results in `impl/test_summary.txt`.
+- If interoperability issues or ambiguities are uncovered, the specifications in `spec/` are dynamically adjusted and updated to achieve full spec compliance.
+- Finally, the updated specs are committed and pushed to `origin/gemerger`.
+
+### Phase 3: Merging Verified Specs Back to `main`
+
+Once the specifications have been refined and proven to be robust through interoperability cross-testing on `gemerger`, the verified changes are checked out back into the `main` branch's `spec/` folder.
+
+In the `main` branch terminal, run:
+```bash
+cd ../main/
+git fetch
+git checkout origin/gemerger -- spec/
+```
+*Action:* This command fetches the latest remote changes and checks out the validated `spec/` files from the `gemerger` branch directly into the local `main` branch workspace, completing the development loop.
+
+---
+
+## 3. Developer Commands Reference Sheet
+
+| Phase / Command | Target Directory / Branch | Purpose / Description |
+| :--- | :--- | :--- |
+| `gemini -p @UPDATE.md` | `impl_<id>` | Merges main, audits specs, adjusts implementation logic, and runs local smoke tests (delegating python and local workspace environment setup to implementation-specific setup skills). |
+| `gemini -p @MERGER.md` | `gemerger` | Executes full concurrent cross-testing of all implementation pairs, refines core specs, and pushes verified specification changes. |
+| `git checkout origin/gemerger -- spec/` | `main` | Imports the verified and refined specifications from the integration branch into the main branch. |
+| `gemini -p @REBUILD.md` | `impl_<id>` / New setup | Bootstraps a brand-new implementation from scratch or performs a clean spec-driven rebuild of `butler/` and `bin/` from files in `spec/`. |
+| `bin/setup mqtt://localhost:<port>/` | Local workspace | Boots up local broker infrastructure on the specified isolated port and configures the UUFI connection spec. |
+| `bin/smokeit mqtt://localhost:<port>/` | Local workspace | Runs the interactive integration smoke test (Orchestrator, Verifier, and simulated DUT) on the specified port. |
