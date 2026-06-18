@@ -94,7 +94,7 @@ To ensure interoperability and environmental isolation, tools MUST NOT fail if o
 These are the ONLY files that should be in the `bin/` directory.
 
 - **butler [conn_spec] [-f]**: Starts the system orchestrator.
-- **setup [conn_spec] [--offline]**: Ensures the local environment (e.g., MQTT broker) is ready. The `--offline` flag allows validating dependencies safely inside hermetic, offline test sandboxes without causing network-related pip warnings or retry latency.
+- **setup [conn_spec] [--offline] [--stop]**: Ensures the local environment (e.g., MQTT broker) is ready, or cleanly shuts down any running background instances using local PID files if `--stop` is specified. The `--offline` flag allows validating dependencies safely inside hermetic, offline test sandboxes without causing network-related pip warnings or retry latency.
 - **verifier [conn_spec]**: Starts the independent verification tool.
 - **smokeit [conn_spec]**: Basic integration test.
 
@@ -166,12 +166,23 @@ The fourth tier of the system verification pipeline builds directly on top of th
 
 To ensure that multiple disparate implementations can be run side-by-side using the same shared UDMI installation without conflicts, created systems MUST be run independently in their respective local directories. This requires:
 1. **Model Cloning:** Copy the pre-existing test site model from the shared peer UDMI sites directory into your local workspace testing directory.
-2. **Port Selection & Handshake Verification:** Choose and use a unique, branch-specific port in the range `40000-50000` (inclusive of `40000`, exclusive of `50000`, i.e., `40000-49999`) for running the local MQTT broker to prevent port conflicts with other side-by-side runs. Implementations MUST calculate this port systematically using the SHA256 cryptographic hash of the active git branch name to align port-selection behavior across all implementation branches:
+2. **Port Selection & Handshake Verification:** Choose and use a unique, branch-specific port in the range `45000-48000` (inclusive of `45000`, exclusive of `48000`, i.e., `45000-47999`) for running the local MQTT broker to prevent port conflicts with other side-by-side runs and avoid potential overlaps with standard system daemons. Implementations MUST calculate this port systematically using the SHA256 cryptographic hash of the active git branch name to align port-selection behavior across all implementation branches:
    - **Branch Name Extraction:** Determine the active git branch name. If the environment is not a git repository or the branch name cannot be resolved, default to the string `"unknown"`.
-   - **Hash Computation:** Compute the SHA256 hash of the resolved branch name string (encoded in UTF-8).
-   - **Integer Conversion:** Convert the SHA256 digest bytes (or the hex-encoded digest string) to an integer.
-   - **Range Mapping:** Map the integer to the 10,000-port range using modulo, and apply the offset `40000`:
-     `port = 40000 + (hash_integer % 10000)`
+   - **Hash Computation:** Compute the 32-byte (256-bit) SHA256 hash of the resolved branch name string (encoded in UTF-8).
+   - **Integer Conversion:** Interpret the entire 32-byte SHA256 hash digest (big-endian) as a single large integer (or interpret its 64-character hex-encoded string representation as a base-16 integer).
+   - **Range Mapping:** Map the integer to the 3,000-port range using modulo, and apply the offset `45000`:
+     `port = 45000 + (hash_integer % 3000)`
+   - **Concrete Hashing Examples:**
+     - **Input branch name `"main"`:**
+       - UTF-8 bytes: `b"main"`
+       - SHA256 hex digest: `0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605`
+       - Base-16 Integer value modulo 3000: `2093`
+       - Resolved numeric port: `47093` (i.e., `45000 + 2093`)
+     - **Input branch name `"unknown"`:**
+       - UTF-8 bytes: `b"unknown"`
+       - SHA256 hex digest: `b23a6a8439c0dde5515893e7c90c1e3233b8616e634470f20dc4928bcf3609bc`
+       - Base-16 Integer value modulo 3000: `988`
+       - Resolved numeric port: `45988` (i.e., `45000 + 988`)
    - **Dynamic Port Handshake Verification:** During broker startup, the setup script or test runner MUST perform a socket-scanning check to ensure the calculated port is unoccupied by another daemon process on the host. If a port collision is detected, the utility MUST dynamically negotiate an alternative free port (e.g., by scanning sequentially upward from the initial port or utilizing OS port allocation) to guarantee a clean connection handshake.
 3. **Working Directory Execution:** Execute all UDMI commands using the executables in the shared peer UDMI folder.
 
@@ -185,8 +196,22 @@ If the `--offline` flag is provided to the setup utility, it MUST NOT attempt to
 #### 10.1.2. Isolated Site Model Setup
 Establish an isolated copy of the pre-existing test site model by copying the model from the shared peer UDMI sites directory (`../udmi/sites/udmi_site_model`) into the local workspace testing directory (`testing/udmi_site_model`).
 
-#### 10.1.3. Running Setup and Starting the Broker
+#### 10.1.3. Running Setup and Starting/Stopping the Broker
 Next, run the Butler setup utility to prepare the environment (initializing local workspace directories, local model files, and other Butler-specific resources). The utility MUST first verify that the sibling/peer UDMI directory or link exists directly, immediately raising a hard fail if it is missing. Execute the setup utility pointing to the dynamically resolved branch-specific port. If the local broker is not already running on that port, the setup utility MUST automatically invoke the peer UDMI start utility to start it on that unique port.
+
+*   **Graceful Reflector Cleanup/Shutdown (`--stop` flag):**
+    If the `--stop` flag is passed (e.g., `bin/setup --stop` or `setup [conn_spec] --stop`), the setup utility MUST NOT perform any environment initialization, python environment validation, or broker startup. Instead, it MUST execute a clean, hermetic teardown of the locally running background services (`etcd`, `mosquitto`/broker, etc.) utilizing stored PID files (`out/etcd.pid`, `out/mosquitto.pid`, or similar). 
+    Specifically, the `--stop` execution sequence MUST:
+    1. Verify the existence of the specific local `.pid` files associated with the background services.
+    2. Read the recorded process IDs (PIDs) from these files.
+    3. Send `SIGTERM` (signal 15) directly and precisely to those individual PIDs to initiate a graceful shutdown.
+    4. Wait for a graceful grace period of up to 5 seconds for the processes to release ports and exit.
+    5. If a process remains active after the grace period, send `SIGKILL` (signal 9) to force termination.
+    6. Delete the `.pid` files from disk, leaving the local workspace in a clean state.
+    This shutdown MUST NOT employ any sweeping `pkill` or `killall` commands, ensuring absolute safety for concurrent, side-by-side local test runs on different ports.
+
+*   **Automatic Port Status Pre-Check:**
+    Prior to launching any local brokers, the setup utility MUST perform a quick, dynamic port-scanning check on the dynamically resolved branch-specific port and standard etcd/MQTT ports. If the target port is already occupied, the setup utility MUST detect and list the active process info and PID (if accessible) to standard error (`stderr`) before attempting any execution. This makes it easier to debug when a rogue or manually started broker has occupied ports outside the test runner's orchestration.
 
 ### 10.2. Starting the Butler Orchestrator
 Launch the core Butler orchestrator. It MUST connect to the running MQTT broker on the dynamically resolved branch-specific port and act as the authoritative Cloud Model Server on the UUFI bus.
@@ -211,7 +236,6 @@ Any automated integration test harness (such as `bin/smokeit`) MUST adhere to th
 3. **UDMIS Startup Synchronization & Parallel Daemon Bootstrapping:** The test harness MUST implement a startup synchronization delay (e.g., waiting for `pod_ready.txt` or a standard timeout of at least 15 seconds) after starting the local UDMIS service pod and BEFORE launching the simulated device (DUT), ensuring all dynamic security roles and MQTT subscriptions are active before the client-initiated handshake begins. To optimize execution latency and minimize overall integration test times, the test harness (such as `bin/smokeit`) MUST spin up the Butler Orchestrator and Verifier concurrently in parallel threads or background processes while this synchronization delay is running, rather than waiting for the synchronization period to completely finish before starting those daemons.
 4. **Process Group Isolation, Clean Sequestering, and Safe Cleanup:** To prevent lingering orphan or daemon processes (such as background `java`, `etcd`, or `mosquitto` processes) from remaining active on the host after a test run concludes or fails, the test harness MUST launch all background services (including Butler, Verifier, UDMIS, and the simulated DUT) in distinct, isolated process groups (e.g., using `preexec_fn=os.setsid` or equivalent process group detachment).
    - **Safe Process Termination and Agent Protection:**
-     <!-- ASSUMPTION: Direct user instruction overrides the spec/ immutability guideline to refine process safety specifications to protect the parent agent from accidental SIGTERM/SIGKILL propagation. -->
      - To ensure that process termination WILL NOT UNDER ANY CIRCUMSTANCES impact an agent running the system (such as the encapsulating agentic `gemini` process), any process termination, signal propagation, or process group signaling (like `killpg` or `kill -- -PGID`) MUST be targeted exclusively and precisely to the specific isolated child process groups created for the background services.
      - Under no circumstances should a test harness, tool, runner script, or skill signal or terminate its own process group (such as with `killpg(0, ...)` or equivalent, `kill 0`, `kill -$$`, `kill -- -$$`, `kill -PGID`, or equivalent), regardless of whether it believes the process group is shared. To prevent accidental termination of the encapsulating agentic environment or CLI shell, all termination calls in exit traps and cleanup routines MUST target ONLY the specific, individually-stored process IDs (PIDs) or isolated child process groups of the background services. It is strictly forbidden to use sweeping group-based kill commands (like `kill 0` or signaling the script's own PID/PGID) in any exit traps, runner scripts, or teardown routines.
      - All signal hooking, traps, and teardown procedures must be cleanly sequestered so that termination of background processes does not terminate or affect the running agentic environment or CLI shell. When sending signals, the test harness must only signal the stored PGID of the spawned child process groups.
@@ -220,4 +244,39 @@ Any automated integration test harness (such as `bin/smokeit`) MUST adhere to th
      - *Python Harnesses:* MUST catch `KeyboardInterrupt` and register handlers with Python's signal module to invoke process group termination on all active child process groups.
      - *Bash Runner Scripts:* MUST register a trap on standard exit and termination signals to automatically terminate only the specific spawned background jobs. This MUST be done by explicitly killing the individual background job process IDs (e.g., using `kill $(jobs -p)` or specific list of recorded PIDs) and MUST NOT use sweeping group-based kills like `kill 0`, `kill -$$`, or signaling the current shell's process group.
    - This automatic cleanup MUST occur reliably on both success and failure, preventing port leakage, zombie processes, and resource conflicts between rapid sequential test cycles.
+   - **Hermetic Local Daemon Teardown Sequence (etcd and mosquitto):**
+     - To ensure that side-by-side local integration runs do not disrupt other development environments, running docker containers, or system-wide services, the test harness MUST NOT use generic `pkill` or `killall` commands (such as `pkill etcd` or `pkill mosquitto`) to stop background services.
+     - Instead, the test setup utility and test harness MUST write the specific process IDs (PIDs) of the locally spawned `etcd` and `mosquitto` daemons to dedicated, distinct local PID files within the workspace's output or temp directory (e.g., `out/etcd.pid` and `out/mosquitto.pid`).
+     - During the teardown or cleanup phase, the script MUST:
+       1. Check for the existence of the specific `.pid` files.
+       2. Read the recorded PID from each file.
+       3. Send `SIGTERM` (signal 15) directly to that specific PID.
+       4. Wait for a graceful grace period (e.g., 2–5 seconds) for the process to exit and release its socket/port.
+       5. If the process is still running after the grace period, send `SIGKILL` (signal 9) to force termination.
+       6. Delete the associated `.pid` file from disk upon successful termination.
 5. **Dynamic Reflector Mapping:** The UDMIS reflector component MUST utilize dynamic configurations based on local environment variables to bypass hardcoded cloud model dependencies, enhancing portability across different testing environments.
+
+## 11. Principal Suffix Standardization
+To ensure consistency across multiple implementations and avoid custom differentiator mismatches during handshake verification and log analysis, all system entities MUST adhere to a standardized principal naming schema. 
+
+### 11.1. Principal Structure
+Every system component, tool, or utility MUST resolve and report its principal identity using the dot-separated format:
+`{implementation_id}.{entity_suffix}`
+
+Where:
+*   `{implementation_id}` represents the unique identifier of the specific implementation run or branch (e.g., `impl_A`, `butler_py`).
+*   `{entity_suffix}` is a standardized suffix corresponding precisely to the functional role of the executing entity.
+
+### 11.2. Standard Suffix Mapping
+Implementations MUST map entity roles to the following standardized suffixes:
+
+| System Entity / Tool | Standardized Suffix | Example Principal (for `impl_A`) |
+| :--- | :--- | :--- |
+| Environment Setup / Bootstrapping Utility | `.setup` | `impl_A.setup` |
+| Butler Orchestrator | `.butler` | `impl_A.butler` |
+| Independent Verifier Tool | `.verifier` | `impl_A.verifier` |
+| Simulated Device Under Test (Pubber DUT) | `.device` | `impl_A.device` |
+| Automated Test Harness (`smokeit`) | `.smokeit` | `impl_A.smokeit` |
+
+### 11.3. Enforcement and Connection Verification
+During the handshake verification phase (Scope 4), all validation tools, logs, and diagnostic events MUST parse and verify these exact principal strings. Any custom or non-standard differentiator suffixes (e.g., `_setup`, `.orchestrator_daemon`, or `.test_runner`) are considered protocol violations and MUST be treated as handshake/verification failures.

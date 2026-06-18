@@ -21,6 +21,11 @@ This document outlines the standard procedure for pulling in specifications from
    - Merge `origin/main` into the current branch to pull in any specification updates.
    - *Conflict Resolution:* If merge conflicts occur within files in `spec/`, since they are immutable, the agent MUST always auto-resolve them in favor of `origin/main` without exception, even if it breaks the current branch's historical custom tests, as specs on `main` are the immutable source of truth.
 
+3. **Automatic Port Status Check:**
+   - Prior to launching any local brokers or executing tests, the update process MUST run a dynamic pre-check to detect if there are any active processes currently listening on the branch-mapped MQTT/testing port (such as `40000-49999`) or standard etcd/MQTT ports.
+   - This check can be performed using standard utilities (such as `ss -lntp`, `netstat`, or `lsof`) or programmatic socket connection attempts.
+   - If an active broker or process is detected on the target port outside of the test runner's orchestration, the runner MUST list the active process info and PID (if accessible) to standard error to assist in diagnosing and debugging rogue or manually started brokers before proceeding.
+
 ---
 
 ## Code Compliance and Spec Auditing
@@ -72,9 +77,7 @@ Before finishing, the implementation MUST be verified to prevent regressions:
 
 ---
 
-## Testing and Spec improvements
+## Testing Encountered Issues
 
-1. **Iterative Suggestions**
-   - Display any suggestions for this document that would make future testing runs easier or more consistent.
-   - Display any suggestions for the Butler spec that would improve testability.
-   - Display any suggestions on improvements to the overal workflow to increase speed or reliability.
+1. **Actually Encountered Issues**
+   - **Encountered Issues List:** When actually testing and verifying the implementation under this procedure, the agent or runner MUST dynamically list and output only the specific operational issues, errors, or bugs that were actually encountered and resolved *during that specific run* of `UPDATE.md`. It MUST NOT report any theoretical or static-analysis-based issues, nor any issues that were statically pre-instructed or requested to change, ensuring the documented issues are strictly empirical runtime findings from that active execution.
