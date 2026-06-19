@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+import sys
+import os
+venv_python = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'venv', 'bin', 'python3'))
+if os.path.exists(venv_python) and sys.executable != venv_python:
+    os.execv(venv_python, [venv_python, '-u'] + sys.argv)
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from butler.orchestrator import main
+if __name__ == "__main__":
+    if "BUTLER_CONN_SPEC" in os.environ:
+        if not any(not a.startswith('-') for a in sys.argv[1:]):
+            sys.argv.insert(1, os.environ["BUTLER_CONN_SPEC"])
+    main()
