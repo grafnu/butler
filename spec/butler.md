@@ -2,7 +2,7 @@
 
 The **Butler** is a declarative, state-based fleet management engine for managed software updates. It coordinates updates across a
 fleet of devices by managing a state machine for individual device blob updates using the UUFI interface. UUFI is a message
-based interface as part of the UDMI system defined by the path `docs/specs/uufi.md` within the peer `udmi/` directory (at `../udmi/docs/specs/uufi.md` relative to the workspace root).
+based interface as part of the UDMI system defined by the path `docs/specs/uufi.md` within the cloned `impl/udmi/` directory (at `impl/udmi/docs/specs/uufi.md` relative to the workspace root).
 
 ## 1. Project Structure
 
@@ -39,7 +39,7 @@ The **Butler** is a stateless, reactive fleet reconciliation engine whose sole s
 - **Stateless Restarts & Network Discovery:** If the Butler process restarts, all in-memory tracking is reset. Sourcing of both expected and actual states occurs exclusively over the UUFI network interface (the Butler has no direct file-level access to the `site_model` on disk):
   1. **Expected Version Discovery:** On startup, the Butler discovers expected/desired versions by publishing a UUFI Model Query (`query/cloud` as defined in `uufi.md`) to `/uufi/c/query/cloud`, where the UUFI gateway (which *does* have site-model access) replies with the expected version configurations.
   2. **Actual Version Discovery:** The Butler simply waits until it receives a dynamic State update from a device to determine its actual version. In local test environments, this actual state report is typically initiated manually or triggered on-demand using standard testing utilities.
-- **Handshake Compliance:** Butler MUST NOT initiate its own handshake; it MUST instead respond to handshake state messages from Devices and Verifiers with the appropriate config reply as defined in UUFI. Handshake message structures and sequence steps are governed exclusively by the peer `../udmi/docs/specs/uufi.md` specification; local implementations MUST NOT introduce custom local handshake parameters.
+- **Handshake Compliance:** Butler MUST NOT initiate its own handshake; it MUST instead respond to handshake state messages from Devices and Verifiers with the appropriate config reply as defined in UUFI. Handshake message structures and sequence steps are governed exclusively by the cloned `impl/udmi/docs/specs/uufi.md` specification; local implementations MUST NOT introduce custom local handshake parameters.
 - **State Machine:**
   - `unknown`: Initial tracking state before any device report is received.
   - `quiescent`: Expected/Desired Version == Actual/Current Version.
@@ -104,8 +104,8 @@ To ensure interoperability, the startup connectivity output MUST use the resolve
 ### 6.1 UDMI Tools Dependency & Prohibition of Custom Tooling
 Implementations MUST NOT create, bundle, or include custom executable tooling, device clients, or auxiliary scripts (such as custom mock device clients, "mockets", or passive traffic observers) within the workspace.
 * **Hard Dependency on UDMI:** UDMI is considered a hard dependency of the Butler orchestrator.
-* **No Custom Device Simulation (DUT):** Under no circumstances shall an implementation attempt to create, bundle, or execute its own custom simulated device client (DUT) for any purpose (including local development, debugging, and automated integration/smoke testing). All device simulation must be performed strictly using the standard Java-based UDMI DUT client (`./udmi/bin/start_dut` / `pubber`).
-* **Standard Simulators & Observers:** For device simulation and traffic observation, implementations MUST use standard UDMI/UUFI tools exclusively (specifically `./udmi/bin/start_dut` for starting simulated devices/Pubber, and `./udmi/bin/observe_uufi` for passive topic tree traffic monitoring).
+* **No Custom Device Simulation (DUT):** Under no circumstances shall an implementation attempt to create, bundle, or execute its own custom simulated device client (DUT) for any purpose (including local development, debugging, and automated integration/smoke testing). All device simulation must be performed strictly using the standard Java-based UDMI DUT client (`impl/udmi/bin/start_dut` / `pubber`).
+* **Standard Simulators & Observers:** For device simulation and traffic observation, implementations MUST use standard UDMI/UUFI tools exclusively (specifically `impl/udmi/bin/start_dut` for starting simulated devices/Pubber, and `impl/udmi/bin/observe_uufi` for passive topic tree traffic monitoring).
 * **Automated Smoke Testing (`smokeit`):** The automated integration test runner (`smokeit`) MUST NOT embed, spawn, or execute any custom device simulation logic or programmatic inline mock devices. It MUST use the standard UDMI DUT client for verifying device connectivity, handshakes, and baseline integration.
 * **Automatic Audit Verification:** Automated compliance verifiers and audits (e.g., `AUDIT.md`) MUST verify the strict cleanliness of the `bin/` directory and codebase. The presence of any custom simulated device clients or additional executable files beyond the four core tools (`butler`, `setup`, `verifier`, `smokeit`) constitutes an immediate and fatal protocol compliance violation.
 
@@ -165,7 +165,7 @@ Consistent log prefixes and formats are essential for multi-implementation integ
 The fourth tier of the system verification pipeline builds directly on top of the generic UUFI development environment (reusing Scope 1: Infrastructure and Scope 2: Pubber DUT from `uufi.md` Section 9). It replaces the low-level UUFI test client (Scope 3) with the **Butler Orchestrator**, executing a complete state-based firmware update and rollback orchestration cycle over the active broker.
 
 To ensure that multiple disparate implementations can be run side-by-side using the same shared UDMI installation without conflicts, created systems MUST be run independently in their respective local directories. This requires:
-1. **Model Cloning:** Copy the pre-existing test site model from the shared peer UDMI sites directory into your local workspace testing directory.
+1. **Model Cloning:** Copy the pre-existing test site model from the cloned `impl/udmi` sites directory into your local workspace testing directory.
 2. **Port Selection & Handshake Verification:** Choose and use a unique, branch-specific port in the range `45000-48000` (inclusive of `45000`, exclusive of `48000`, i.e., `45000-47999`) for running the local MQTT broker to prevent port conflicts with other side-by-side runs and avoid potential overlaps with standard system daemons. Implementations MUST calculate this port systematically using the SHA256 cryptographic hash of the active git branch name to align port-selection behavior across all implementation branches:
    - **Branch Name Extraction:** Determine the active git branch name. If the environment is not a git repository or the branch name cannot be resolved, default to the string `"unknown"`.
    - **Hash Computation:** Compute the 32-byte (256-bit) SHA256 hash of the resolved branch name string (encoded in UTF-8).
@@ -184,7 +184,7 @@ To ensure that multiple disparate implementations can be run side-by-side using 
        - Base-16 Integer value modulo 3000: `988`
        - Resolved numeric port: `45988` (i.e., `45000 + 988`)
    - **Dynamic Port Handshake Verification:** During broker startup, the setup script or test runner MUST perform a socket-scanning check to ensure the calculated port is unoccupied by another daemon process on the host. If a port collision is detected, the utility MUST dynamically negotiate an alternative free port (e.g., by scanning sequentially upward from the initial port or utilizing OS port allocation) to guarantee a clean connection handshake.
-3. **Working Directory Execution:** Execute all UDMI commands using the executables in the shared peer UDMI folder.
+3. **Working Directory Execution:** Execute all UDMI commands using the executables in the cloned `impl/udmi` folder.
 
 ### 10.1. Local Environment Preparation
 
@@ -194,10 +194,10 @@ The validation sequence MUST dynamically establish the Python virtual environmen
 If the `--offline` flag is provided to the setup utility, it MUST NOT attempt to make remote network calls for package verification or installation. Instead, it must either perform package verification using local caches or ignore missing dependencies to guarantee safe, warning-free offline execution inside hermetic test sandboxes without experiencing download retry latencies.
 
 #### 10.1.2. Isolated Site Model Setup
-Establish an isolated copy of the pre-existing test site model by copying the model from the shared peer UDMI sites directory (`../udmi/sites/udmi_site_model`) into the local workspace testing directory (`testing/udmi_site_model`).
+Establish an isolated copy of the pre-existing test site model by copying the model from the cloned UDMI sites directory (`impl/udmi/sites/udmi_site_model`) into the local workspace testing directory (`testing/udmi_site_model`).
 
 #### 10.1.3. Running Setup and Starting/Stopping the Broker
-Next, run the Butler setup utility to prepare the environment (initializing local workspace directories, local model files, and other Butler-specific resources). The utility MUST first verify that the sibling/peer UDMI directory or link exists directly, immediately raising a hard fail if it is missing. Execute the setup utility pointing to the dynamically resolved branch-specific port. If the local broker is not already running on that port, the setup utility MUST automatically invoke the peer UDMI start utility to start it on that unique port.
+Next, run the Butler setup utility to prepare the environment (initializing local workspace directories, local model files, and other Butler-specific resources). The utility MUST first verify that the cloned `impl/udmi` directory exists directly, immediately raising a hard fail if it is missing. Execute the setup utility pointing to the dynamically resolved branch-specific port. If the local broker is not already running on that port, the setup utility MUST automatically invoke the cloned UDMI start utility to start it on that unique port.
 
 *   **Graceful Reflector Cleanup/Shutdown (`--stop` flag):**
     If the `--stop` flag is passed (e.g., `bin/setup --stop` or `setup [conn_spec] --stop`), the setup utility MUST NOT perform any environment initialization, python environment validation, or broker startup. Instead, it MUST execute a clean, hermetic teardown of the locally running background services (`etcd`, `mosquitto`/broker, etc.) utilizing stored PID files (`out/etcd.pid`, `out/mosquitto.pid`, or similar). 
@@ -224,7 +224,7 @@ Launch the simulated on-premise device in a separate terminal using the standard
 *Note:* The Butler orchestrator coordinates managed updates. While **Pubber** connects and handshakes successfully, it may fail to fully execute the specific firmware state transitions (`quiescent` -> `pending` -> `success`/`failure`) that a custom UDMI client might report. Let the tests fail on these steps if Pubber lacks full update state-machine capabilities; this is expected behavior to verify platform readiness.
 
 ### 10.5. Triggering a Managed Update (Functional Verification)
-Initiate a managed software update by using UDMI's site trigger utility (located in the peer UDMI folder) to mutate the physical site model file on disk and publish the dynamic update event over the UUFI bus on the dynamically resolved branch-specific port.
+Initiate a managed software update by using UDMI's site trigger utility (located in the cloned `impl/udmi` folder) to mutate the physical site model file on disk and publish the dynamic update event over the UUFI bus on the dynamically resolved branch-specific port.
 
 ### 10.6. Running Automated Smoke Tests
 To execute a fully automated, non-interactive integration run of Scope 4 (verifying the entire setup, registration, update, rollback, and verification lifecycle), execute the `smokeit` test utility pointing to the dynamically resolved branch-specific port.
@@ -232,7 +232,7 @@ To execute a fully automated, non-interactive integration run of Scope 4 (verify
 ### 10.7. Automated Smoke Test Specifications
 Any automated integration test harness (such as `bin/smokeit`) MUST adhere to the following strict operational requirements to ensure reliable, isolated side-by-side executions:
 1. **MQTT Event Loop Activation:** Every MQTT client instance instantiated by the test harness (including log-reading watchers and cloud-mutation triggers) MUST run a background network event loop (via `loop_start()` or equivalent) to actively read and process incoming broker packets (such as QoS=1 `PUBACK` confirmations). Clients MUST NOT call `wait_for_publish()` without an active event loop running, to prevent execution hangs.
-2. **Working Directory and Log Path Resolution:** The test harness MUST execute all external utilities (including `start_dut` or `pubber`) with the working directory explicitly set to the isolated workspace root. Because external utilities write their log outputs (specifically `pubber.log`) relative to their execution working directory, the test harness MUST resolve and monitor the log file path relative to its own local execution directory (e.g., `out/pubber.log` under the workspace root), rather than reading from any global or shared peer directories (such as the peer `udmi` folder), ensuring complete isolation of side-by-side test runs.
+2. **Working Directory and Log Path Resolution:** The test harness MUST execute all external utilities (including `start_dut` or `pubber`) with the working directory explicitly set to the isolated workspace root. Because external utilities write their log outputs (specifically `pubber.log`) relative to their execution working directory, the test harness MUST resolve and monitor the log file path relative to its own local execution directory (e.g., `out/pubber.log` under the workspace root), rather than reading from any global or shared peer directories (such as the cloned `impl/udmi` folder), ensuring complete isolation of side-by-side test runs.
 3. **UDMIS Startup Synchronization & Parallel Daemon Bootstrapping:** The test harness MUST implement a startup synchronization delay (e.g., waiting for `pod_ready.txt` or a standard timeout of at least 15 seconds) after starting the local UDMIS service pod and BEFORE launching the simulated device (DUT), ensuring all dynamic security roles and MQTT subscriptions are active before the client-initiated handshake begins. To optimize execution latency and minimize overall integration test times, the test harness (such as `bin/smokeit`) MUST spin up the Butler Orchestrator and Verifier concurrently in parallel threads or background processes while this synchronization delay is running, rather than waiting for the synchronization period to completely finish before starting those daemons.
 4. **Process Group Isolation, Clean Sequestering, and Safe Cleanup:** To prevent lingering orphan or daemon processes (such as background `java`, `etcd`, or `mosquitto` processes) from remaining active on the host after a test run concludes or fails, the test harness MUST launch all background services (including Butler, Verifier, UDMIS, and the simulated DUT) in distinct, isolated process groups (e.g., using `preexec_fn=os.setsid` or equivalent process group detachment).
    - **Safe Process Termination and Agent Protection:**

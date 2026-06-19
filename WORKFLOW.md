@@ -13,21 +13,34 @@ To develop, build, and test the Butler system, you need the following pre-instal
 - **Mosquitto** broker and clients (`mosquitto-clients`)
 - **expect** and development packages (Linux packages)
 
-### Step 1: Peer UDMI Directory/Symlink Setup
-The `udmi` directory (or symlink to it) **MUST** exist as a peer directly sibling to the project repository (at `../udmi` relative to the repository root directory).
-- This is a shared, read-only resource. Never modify files inside `../udmi` directly or clone site models there.
+### Step 1: Cloned UDMI Directory Setup
+The `udmi` directory MUST exist inside the `impl/` directory (at `impl/udmi/` relative to the workspace root).
+
+- **How the `impl/` Directory and `impl/udmi` Clone are Created on a Clean Slate:**
+  Since a clean checkout of the repository starts with no `impl/` directory, you must initialize it manually by cloning the corresponding `udmi` remote repository:
+  1. **Determine the Remote URL:** Resolve the remote repository URL for the `udmi` clone by taking the current project's remote origin URL (e.g., query with `git config --get remote.origin.url`) and replacing the repository name (`butler` or `butler.git`) with `udmi` (or `udmi.git`). For example, if the origin is `git@github.com:XXXXX/butler.git`, the `udmi` remote repository is `git@github.com:XXXXX/udmi.git`.
+  2. **Create and Clone:** Create the `impl/` directory and clone the `udmi` remote repository into `impl/udmi/`:
+     ```bash
+     mkdir -p impl
+     git clone <udmi_remote_url> impl/udmi
+     ```
+  3. **Align Branches (Optional):** If working on a specific feature or development branch, checkout the corresponding branch in the `impl/udmi/` clone to maintain operational parity.
+
+- **Sandbox Isolation & Repository Constraints:** To enable running the system in sandbox mode (`gemini -s`) and in complete isolation from other code on the system, the `udmi` directory MUST be a local git clone of the remote repository inside the `impl/` workspace.
+- **Keep Up to Date:** The `impl/udmi/` clone must be kept up to date with the remote repository (e.g. by executing `git pull` in that directory). All references to other components or external libraries must go through a remote git repository cloned locally.
+- **Shared Resource & Immutability Constraint:** This is an immutable, read-only resource. Never modify files inside `impl/udmi` directly or clone site models there to ensure sandbox predictability and prevent race conditions.
 - Ensure it is up to date:
   ```bash
-  cd ../udmi
-  git pull  # if configured as a git repository
+  cd impl/udmi
+  git pull
   ```
 
 ### Step 2: Install System Dependencies
 Install necessary system packages (such as Mosquitto, mosquitto-clients, and expect) by delegating to the UDMI setup utility (Linux-only, macOS developers should use Homebrew):
 ```bash
-../udmi/bin/setup_base
+impl/udmi/bin/setup_base
 ```
-*Note on Privileges:* Running `../udmi/bin/setup_base` is **optional** if you already have the required dependencies pre-installed on your system.
+*Note on Privileges:* Running `impl/udmi/bin/setup_base` is **optional** if you already have the required dependencies pre-installed on your system.
 
 ### Spec-Driven Code Generation (REBUILD.md)
 On the clean `main` branch or when bootstrapping a brand-new implementation, the implementation directories `butler/` (core Python logic) and `bin/` (operational executables) may not be pre-populated or checked into the repository.
