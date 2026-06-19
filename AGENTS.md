@@ -11,7 +11,6 @@ The tools should not use BUTLER_CONN_SPEC directly, but rather the caller should
 The specification should conform to the `uufi.md` spec (located within the `impl/udmi/` directory under `impl/udmi/docs/specs/uufi.md`) as defined. Otherwise, the tests should use `mqtt://<branchname>@localhost/` as
 the specification, where `<branchname>` is the current git branch (defaulting to `unknown` if not in a git directory).
 
-<!-- ASSUMPTION: The udmi directory (at impl/udmi) is a local, immutable clone of the remote repository to support sandboxed isolation. User direct command overrides the file edit restriction on AGENTS.md for this setup update. -->
 The `udmi` directory must exist inside the `impl/` directory (at `impl/udmi/` relative to the workspace root). All tools must verify this filesystem layout on startup and immediately raise a hard error if the `impl/udmi` directory is not found (this is the only startup requirement that will cause a hard fail).
 
 **Sandbox Isolation & Repository Constraints:**

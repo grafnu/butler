@@ -56,7 +56,6 @@ The Butler system is organized as follows:
 ### 1. Initialize Virtual Environment
 If not already present, create and activate a Python virtual environment:
 
-<!-- ASSUMPTION: On a clean checkout of the main branch, butler/ and bin/ are generated spec-driven directories and are not checked in by default. -->
 > **Note on Workspace Layout**: On the `main` branch, the `butler/` (core Python logic) and `bin/` (operational executables) folders are not checked in because they are built from specifications as part of a spec-driven agent workflow (see `REBUILD.md`). On implementation branches (such as `impl_B`), these directories are pre-populated.
 > If you are starting on `main` and these directories are missing, you must first generate or check out the implementation before installing Python requirements or running executables.
 
