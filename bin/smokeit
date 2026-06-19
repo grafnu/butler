@@ -1,0 +1,3 @@
+#!/bin/bash
+export PYTHONPATH="$(dirname "$0")/..:$PYTHONPATH"
+exec "$(dirname "$0")/../venv/bin/python3" "$(dirname "$0")/../butler/smokeit_tool.py" "$@"
