@@ -33,6 +33,8 @@ The root directory MUST ONLY contain the following files and directories:
 - **testing/**: Test assets and environment.
 - **udmi_blob_store/**: Static testing Software Catalog and blobs (parallels `udmi_site_model`).
 - **venv/**: Python virtual environment.
+- **out/**: Output from runtime and integration tests, log files, and service PID tracking.
+- **udmi/**: Working directory for local udmi integration.
 
 ## 2. Role and Behavior
 
@@ -47,7 +49,7 @@ The **Butler** is a stateless, reactive fleet reconciliation engine whose sole s
   - `unknown`: Initial tracking state before any device report is received.
   - `quiescent`: Expected/Desired Version == Actual/Current Version.
   - `active`: Expected/Desired Version != Actual/Current Version (Reconciliation required; triggers an update command).
-  - `pending`: Update command has been sent to the device, awaiting dynamic state update showing completion or failure. If a transition remains in `pending` for longer than `BUTLER_TIMEOUT` seconds, the orchestrator MUST log a transition timeout warning and automatically retry publishing the update command (up to a maximum of 3 retry attempts, spaced `BUTLER_TIMEOUT` seconds apart). If all 3 retry attempts are exhausted without receiving a status report, the orchestrator MUST log a terminal failure warning, transition the volatile tracking state for that device to `failed` (or `unknown`), and cease sending further commands until a new state report or model update is received.
+  - `pending`: Update command has been sent to the device, awaiting dynamic state update showing completion or failure. If a transition remains in `pending` for longer than `BUTLER_TIMEOUT` seconds, the orchestrator MUST log a transition timeout warning and automatically retry publishing the update command (up to a maximum of 3 retry attempts, spaced `BUTLER_TIMEOUT` seconds apart). If all 3 retry attempts are exhausted without receiving a status report, the orchestrator MUST log a terminal failure warning, transition the volatile tracking state for that device to `failed` (or `unknown`), and cease sending further commands until a new state report or model update is received. To ensure robust handling of slow or large updates, a state message from the device that includes a specific, measurable blob progress update (e.g. download percentage or block count) MUST reset the `BUTLER_TIMEOUT` timer. A generic or static state message with no indication of active progress is NOT sufficient to reset the timer.
   The expected/desired version is sourced over the UUFI bus from the Expected Cloud Model (`system.software.<blob_id> = 'version_tag'` as defined in `model_system.json`), where `<blob_id>` is the identifier of the target software. The actual/current version is dynamically reported by the device under the same path in state messages.
 
 - **Triggering:** The orchestrator re-evaluates state and triggers update commands immediately upon receiving device status reports showing version drift (`expected != actual`), unless the device is already in a `pending` transition.
@@ -62,9 +64,8 @@ The **Butler** is a stateless, reactive fleet reconciliation engine whose sole s
 ### 3.1 Blob Repository
 - **Structure:** `{base_dir}/{make}/{model}/{blob_id}/{version}/` (where `{blob_id}` is the software or subsystem identifier).
 - **Contents:**
-  - `bundle.bin`: The binary blob content.
-  - `sha256.txt`: Hex-encoded SHA-256 hash of `bundle.bin`.
-- **Integrity:** Every blob requires a SHA256 hash for verification.
+  - `bundle.bin` or `bundle.txt`: The raw package payload.
+- **Integrity:** Every blob requires a SHA-256 hash for verification. To prevent configuration skew and redundancy, separate static hash files (such as `sha256.txt`) are strictly PROHIBITED. The orchestrator and BlobStore provider MUST dynamically calculate the hex-encoded SHA-256 hash of the payload file (`bundle.bin` or `bundle.txt`) at runtime.
 
 ### 3.2 Model Repository (Desired State)
 - **Outsourced Functionality:** Sourcing and managing the Model Repository (expected configuration and desired state of devices) is completely outsourced to the UDMI environment and handled reactively over the UUFI communication bus. The Butler orchestrator MUST NOT have direct file-system access to the site model, nor does it store any device configuration.
@@ -72,8 +73,8 @@ The **Butler** is a stateless, reactive fleet reconciliation engine whose sole s
 - **Global Fleet Scope (Non-Site-Specific):** One instance of Butler (and all other tools) MUST work globally for all sites and devices. There should be NO parameter at all (explicit or implicit) to control or limit which site or registry they process. Butler reactively subscribes to and processes message streams for all site IDs (`site_id`) and device IDs (`device_id`) encountered over the UUFI bus.
 
 ### 3.3 Device Conduit (Client-side / DUT)
-- **Reporting:** Periodically publish the actual/current version (under the standard `system.software.<blob_id>` path), `status`, and `lkg_version` via state messages.
-- **Payload Structure:** State reports MUST include `make` and `model` fields within the target `<blob_id>` nesting to ensure the orchestrator can correctly identify the device type. For consistency across implementations, implementations MUST use the `blobs` wrapper key within the `blobset` state report.
+- **Reporting:** Periodically publish the actual/current version under the standard `system.software.<blob_id>` path, along with `status` and `lkg_version` via state messages. Sourcing actual versions from `blobset` payloads is strictly prohibited.
+- **Payload Structure:** State reports MUST include `make` and `model` fields within the target `system.software.<blob_id>` nesting to ensure the orchestrator can correctly identify the device type. Sourcing these fields from any `blobset` or custom wrappers is prohibited.
 - **Lifecycle:** `quiescent` -> `pending` (download/verify) -> `success` or `failure`.
 - **Transitions:** Transitions to `success` or `failure` MUST only occur from the `pending` state. A direct transition from `quiescent` to `success` or `failure` is a protocol violation. System and Verifier components MUST ensure that state reports are processed in the order they were generated to avoid false-positive violations. Additionally, to avoid race conditions during the initial handshaking and command propagation phases, system components MUST NOT interpret pre-update quiescent state reports (sent by the device before it receives the update command) as a termination of the pending transition; the pending tracking state MUST remain active until the device explicitly reports the transition to pending or reaches its final terminal state with the new target version.
 - **Robustness:** Devices MUST robustly handle immediate state change requests (back-to-back config updates) and ensure eventual consistency with the latest expected/desired target state.
@@ -289,10 +290,10 @@ During the handshake verification phase (Scope 4), all validation tools, logs, a
 To ensure complete interoperability and spec compliance across multiple side-by-side implementations, all message payloads and network envelopes MUST adhere strictly to the following unambiguous formatting standards. Implementations and testing frameworks MUST NOT deviate from these standards, and any components employing non-compliant formats (such as nested wrappers or custom configuration attributes) MUST be treated as protocol violations and fail verification.
 
 ### 12.1. Handshake Request and Reply Payload Formatting
-Handshake protocol requests (Step 1) and replies (Step 2) published over the UUFI bus MUST utilize the standard flattened format where the `"setup"` and `"reply"` payload blocks reside directly at the payload root. Wrapping or nesting these blocks inside a `"udmi"` root sub-object is strictly prohibited and MUST be rejected as non-compliant.
+Handshake protocol requests (Step 1) and replies (Step 2) published over the UUFI bus MUST utilize the standard flattened format where the `"setup"` and `"reply"` payload blocks reside directly at the payload root. Wrapping or nesting these blocks inside a `"udmi"` root sub-object is strictly prohibited and MUST be rejected as non-compliant. To support request-response correlation on shared handshake channels (such as `/uufi/c/config/udmi`), the handshake configuration reply message's envelope MUST include a `"transactionId"` (or `"transaction_id"`) attribute containing the exact transaction ID value from the client's handshake request envelope. Clients MUST verify this transaction ID and reject any handshake replies that do not match their original request's transaction ID.
 
 ### 12.2. Subsystem State and Catalog Model Alignment
-Simulated devices and DUTs MUST report their actual software and firmware states under the `"system"` subsystem ID (rather than `"main"` or other custom names) to ensure alignment with cloud model catalog updates, which configure desired software versions under the standard `"system"` schema. Furthermore, state reports MUST wrap the subsystem inside a `"blobs"` key inside the `"blobset"` state payload (e.g., `blobset: { "blobs": { "system": { ... } } }`) to align with the standard UDMI schemas.
+Simulated devices and DUTs MUST report their actual software and firmware states under the `"system"` subsystem ID (rather than `"main"` or other custom names) to ensure alignment with cloud model catalog updates, which configure desired software versions under the standard `"system"` schema. Furthermore, sourcing of actual software versions MUST be done exclusively under the standard `system.software.<blob_id>` state payload path (e.g., `system.software.system = "{version}"`). Sourcing or parsing from `blobset` is strictly prohibited.
 
 ### 12.3. Config Command Target Version Attribute
 Any `"blobset"` update config command published by the orchestrator MUST include the target `"version"` string attribute inside the specific blob's dictionary (e.g. `blobset.blobs.<subsystem>.version = "{version}"`). This indicates the target version of the update package, enabling the client or DUT to parse it and successfully complete the update sequence.
@@ -301,7 +302,7 @@ Any `"blobset"` update config command published by the orchestrator MUST include
 To support robust message deduplication and replay protection, clients and devices publishing state, event, or model messages over the UUFI bus SHOULD include a `"nonce"` field in the root of the message's envelope containing a secure, pseudorandomly generated hexadecimal string (at least 32 characters, e.g. 16 bytes). Compliant orchestrators and verifiers MUST gracefully accept, parse, and process envelopes containing the `"nonce"` attribute.
 
 ### 12.5. Cloud Model Update Payload Structure
-Cloud model updates published over the UUFI bus (e.g., on `/uufi/c/config/cloud` or model update channels) MUST utilize the standard flattened format where the `"registries"` key resides directly at the payload root (following the schema defined in `uufi.md` Section 5.1). Wrapping or nesting the update payload inside a `"cloud"` root sub-object is strictly prohibited and MUST be rejected as non-compliant.
+Cloud model updates published over the UUFI bus (specifically on `/uufi/c/model/cloud` or model update channels) MUST utilize the standard flattened format where the `"registries"` key resides directly at the payload root (following the schema defined in `uufi.md` Section 5.1). Sourcing updates from `/uufi/c/config/cloud` is prohibited. Wrapping or nesting the update payload inside a `"cloud"` root sub-object is strictly prohibited and MUST be rejected as non-compliant.
 
 ### 12.6. Single Method for Expected Version Configuration
 The expected/desired version of a device's software subsystem MUST be configured in exactly one way: under the standard software dictionary structure within the device's system configuration (e.g., `system.software.<subsystem> = "{version}"`, where `<subsystem>` defaults to `"system"`). Any alternative or custom configuration properties, such as `"target_version"` (e.g., `system.target_version = "{version}"`), are strictly prohibited and MUST NOT be accepted by the orchestrator or processed as valid expected versions.
