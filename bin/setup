@@ -161,6 +161,19 @@ def main():
 
     # 4. Check if broker is running on target port
     # Prior to launching local brokers, setup MUST check if the port is already occupied
+    ports_to_scan = sorted(list({port, 1883, 8883, 2379, 2380}))
+    for p in ports_to_scan:
+        if is_port_open(p):
+            print(f"Port {p} is occupied.", file=sys.stderr)
+            try:
+                res = subprocess.run(["lsof", "-i", f":{p}", "-P", "-n"], capture_output=True, text=True)
+                if res.stdout:
+                    print(f"Active process info for port {p}:\n{res.stdout}", file=sys.stderr)
+                else:
+                    print(f"Could not retrieve active process info for port {p} (lsof returned empty).", file=sys.stderr)
+            except Exception as e:
+                print(f"Error checking process for port {p}: {e}", file=sys.stderr)
+
     if is_port_open(port):
         print(f"Target port {port} is already occupied.", file=sys.stderr)
         # Port is already occupied, check if we need to do anything or just report it
