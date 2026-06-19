@@ -283,3 +283,19 @@ Implementations MUST map entity roles to the following standardized suffixes:
 
 ### 11.3. Enforcement and Connection Verification
 During the handshake verification phase (Scope 4), all validation tools, logs, and diagnostic events MUST parse and verify these exact principal strings. Any custom or non-standard differentiator suffixes (e.g., `_setup`, `.orchestrator_daemon`, or `.test_runner`) are considered protocol violations and MUST be treated as handshake/verification failures.
+
+## 12. Protocol Payload Formatting and Envelope Attributes
+
+To ensure complete interoperability and spec compliance across multiple side-by-side implementations, all message payloads and network envelopes MUST adhere to the following formatting standards:
+
+### 12.1. Handshake Request and Reply Payload Nesting
+Handshake protocol requests (Step 1) and replies (Step 2) published over the UUFI bus may package the `"setup"` and `"reply"` payload blocks inside a `"udmi"` root sub-object. Compliant orchestrators and clients MUST support parsing both the flattened format (where `"setup"` and `"reply"` are at the payload root) and the nested format (where they are nested inside a `"udmi"` wrapper object).
+
+### 12.2. Subsystem State and Catalog Model Alignment
+Simulated devices and DUTs MUST report their actual software and firmware states under the `"system"` subsystem ID (rather than `"main"` or other custom names) to ensure alignment with cloud model catalog updates, which configure desired software versions under the standard `"system"` schema. Furthermore, state reports MUST wrap the subsystem inside a `"blobs"` key inside the `"blobset"` state payload (e.g., `blobset: { "blobs": { "system": { ... } } }`) to align with the standard UDMI schemas.
+
+### 12.3. Config Command Target Version Attribute
+Any `"blobset"` update config command published by the orchestrator MUST include the target `"version"` string attribute inside the specific blob's dictionary (e.g. `blobset.blobs.<subsystem>.version = "{version}"`). This indicates the target version of the update package, enabling the client or DUT to parse it and successfully complete the update sequence.
+
+### 12.4. Envelope Nonce Attribute
+To support robust message deduplication and replay protection, clients and devices publishing state, event, or model messages over the UUFI bus SHOULD include a `"nonce"` field in the root of the message's envelope containing a secure, pseudorandomly generated hexadecimal string (at least 32 characters, e.g. 16 bytes). Compliant orchestrators and verifiers MUST gracefully accept, parse, and process envelopes containing the `"nonce"` attribute.
