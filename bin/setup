@@ -1,0 +1,205 @@
+#!/usr/bin/env python3
+import os
+import sys
+import argparse
+import socket
+import subprocess
+import time
+import signal
+
+# Add workspace root to sys.path
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, ROOT_DIR)
+
+# Auto re-execute using virtualenv python if available and not already using it
+venv_python = os.path.abspath(os.path.join(ROOT_DIR, "venv/bin/python"))
+if os.path.exists(venv_python) and sys.executable != venv_python:
+    os.execv(venv_python, [venv_python] + sys.argv)
+
+# Verify impl/udmi directory exists on startup (hard fail)
+if not os.path.isdir(os.path.join(ROOT_DIR, "impl/udmi")):
+    print("ERROR: impl/udmi directory not found!", file=sys.stderr)
+    sys.exit(1)
+
+from butler.utils import parse_conn_spec, print_conn_spec, get_active_branch, get_branch_port
+
+def is_port_open(port):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.5)
+        try:
+            s.connect(("localhost", port))
+            return True
+        except Exception:
+            return False
+
+def find_pid_by_cmd(pattern):
+    try:
+        res = subprocess.run(["ps", "ax"], capture_output=True, text=True)
+        for line in res.stdout.splitlines():
+            if pattern in line and "grep" not in line and "ps ax" not in line:
+                parts = line.strip().split()
+                if parts:
+                    return int(parts[0])
+    except Exception:
+        pass
+    return None
+
+def find_pids_by_cmd(pattern):
+    pids = []
+    try:
+        res = subprocess.run(["ps", "ax"], capture_output=True, text=True)
+        for line in res.stdout.splitlines():
+            if pattern in line and "grep" not in line and "ps ax" not in line and "bin/setup" not in line:
+                parts = line.strip().split()
+                if parts:
+                    pids.append(int(parts[0]))
+    except Exception:
+        pass
+    return pids
+
+def stop_services():
+    print("Executing graceful teardown of local background services...", file=sys.stderr)
+    pid_files = {
+        "etcd": os.path.join(ROOT_DIR, "out/etcd.pid"),
+        "mosquitto": os.path.join(ROOT_DIR, "out/mosquitto.pid")
+    }
+    
+    for name, path in pid_files.items():
+        if os.path.exists(path):
+            try:
+                with open(path, "r") as f:
+                    pid = int(f.read().strip())
+                
+                print(f"Stopping {name} (PID {pid})...", file=sys.stderr)
+                # Send SIGTERM
+                os.kill(pid, signal.SIGTERM)
+                
+                # Wait up to 5 seconds
+                exited = False
+                for _ in range(50):
+                    time.sleep(0.1)
+                    # Check if process is still running
+                    try:
+                        os.kill(pid, 0)
+                    except OSError:
+                        exited = True
+                        break
+                
+                if not exited:
+                    print(f"{name} (PID {pid}) did not exit. Sending SIGKILL...", file=sys.stderr)
+                    os.kill(pid, signal.SIGKILL)
+                    
+                os.remove(path)
+                print(f"Successfully stopped {name}.", file=sys.stderr)
+            except Exception as e:
+                print(f"Error stopping {name}: {e}", file=sys.stderr)
+                # Clean up file anyway
+                if os.path.exists(path):
+                    os.remove(path)
+        else:
+            # Fallback process scan
+            print(f"No PID file for {name}. Searching processes...", file=sys.stderr)
+            pids = find_pids_by_cmd(name)
+            for pid in pids:
+                try:
+                    print(f"Stopping {name} process with PID {pid}...", file=sys.stderr)
+                    os.kill(pid, signal.SIGTERM)
+                except Exception:
+                    pass
+
+def main():
+    parser = argparse.ArgumentParser(description="Setup the local environment.")
+    parser.add_argument("conn_spec", nargs="?", default=None, help="Connection specification URI")
+    parser.add_argument("--offline", action="store_true", help="Validate dependencies offline")
+    parser.add_argument("--stop", action="store_true", help="Gracefully stop local background services")
+    args = parser.parse_args()
+
+    if args.stop:
+        stop_services()
+        sys.exit(0)
+
+    # 1. Parse connection spec and print
+    parsed = parse_conn_spec(args.conn_spec, "setup")
+    print_conn_spec(parsed, file=sys.stderr)
+
+    port = parsed["port"]
+
+    # 2. Validate python environment & requirements
+    requirements_file = os.path.join(ROOT_DIR, "butler/requirements.txt")
+    if os.path.exists(requirements_file):
+        try:
+            # Simple import test
+            import paho.mqtt
+            import google.cloud.storage
+            print("Python packages already satisfied.", file=sys.stderr)
+        except ImportError:
+            if args.offline:
+                print("Offline mode: Skipping package installation.", file=sys.stderr)
+            else:
+                print("Installing requirements from butler/requirements.txt...", file=sys.stderr)
+                pip_path = os.path.join(ROOT_DIR, "venv/bin/pip")
+                if not os.path.exists(pip_path):
+                    pip_path = "pip3"
+                subprocess.run([pip_path, "install", "-r", requirements_file], check=True)
+
+    # 3. Establish isolated copy of site model
+    udmi_model_dir = os.path.join(ROOT_DIR, "impl/udmi/sites/udmi_site_model")
+    target_model_dir = os.path.join(ROOT_DIR, "testing/udmi_site_model")
+    
+    if not os.path.exists(udmi_model_dir):
+        # Fallback to alternative site models path
+        udmi_model_dir = os.path.join(ROOT_DIR, "impl/udmi/site_model")
+        
+    if os.path.exists(udmi_model_dir):
+        print(f"Copying site model to isolated path: {target_model_dir}", file=sys.stderr)
+        os.makedirs(os.path.dirname(target_model_dir), exist_ok=True)
+        # Clean copy
+        subprocess.run(["rm", "-rf", target_model_dir])
+        subprocess.run(["cp", "-r", udmi_model_dir, target_model_dir], check=True)
+    else:
+        print(f"Warning: Reference site model not found at {udmi_model_dir}", file=sys.stderr)
+
+    # 4. Check if broker is running on target port
+    # Prior to launching local brokers, setup MUST check if the port is already occupied
+    if is_port_open(port):
+        print(f"Target port {port} is already occupied.", file=sys.stderr)
+        # Port is already occupied, check if we need to do anything or just report it
+    else:
+        # Launch broker on that port
+        print(f"Broker not running on port {port}. Launching setup_local...", file=sys.stderr)
+        
+        os.makedirs(os.path.join(ROOT_DIR, "out"), exist_ok=True)
+        
+        # Invoke start_local with proper port
+        # Need to set MQTT_PORT in environment so udmi scripts use our port!
+        env = os.environ.copy()
+        env["MQTT_PORT"] = str(port)
+        # Prepend our out/bin directory to PATH so our mock sudo script is used instead of system sudo
+        env["PATH"] = os.path.join(ROOT_DIR, "out/bin") + os.pathsep + env.get("PATH", "")
+        
+        # Also let's set system paths so start_local finds local mosquitto if needed
+        start_local_script = os.path.join(ROOT_DIR, "impl/udmi/bin/start_local")
+        
+        print(f"Running start_local: {start_local_script} with MQTT_PORT={port}...", file=sys.stderr)
+        # start_local runs background processes
+        subprocess.run([start_local_script, target_model_dir], env=env, check=True)
+        
+        # Write PID files
+        # We need to find the PIDs of etcd and mosquitto started by start_local
+        time.sleep(1) # wait a moment for processes to settle
+        etcd_pid = find_pid_by_cmd("etcd")
+        mosquitto_pid = find_pid_by_cmd("mosquitto")
+        
+        if etcd_pid:
+            with open(os.path.join(ROOT_DIR, "out/etcd.pid"), "w") as f:
+                f.write(str(etcd_pid))
+                print(f"Recorded etcd PID: {etcd_pid}", file=sys.stderr)
+        if mosquitto_pid:
+            with open(os.path.join(ROOT_DIR, "out/mosquitto.pid"), "w") as f:
+                f.write(str(mosquitto_pid))
+                print(f"Recorded mosquitto PID: {mosquitto_pid}", file=sys.stderr)
+
+    print("Setup completed successfully.", file=sys.stderr)
+
+if __name__ == "__main__":
+    main()

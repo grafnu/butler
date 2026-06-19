@@ -1,0 +1,160 @@
+#!/usr/bin/env python3
+import os
+import sys
+import argparse
+import signal
+import time
+import queue
+import threading
+
+# Add workspace root to sys.path
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, ROOT_DIR)
+
+# Auto re-execute using virtualenv python if available and not already using it
+venv_python = os.path.abspath(os.path.join(ROOT_DIR, "venv/bin/python"))
+if os.path.exists(venv_python) and sys.executable != venv_python:
+    os.execv(venv_python, [venv_python] + sys.argv)
+
+# Verify impl/udmi directory exists on startup (hard fail)
+if not os.path.isdir(os.path.join(ROOT_DIR, "impl/udmi")):
+    print("ERROR: impl/udmi directory not found!", file=sys.stderr)
+    sys.exit(1)
+
+from butler.utils import parse_conn_spec, print_conn_spec
+from butler.uufi import UUFIClient, get_timestamp
+
+class VerifierTool:
+    def __init__(self, conn_spec):
+        self.client = UUFIClient(conn_spec, "verifier")
+        self.principal = self.client.principal
+        
+        # State tracking: (site_id, device_id, blob_id) -> state_string
+        self.device_states = {}
+        
+        # Message queue for sequential processing of device updates
+        self.msg_queue = queue.Queue()
+        self.running = False
+        self.queue_thread = None
+
+    def start(self):
+        self.running = True
+        
+        if not self.client.connect():
+            print("Failed to connect MQTT broker for verifier", file=sys.stderr)
+            return False
+
+        # Start queue processing thread for sequential handling
+        self.queue_thread = threading.Thread(target=self._process_queue_loop, daemon=True)
+        self.queue_thread.start()
+
+        # Step 1: Complete Handshake
+        print(f"VERIFIER [INFO]: Handshake started for {self.principal}")
+        if not self.client.initiate_handshake():
+            print(f"VERIFIER [ERROR]: VALIDATION ERROR: Handshake failed for {self.principal}")
+            sys.exit(1)
+        print(f"VERIFIER [INFO]: Handshake completed for {self.principal}")
+
+        # Step 2: Subscribe to device blobset states
+        # [/{prefix}]/uufi/r/+/d/+/state/blobset
+        state_pattern = self.client.build_topic("state", "blobset", "+", "+")
+        self.client.subscribe(state_pattern, self._on_device_state)
+
+        print("Verifier running and monitoring transitions...", file=sys.stderr)
+        return True
+
+    def stop(self):
+        self.running = False
+        self.client.disconnect()
+
+    def _on_device_state(self, topic, envelope):
+        # Place in queue to process sequentially
+        self.msg_queue.put((topic, envelope))
+
+    def _process_queue_loop(self):
+        while self.running:
+            try:
+                topic, envelope = self.msg_queue.get(timeout=1)
+            except queue.Empty:
+                continue
+
+            try:
+                self._handle_device_state(topic, envelope)
+            except Exception as e:
+                print(f"VERIFIER [ERROR]: VALIDATION ERROR: Error processing state on {topic}: {e}")
+            finally:
+                self.msg_queue.task_done()
+
+    def _handle_device_state(self, topic, envelope):
+        topic_info = self.client.parse_topic(topic)
+        if not topic_info:
+            return
+
+        site_id = topic_info["site_id"]
+        device_id = topic_info["device_id"]
+
+        payload = envelope.get("payload", {})
+        blobset = payload.get("blobset", {})
+        blobs = blobset.get("blobs", {})
+
+        for blob_id, blob_state in blobs.items():
+            key = (site_id, device_id, blob_id)
+            old_state = self.device_states.get(key, "unknown")
+            
+            new_state = blob_state.get("status") or blob_state.get("phase") or "unknown"
+
+            if new_state != old_state:
+                self.device_states[key] = new_state
+                
+                # Log transition exactly as required
+                # VERIFIER [INFO]: State transition for {site_id}/{device_id}/{blob_id}: {old_state} -> {new_state}
+                msg = f"VERIFIER [INFO]: State transition for {site_id}/{device_id}/{blob_id}: {old_state} -> {new_state}"
+                print(msg)
+                sys.stdout.flush()
+
+                # Publish validation event
+                val_topic = self.client.build_topic("events", "validation", site_id, device_id)
+                val_payload = {
+                    "version": "1.5.2",
+                    "timestamp": get_timestamp(),
+                    "validation": {
+                        "message": f"State transition for {blob_id}: {old_state} -> {new_state}",
+                        "level": "INFO",
+                        "device_id": device_id,
+                        "blob_id": blob_id,
+                        "status": new_state,
+                        "result": "pass"
+                    }
+                }
+                self.client.publish(val_topic, val_payload)
+
+def main():
+    parser = argparse.ArgumentParser(description="Starts the independent verifier tool.")
+    parser.add_argument("conn_spec", nargs="?", default=None, help="Connection specification URI")
+    args = parser.parse_args()
+
+    # Parse and print connection details
+    parsed = parse_conn_spec(args.conn_spec, "verifier")
+    print_conn_spec(parsed, file=sys.stderr)
+
+    verifier = VerifierTool(args.conn_spec)
+
+    def signal_handler(sig, frame):
+        print("\nStopping Verifier...", file=sys.stderr)
+        verifier.stop()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    if not verifier.start():
+        sys.exit(1)
+
+    try:
+        while verifier.running:
+            signal.pause()
+    except (KeyboardInterrupt, SystemExit):
+        verifier.stop()
+
+if __name__ == "__main__":
+    main()

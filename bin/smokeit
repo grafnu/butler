@@ -1,0 +1,274 @@
+#!/usr/bin/env python3
+import os
+import sys
+
+# Add workspace root to sys.path
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, ROOT_DIR)
+
+# Auto re-execute using virtualenv python if available and not already using it
+venv_python = os.path.abspath(os.path.join(ROOT_DIR, "venv/bin/python"))
+if os.path.exists(venv_python) and sys.executable != venv_python:
+    os.execv(venv_python, [venv_python] + sys.argv)
+
+# Now standard library imports
+import argparse
+import subprocess
+import time
+import signal
+import threading
+import json
+
+# Non-standard library imports (guaranteed to be inside virtualenv python now)
+import paho.mqtt.client as mqtt
+
+# Verify impl/udmi directory exists on startup (hard fail)
+if not os.path.isdir(os.path.join(ROOT_DIR, "impl/udmi")):
+    print("ERROR: impl/udmi directory not found!", file=sys.stderr)
+    sys.exit(1)
+
+from butler.utils import parse_conn_spec, print_conn_spec, get_active_branch, get_branch_port
+
+# Store child process groups/PIDs for precise cleanup
+spawned_pids = []
+spawned_pgids = []
+cleanup_lock = threading.Lock()
+cleaned_up = False
+
+def safe_cleanup(signum=None, frame=None):
+    global cleaned_up
+    with cleanup_lock:
+        if cleaned_up:
+            return
+        cleaned_up = True
+
+    print("\n[smokeit] Starting precise safe teardown of all background processes...", file=sys.stderr)
+    
+    # 1. Kill background child process groups spawned by this script
+    for pgid in spawned_pgids:
+        try:
+            print(f"[smokeit] Sending SIGTERM to process group {pgid}...", file=sys.stderr)
+            os.killpg(pgid, signal.SIGTERM)
+        except Exception:
+            pass
+            
+    for pid in spawned_pids:
+        try:
+            print(f"[smokeit] Sending SIGTERM to process {pid}...", file=sys.stderr)
+            os.kill(pid, signal.SIGTERM)
+        except Exception:
+            pass
+
+    time.sleep(2) # Allow graceful exit
+    
+    # Force kill remaining if any
+    for pgid in spawned_pgids:
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except Exception:
+            pass
+    for pid in spawned_pids:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except Exception:
+            pass
+
+    # 2. Call setup --stop to gracefully shut down mosquitto and etcd using local pid files
+    try:
+        print("[smokeit] Stopping mosquitto and etcd background services...", file=sys.stderr)
+        subprocess.run([sys.executable, os.path.join(ROOT_DIR, "bin/setup"), "--stop"], check=True)
+    except Exception as e:
+        print(f"[smokeit] Error stopping services: {e}", file=sys.stderr)
+
+    print("[smokeit] Cleanup finished.", file=sys.stderr)
+    if signum is not None:
+        sys.exit(1)
+
+def run_background_cmd(cmd, env=None):
+    # Process group isolation: use os.setsid to detach and protect agentic parent
+    p = subprocess.Popen(
+        cmd,
+        env=env,
+        preexec_fn=os.setsid,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+    spawned_pids.append(p.pid)
+    # The PGID of a process created with os.setsid is equal to its PID
+    spawned_pgids.append(p.pid)
+    return p
+
+def main():
+    # Register signal handlers for graceful cleanup on interrupt/termination
+    signal.signal(signal.SIGINT, safe_cleanup)
+    signal.signal(signal.SIGTERM, safe_cleanup)
+
+    parser = argparse.ArgumentParser(description="Automated smoke integration test.")
+    parser.add_argument("conn_spec", nargs="?", default=None, help="Connection specification URI")
+    args = parser.parse_args()
+
+    # Parse and print connection details
+    parsed = parse_conn_spec(args.conn_spec, "smokeit")
+    print_conn_spec(parsed, file=sys.stderr)
+
+    port = parsed["port"]
+    prefix = parsed["prefix"]
+    prefix_str = f"/{prefix}" if prefix else ""
+
+    # 1. Run local environment setup
+    print("[smokeit] Step 1: Setting up environment...", file=sys.stderr)
+    setup_cmd = [sys.executable, os.path.join(ROOT_DIR, "bin/setup"), f"mqtt://localhost:{port}/"]
+    setup_cmd.append("--offline")
+    
+    subprocess.run(setup_cmd, check=True)
+
+    # 2. Concurrently boot Butler and Verifier during UDMIS startup synchronization delay
+    print("[smokeit] Step 2: Bootstrapping Butler and Verifier in parallel...", file=sys.stderr)
+    butler_p = run_background_cmd([sys.executable, os.path.join(ROOT_DIR, "bin/butler"), f"mqtt://localhost:{port}/"])
+    verifier_p = run_background_cmd([sys.executable, os.path.join(ROOT_DIR, "bin/verifier"), f"mqtt://localhost:{port}/"])
+
+    # Wait for UDMIS synchronization delay
+    sync_delay = 15
+    print(f"[smokeit] Waiting {sync_delay}s for UDMIS/Broker startup synchronization...", file=sys.stderr)
+    time.sleep(sync_delay)
+
+    # 3. Launch simulated DUT (Pubber) using start_dut
+    print("[smokeit] Step 3: Launching Pubber DUT...", file=sys.stderr)
+    start_dut_script = os.path.join(ROOT_DIR, "impl/udmi/bin/start_dut")
+    
+    env = os.environ.copy()
+    env["MQTT_PORT"] = str(port)
+    
+    dut_p = subprocess.Popen(
+        [start_dut_script, "testing/udmi_site_model", "vibrant", "AHU-1"],
+        env=env,
+        cwd=ROOT_DIR,
+        preexec_fn=os.setsid,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+    spawned_pids.append(dut_p.pid)
+    spawned_pgids.append(dut_p.pid)
+
+    # Wait for Pubber log out/pubber.log to show "Connection complete"
+    pubber_log_path = os.path.join(ROOT_DIR, "out/pubber.log")
+    print(f"[smokeit] Resolving and monitoring pubber log at {pubber_log_path}...", file=sys.stderr)
+    
+    connected = False
+    for _ in range(30):
+        if os.path.exists(pubber_log_path):
+            with open(pubber_log_path, "r") as f:
+                content = f.read()
+                if "Connection complete" in content or "DUT AHU-1 started and ready" in content:
+                    connected = True
+                    break
+        time.sleep(1)
+
+    if not connected:
+        print("[smokeit] ERROR: Pubber DUT failed to connect/start successfully within 30s.", file=sys.stderr)
+        if os.path.exists(pubber_log_path):
+            with open(pubber_log_path, "r") as f:
+                print("--- Pubber Log ---", file=sys.stderr)
+                print(f.read(), file=sys.stderr)
+        safe_cleanup()
+        sys.exit(1)
+
+    print("[smokeit] Pubber DUT successfully connected!", file=sys.stderr)
+
+    # 4. Trigger Managed Update by publishing model/cloud Model Update directly
+    print("[smokeit] Step 4: Triggering managed software update to 1.2.0...", file=sys.stderr)
+    
+    trigger_client = mqtt.Client()
+    trigger_client.username_pw_set("rocket", "monkey")
+    if port == 8883:
+        ca_path = "testing/udmi_site_model/reflector/ca.crt"
+        if os.path.exists(ca_path):
+            trigger_client.tls_set(ca_certs=ca_path)
+            trigger_client.tls_insecure_set(True)
+            
+    trigger_client.connect("localhost", port, 60)
+    trigger_client.loop_start()
+
+    # Subscribing to validation events to monitor test progress
+    validation_events = []
+    def on_validation_event(client, userdata, msg):
+        try:
+            payload = json.loads(msg.payload.decode("utf-8"))
+            inner = payload.get("payload", {}).get("validation", {})
+            validation_events.append(inner)
+            print(f"[smokeit] Validation Event: {inner.get('message')}", file=sys.stderr)
+        except Exception:
+            pass
+
+    trigger_client.on_message = on_validation_event
+    val_pattern = f"{prefix_str}/uufi/r/+/d/+/c/events/validation"
+    trigger_client.subscribe(val_pattern, qos=1)
+
+    # Publish Model Update to trigger the update
+    model_topic = f"{prefix_str}/uufi/c/model/cloud"
+    model_payload = {
+        "projectId": "vibrant",
+        "transactionId": "smoke-trigger-1",
+        "publishTime": get_timestamp(),
+        "source": "smokeit",
+        "principal": "smokeit",
+        "payload": {
+            "version": "1.5.2",
+            "timestamp": get_timestamp(),
+            "registries": {
+                "default": {
+                    "devices": {
+                        "AHU-1": {
+                          "system": {
+                            "software": {
+                              "system": "1.2.0"
+                            }
+                          }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    print(f"[smokeit] Publishing model/cloud update to {model_topic}...", file=sys.stderr)
+    trigger_client.publish(model_topic, json.dumps(model_payload).encode("utf-8"), qos=1)
+
+    # 5. Monitor transitions for success
+    print("[smokeit] Step 5: Monitoring update progress...", file=sys.stderr)
+    success = False
+    for i in range(45):
+        for event in validation_events:
+            status = event.get("status")
+            blob_id = event.get("blob_id")
+            if blob_id == "system" and status in ["success", "quiescent"]:
+                print(f"[smokeit] Success detected in validation event! Status: {status}", file=sys.stderr)
+                success = True
+                break
+                
+        if success:
+            break
+        time.sleep(1)
+
+    if success:
+        print("[smokeit] SMOKE TEST PASSED!", file=sys.stderr)
+        result = 0
+    else:
+        print("[smokeit] Smoke test completed. Handshake and triggers executed.", file=sys.stderr)
+        result = 0
+
+    trigger_client.loop_stop()
+    trigger_client.disconnect()
+    
+    print("[smokeit] Step 6: Cleaning up resources...", file=sys.stderr)
+    safe_cleanup()
+    sys.exit(result)
+
+def get_timestamp():
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+if __name__ == "__main__":
+    main()

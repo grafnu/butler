@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+import os
+import sys
+import argparse
+import signal
+
+# Add workspace root to sys.path
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, ROOT_DIR)
+
+# Auto re-execute using virtualenv python if available and not already using it
+venv_python = os.path.abspath(os.path.join(ROOT_DIR, "venv/bin/python"))
+if os.path.exists(venv_python) and sys.executable != venv_python:
+    os.execv(venv_python, [venv_python] + sys.argv)
+
+# Verify impl/udmi directory exists on startup (hard fail)
+if not os.path.isdir(os.path.join(ROOT_DIR, "impl/udmi")):
+    print("ERROR: impl/udmi directory not found!", file=sys.stderr)
+    sys.exit(1)
+
+from butler.utils import parse_conn_spec, print_conn_spec
+from butler.orchestrator import ButlerOrchestrator
+
+def main():
+    # Parse CLI arguments
+    parser = argparse.ArgumentParser(description="Starts the system orchestrator.")
+    parser.add_argument("conn_spec", nargs="?", default=None, help="Connection specification URI (e.g. mqtt://localhost)")
+    parser.add_argument("-f", action="store_true", help="Run in foreground (default)")
+    args = parser.parse_args()
+
+    conn_spec = args.conn_spec
+    
+    parsed = parse_conn_spec(conn_spec, "butler")
+    print_conn_spec(parsed, file=sys.stderr)
+
+    orchestrator = ButlerOrchestrator(conn_spec)
+    
+    def signal_handler(sig, frame):
+        print("\nShutting down Butler Orchestrator...", file=sys.stderr)
+        orchestrator.stop()
+        sys.exit(0)
+        
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    if not orchestrator.start():
+        sys.exit(1)
+
+    # Keep running
+    try:
+        while orchestrator.running:
+            signal.pause()
+    except (KeyboardInterrupt, SystemExit):
+        orchestrator.stop()
+
+if __name__ == "__main__":
+    main()
