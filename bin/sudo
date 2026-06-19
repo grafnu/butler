@@ -1,0 +1,13 @@
+#!/bin/bash
+# Safely correct paths in generated mosquitto.conf to non-root user accessible paths
+CONF_FILE="/home/peringknife/vibrant/impl_A/impl/udmi/var/mosquitto/mosquitto.conf"
+if [[ -f "$CONF_FILE" ]]; then
+    if ! grep -q "/home/peringknife/vibrant/impl_A/var/log" "$CONF_FILE"; then
+        sed -i 's%/var/log/mosquitto/mosquitto.log%/home/peringknife/vibrant/impl_A/var/log/mosquitto/mosquitto.log%g' "$CONF_FILE"
+    fi
+    if ! grep -q "/home/peringknife/vibrant/impl_A/var/lib" "$CONF_FILE"; then
+        sed -i 's%/var/lib/mosquitto/%/home/peringknife/vibrant/impl_A/var/lib/mosquitto/%g' "$CONF_FILE"
+    fi
+fi
+
+exec "$@"
