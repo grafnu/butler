@@ -19,7 +19,10 @@ The root directory MUST ONLY contain the following files and directories:
 - **.gitignore**: Git exclusion patterns.
 
 ### Functional Components and Specifications
-- **spec/**: Formal system specifications (primarily `butler.md`).
+- **spec/**: Formal system specifications:
+  - `butler.md` (This document)
+  - [blobstore.md](blobstore.md): BlobStore provider interface and implementations.
+  - [update.md](update.md): Software update message sequence diagram.
 - **bin/**: Operational executables and tooling.
 - **butler/**: Core Python implementation logic.
 - **README.md**: System overview and documentation.
