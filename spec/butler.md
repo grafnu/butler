@@ -286,10 +286,10 @@ During the handshake verification phase (Scope 4), all validation tools, logs, a
 
 ## 12. Protocol Payload Formatting and Envelope Attributes
 
-To ensure complete interoperability and spec compliance across multiple side-by-side implementations, all message payloads and network envelopes MUST adhere to the following formatting standards:
+To ensure complete interoperability and spec compliance across multiple side-by-side implementations, all message payloads and network envelopes MUST adhere strictly to the following unambiguous formatting standards. Implementations and testing frameworks MUST NOT deviate from these standards, and any components employing non-compliant formats (such as nested wrappers or custom configuration attributes) MUST be treated as protocol violations and fail verification.
 
-### 12.1. Handshake Request and Reply Payload Nesting
-Handshake protocol requests (Step 1) and replies (Step 2) published over the UUFI bus may package the `"setup"` and `"reply"` payload blocks inside a `"udmi"` root sub-object. Compliant orchestrators and clients MUST support parsing both the flattened format (where `"setup"` and `"reply"` are at the payload root) and the nested format (where they are nested inside a `"udmi"` wrapper object).
+### 12.1. Handshake Request and Reply Payload Formatting
+Handshake protocol requests (Step 1) and replies (Step 2) published over the UUFI bus MUST utilize the standard flattened format where the `"setup"` and `"reply"` payload blocks reside directly at the payload root. Wrapping or nesting these blocks inside a `"udmi"` root sub-object is strictly prohibited and MUST be rejected as non-compliant.
 
 ### 12.2. Subsystem State and Catalog Model Alignment
 Simulated devices and DUTs MUST report their actual software and firmware states under the `"system"` subsystem ID (rather than `"main"` or other custom names) to ensure alignment with cloud model catalog updates, which configure desired software versions under the standard `"system"` schema. Furthermore, state reports MUST wrap the subsystem inside a `"blobs"` key inside the `"blobset"` state payload (e.g., `blobset: { "blobs": { "system": { ... } } }`) to align with the standard UDMI schemas.
@@ -299,3 +299,12 @@ Any `"blobset"` update config command published by the orchestrator MUST include
 
 ### 12.4. Envelope Nonce Attribute
 To support robust message deduplication and replay protection, clients and devices publishing state, event, or model messages over the UUFI bus SHOULD include a `"nonce"` field in the root of the message's envelope containing a secure, pseudorandomly generated hexadecimal string (at least 32 characters, e.g. 16 bytes). Compliant orchestrators and verifiers MUST gracefully accept, parse, and process envelopes containing the `"nonce"` attribute.
+
+### 12.5. Cloud Model Update Payload Structure
+Cloud model updates published over the UUFI bus (e.g., on `/uufi/c/config/cloud` or model update channels) MUST utilize the standard flattened format where the `"registries"` key resides directly at the payload root (following the schema defined in `uufi.md` Section 5.1). Wrapping or nesting the update payload inside a `"cloud"` root sub-object is strictly prohibited and MUST be rejected as non-compliant.
+
+### 12.6. Single Method for Expected Version Configuration
+The expected/desired version of a device's software subsystem MUST be configured in exactly one way: under the standard software dictionary structure within the device's system configuration (e.g., `system.software.<subsystem> = "{version}"`, where `<subsystem>` defaults to `"system"`). Any alternative or custom configuration properties, such as `"target_version"` (e.g., `system.target_version = "{version}"`), are strictly prohibited and MUST NOT be accepted by the orchestrator or processed as valid expected versions.
+
+### 12.7. Topic Suffix Standard Formatting
+To maintain strict compliance with the UUFI topic routing specification, all UUFI topic paths MUST include both a subtype and a subfolder segment, formatted strictly as `/c/{subtype}/{subfolder}`. Omitting the subfolder segment or formatting topic suffixes as `/c/{subtype}` is non-compliant. For standard registry-less handshakes, the subfolder segment MUST be explicitly set to `"udmi"` (e.g., `/uufi/c/state/udmi` and `/uufi/c/config/udmi`). Topic building and routing components MUST NOT generate topic paths lacking either segment.
