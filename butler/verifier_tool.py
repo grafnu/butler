@@ -82,6 +82,7 @@ def publish_validation_event(client, site_id, device_id, blob_id, message, level
     
     timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     tx_id = str(uuid.uuid4())
+    nonce = os.urandom(16).hex()
     
     val_payload = {
         "message": message,
@@ -101,6 +102,7 @@ def publish_validation_event(client, site_id, device_id, blob_id, message, level
     env = {
         "projectId": "vibrant",
         "transactionId": tx_id,
+        "nonce": nonce,
         "publishTime": timestamp,
         "source": conn["principal"],
         "principal": conn["principal"],
@@ -136,9 +138,11 @@ def publish_handshake_state(client):
         }
     }
     
+    nonce = os.urandom(16).hex()
     env = {
         "projectId": "vibrant",
-        "transactionId": str(uuid.uuid4()),
+        "transactionId": handshake_tx_id,
+        "nonce": nonce,
         "publishTime": timestamp,
         "source": conn["principal"],
         "principal": conn["principal"],
@@ -170,33 +174,35 @@ def process_messages_queue(client):
             global handshake_completed
             if subtype == "config" and subfolder == "udmi" and not d_id:
                 inner_payload = payload_data.get("payload", {})
-                reply_tx_id = inner_payload.get("reply", {}).get("transaction_id") or inner_payload.get("reply", {}).get("transactionId")
+                if "udmi" in inner_payload:
+                    sys.stderr.write("Rejecting handshake reply: nested 'udmi' wrapper is non-compliant\n")
+                    continue
+                    
+                reply_tx_id = payload_data.get("transactionId") or payload_data.get("transaction_id")
                 if reply_tx_id == handshake_tx_id and not handshake_completed:
                     handshake_completed = True
                     # Log handshake completed
                     print(f"VERIFIER [INFO]: Handshake completed for {conn['principal']}", flush=True)
                     # Publish self validation
                     publish_validation_event(client, "unknown", "verifier", None, f"Handshake complete for verifier", "INFO", status="quiescent", result="pass")
+                else:
+                    sys.stderr.write(f"Rejecting handshake reply: envelope transactionId {reply_tx_id} does not match request transactionId {handshake_tx_id}\n")
                 continue
                 
             # Handle Device State Reports
             if subtype == "state" and d_id:
                 inner_payload = payload_data.get("payload", {})
-                blobset = inner_payload.get("blobset", {})
-                blobs = blobset.get("blobs", {})
-                
-                # Check for flat fallback
+                system_data = inner_payload.get("system", {})
+                if not isinstance(system_data, dict):
+                    system_data = {}
+                software_data = system_data.get("software", {})
+                if not isinstance(software_data, dict):
+                    software_data = {}
+                    
                 blobs_to_process = []
-                for b_id, b_data in blobs.items():
-                    blobs_to_process.append((b_id, b_data))
-                if not blobs_to_process:
-                    b_id = "system"
-                    if "make" in inner_payload or "model" in inner_payload or "version" in inner_payload:
-                        blobs_to_process.append((b_id, inner_payload))
-                    elif "blobset" in inner_payload:
-                        bs = inner_payload["blobset"]
-                        if "make" in bs or "model" in bs or "version" in bs:
-                            blobs_to_process.append((b_id, bs))
+                for b_id, b_data in software_data.items():
+                    if isinstance(b_data, dict):
+                        blobs_to_process.append((b_id, b_data))
                             
                 for b_id, b_data in blobs_to_process:
                     status = b_data.get("status", "quiescent")

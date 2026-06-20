@@ -5,8 +5,24 @@ import time
 import uuid
 import hashlib
 import threading
+import re
 import paho.mqtt.client as mqtt
 from butler.conn_spec import parse_conn_spec, get_branch_name
+
+def is_measurable_progress(b_data):
+    if not isinstance(b_data, dict):
+        return False
+    progress_keys = ["progress", "percentage", "percent", "block", "blocks", "downloaded", "count", "done", "step"]
+    for k, v in b_data.items():
+        k_lower = k.lower()
+        if any(pk in k_lower for pk in progress_keys):
+            if isinstance(v, (int, float)):
+                return True
+            if isinstance(v, str):
+                cleaned = v.replace("%", "").strip()
+                if cleaned.replace(".", "", 1).isdigit():
+                    return True
+    return False
 
 # Volatile state tracking for devices
 # Key: {registry_id}/{device_id}/{blob_id}
@@ -138,10 +154,12 @@ def publish_message(client, topic, payload, envelope_extra=None, exclude_subtype
     # Envelope parameters
     timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     tx_id = str(uuid.uuid4())
+    nonce = os.urandom(16).hex()
     
     env = {
         "projectId": "vibrant",
         "transactionId": tx_id,
+        "nonce": nonce,
         "publishTime": timestamp,
         "source": conn["principal"],
         "principal": conn["principal"],
@@ -178,7 +196,8 @@ def trigger_update_command(client, key, r_id, d_id, b_id, state):
                     "sha256": meta["sha256"],
                     "make": state["make"],
                     "model": state["model"],
-                    "generation": timestamp
+                    "generation": timestamp,
+                    "version": state["expected_version"]
                 }
             }
         }
@@ -280,6 +299,10 @@ def on_message(client, userdata, msg):
         if subtype == "state" and subfolder == "udmi" and not d_id:
             # Registry-less client handshake state received on `/uufi/c/state/udmi`
             # Step 2: Config reply confirmation
+            if "udmi" in inner_payload:
+                sys.stderr.write("Rejecting handshake request: nested 'udmi' wrapper is non-compliant\n")
+                return
+                
             client_tx_id = inner_payload.get("setup", {}).get("transaction_id") or inner_payload.get("setup", {}).get("transactionId")
             if client_tx_id:
                 sys.stderr.write(f"Received handshake Step 1 from {principal or source} with TX ID {client_tx_id}\n")
@@ -300,7 +323,9 @@ def on_message(client, userdata, msg):
                 # Use principal from received state, fallback to source
                 client_principal = principal if principal else source
                 env_extra = {
-                    "principal": client_principal
+                    "principal": client_principal,
+                    "transactionId": tx_id,
+                    "transaction_id": tx_id
                 }
                 reply_topic = build_topic(None, None, "config", "udmi", prefix=conn["prefix"])
                 publish_message(client, reply_topic, reply_payload, envelope_extra=env_extra)
@@ -308,55 +333,42 @@ def on_message(client, userdata, msg):
             return
             
         # 3. Sourcing Expected Cloud Model
-        # Sourced over UUFI config/cloud or model/cloud
-        if (subtype == "config" or subtype == "model") and subfolder == "cloud":
-            # Cloud model payload contains desired versions
-            # It maps registries to devices etc.
+        # Sourced over UUFI model/cloud only. Sourcing updates from /uufi/c/config/cloud is prohibited.
+        if subtype == "model" and subfolder == "cloud":
+            if "cloud" in inner_payload:
+                sys.stderr.write("Rejecting cloud model update: nested 'cloud' wrapper is non-compliant\n")
+                return
+                
             registries = inner_payload.get("registries", {})
-            if not registries:
-                # Flat format or single registry
-                # Standard UDMI model update might have nested device properties directly
-                # Let's search recursively for system.software config
-                def scan_model_devices(data, current_reg="testing"):
-                    for key, val in data.items():
-                        if isinstance(val, dict):
-                            if "system" in val and "software" in val["system"]:
-                                # Found a device! key is device_id
-                                software = val["system"]["software"]
-                                update_expected_versions(current_reg, key, software)
-                            else:
-                                scan_model_devices(val, current_reg)
-                scan_model_devices(inner_payload)
-            else:
-                for reg_name, reg_data in registries.items():
+            if not isinstance(registries, dict):
+                registries = {}
+                
+            for reg_name, reg_data in registries.items():
+                if isinstance(reg_data, dict):
                     devices = reg_data.get("devices", {})
-                    for dev_name, dev_data in devices.items():
-                        software = dev_data.get("system", {}).get("software", {})
-                        update_expected_versions(reg_name, dev_name, software)
+                    if isinstance(devices, dict):
+                        for dev_name, dev_data in devices.items():
+                            if isinstance(dev_data, dict):
+                                software = dev_data.get("system", {}).get("software", {})
+                                if isinstance(software, dict):
+                                    update_expected_versions(reg_name, dev_name, software)
             return
             
         # 4. Device State Report
         if subtype == "state" and d_id:
             # Authoritative source of actual versions. DO NOT DEDUPLICATE!
-            # Extracted: {site_id}/{device_id}/{blob_id}
-            # For consistency, use blobs wrapper key
-            blobset = inner_payload.get("blobset", {})
-            blobs = blobset.get("blobs", {})
-            
-            # Flat/unnested checking fallback
-            blobs_to_process = []
-            for b_id, b_data in blobs.items():
-                blobs_to_process.append((b_id, b_data))
+            # Sourcing of actual software versions MUST be done exclusively under standard system.software.<blob_id> state payload path.
+            system_data = inner_payload.get("system", {})
+            if not isinstance(system_data, dict):
+                system_data = {}
+            software_data = system_data.get("software", {})
+            if not isinstance(software_data, dict):
+                software_data = {}
                 
-            if not blobs_to_process:
-                # Root level check
-                b_id = "system"
-                if "make" in inner_payload or "model" in inner_payload or "version" in inner_payload:
-                    blobs_to_process.append((b_id, inner_payload))
-                elif "blobset" in inner_payload:
-                    bs = inner_payload["blobset"]
-                    if "make" in bs or "model" in bs or "version" in bs:
-                        blobs_to_process.append((b_id, bs))
+            blobs_to_process = []
+            for b_id, b_data in software_data.items():
+                if isinstance(b_data, dict):
+                    blobs_to_process.append((b_id, b_data))
                         
             with device_states_lock:
                 for b_id, b_data in blobs_to_process:
@@ -412,8 +424,9 @@ def on_message(client, userdata, msg):
                         elif current_track == "pending":
                             # Wait for pending transition
                             if status == "pending":
-                                # Keep pending, refresh timer
-                                state["pending_since"] = time.time()
+                                # Keep pending, refresh timer only if there's active, measurable progress
+                                if is_measurable_progress(b_data):
+                                    state["pending_since"] = time.time()
                             elif status == "success":
                                 state["tracking_state"] = "quiescent"
                                 state["retry_count"] = 0
