@@ -93,9 +93,14 @@ for ID in "${IMPLEMENTATIONS[@]}"; do
   
   echo "Launching gemini -s -p @UPDATE.md for impl_${ID} in background (logging to ${LOG_FILE})..."
   (
+    START_INDIVIDUAL=$SECONDS
     cd "${IMPL_DIR}"
     # Execute Gemini in sandbox mode using the specified options and input @UPDATE.md
     "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" -s -p @UPDATE.md > "${LOG_FILE}" 2>&1
+    RET=$?
+    ELAPSED_INDIVIDUAL=$(( SECONDS - START_INDIVIDUAL ))
+    echo "${ELAPSED_INDIVIDUAL}" > "${BASE_DIR}/impl_${ID}.time"
+    exit ${RET}
   ) &
   PIDS["$ID"]=$!
 done
@@ -103,14 +108,20 @@ done
 # Wait for all processes to complete
 echo "Waiting for parallel update processes to complete..."
 FAILED_IMPLS=()
+declare -A INDIVIDUAL_TIMES
 for ID in "${IMPLEMENTATIONS[@]}"; do
   PID=${PIDS["$ID"]}
   if wait "${PID}"; then
-    echo "SUCCESS: impl_${ID} updated successfully."
+    ELAPSED_INDIVIDUAL=$(cat "${BASE_DIR}/impl_${ID}.time" 2>/dev/null || echo "0")
+    echo "SUCCESS: impl_${ID} updated successfully in ${ELAPSED_INDIVIDUAL}s."
+    INDIVIDUAL_TIMES["$ID"]="${ELAPSED_INDIVIDUAL}"
   else
-    echo "FAILURE: impl_${ID} update failed. Check log: ${LOGS["$ID"]}"
+    ELAPSED_INDIVIDUAL=$(cat "${BASE_DIR}/impl_${ID}.time" 2>/dev/null || echo "0")
+    echo "FAILURE: impl_${ID} update failed in ${ELAPSED_INDIVIDUAL}s. Check log: ${LOGS["$ID"]}"
     FAILED_IMPLS+=("${ID}")
+    INDIVIDUAL_TIMES["$ID"]="${ELAPSED_INDIVIDUAL}"
   fi
+  rm -f "${BASE_DIR}/impl_${ID}.time"
 done
 
 if [ ${#FAILED_IMPLS[@]} -gt 0 ]; then
@@ -147,6 +158,7 @@ done
 
 # 5. Run the Gemini Merger Workflow (@MERGER.md)
 echo "=== Running Gemini Merger (@MERGER.md) ==="
+START_MERGER=$SECONDS
 cd "${BASE_DIR}/gemerger"
 echo "Executing gemini -s -p @MERGER.md in gemerger..."
 LOG_FILE_MERGER="${BASE_DIR}/gemerger.log"
@@ -158,6 +170,9 @@ else
   echo "FAILURE: Gemini merger run failed. Check log: ${LOG_FILE_MERGER}"
   exit 1
 fi
+
+ELAPSED_MERGER=$(( SECONDS - START_MERGER ))
+echo "=== Gemini Merger completed in ${ELAPSED_MERGER}s ==="
 
 # Check and push any merger changes
 UPSTREAM_MERGER=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo "origin/gemerger")
@@ -172,3 +187,10 @@ else
 fi
 
 echo "=== All Workflow Tasks Completed ==="
+echo ""
+echo "=== Workflow Time Report ==="
+for ID in "${IMPLEMENTATIONS[@]}"; do
+  echo "Update impl_${ID}:  ${INDIVIDUAL_TIMES["$ID"]}s"
+done
+echo "Gemini Merger:    ${ELAPSED_MERGER}s"
+echo "============================="
