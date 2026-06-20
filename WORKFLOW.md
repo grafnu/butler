@@ -44,7 +44,7 @@ impl/udmi/bin/setup_base
 
 ### Spec-Driven Code Generation (REBUILD.md)
 On the clean `main` branch or when bootstrapping a brand-new implementation, the implementation directories `butler/` (core Python logic) and `bin/` (operational executables) may not be pre-populated or checked into the repository.
-- **When to use `REBUILD.md`:** If you are setting up a new implementation from scratch, or need to perform a completely clean, spec-driven rebuild of the codebase to align with changes in `spec/`, you must invoke the agentic build pipeline using `gemini -p @REBUILD.md`.
+- **When to use `REBUILD.md`:** If you are setting up a new implementation from scratch, or need to perform a completely clean, spec-driven rebuild of the codebase to align with changes in `spec/`, you must invoke the agentic build pipeline using `gemini -s -p @REBUILD.md`.
 - **Process Overview:** The agentic build pipeline completely deletes existing `butler/` and `bin/` directories, parses the formal architectural and protocol specifications in `spec/` (e.g., `butler.md`, `blobstore.md`, `update.md`), and automatically generates/bootstraps compliant source code and wrapper scripts.
 
 ---
@@ -56,22 +56,22 @@ The Butler Managed Update System follows a **spec-driven agentic lifecycle** tha
 Below is the workflow sequence detailing how to update specifications, update implementation code, run cross-implementation tests, and merge specification updates back to the `main` branch.
 
 ```
-                  +-----------------------+
-                  |    impl_<id> Branch   | <-------------------+
-                  |  gemini -p @UPDATE.md |                     |
-                  +-----------+-----------+                     |
-                              |                                 |
-                              v                                 | checkout spec/
-                  +-----------------------+                     |
-                  |    gemerger Branch    |                     |
-                  |  gemini -p @MERGER.md |                     |
-                  +-----------+-----------+                     |
-                              |                                 |
-                              v                                 |
-                  +-----------------------+                     |
-                  |      main Branch      | --------------------+
-                  |     checkout spec     |
-                  +-----------------------+
+                  +-------------------------+
+                  |    impl_<id> Branches   | <-----------------+
+                  |       @UPDATE.md        |                   |
+                  +------------+------------+                   |
+                               |                                |
+                               v                                |
+                  +-------------------------+                   |
+                  |     gemerger Branch     |                   |
+                  |        @MERGER.md       |                   |
+                  +------------+------------+                   |
+                               |                                |
+                               v                                |
+                  +-------------------------+                   |
+                  |       main Branch       | ------------------+
+                  |   manually update spec  |
+                  +-------------------------+
 ```
 
 ### Phase 1: Implementation Update and Spec Auditing (`impl_<id>` Branches)
@@ -83,7 +83,7 @@ For each implementation branch `impl_<id>` (where `<id>` is the implementation i
 1. **Update and Audit the Implementation:**
    ```bash
    cd ../impl_<id>
-   gemini -p @UPDATE.md
+   gemini -s -p @UPDATE.md
    ```
    *Action:* Gemini merges `origin/main` into the current branch, parses specifications, and delegates environment preparation, dependency management, port validation, and local smoke testing (`bin/smokeit`) on isolated, branch-mapped MQTT/testing ports directly to the implementation-specific automated scripts and setup skills.
 
@@ -100,7 +100,7 @@ Once all implementations have updated and verified themselves against the update
 Switch to the `gemerger` directory:
 ```bash
 cd ../gemerger/
-gemini -p @MERGER.md
+gemini -s -p @MERGER.md
 ```
 *Action:* Under the hood, Gemini runs a complete cross-implementation matrix:
 - Concurrently fetches and clones/syncs all remote `impl_*` branches into `gemerger/impl/`.
@@ -120,7 +120,7 @@ cd ../main/
 git fetch
 git checkout origin/gemerger -- spec/
 ```
-*Action:* This command fetches the latest remote changes and checks out the validated `spec/` files from the `gemerger` branch directly into the local `main` branch workspace, completing the development loop.
+*Action:* This command fetches the latest remote changes and checks out the validated `spec/` files from the `gemerger` branch directly into the local `main` branch workspace, completing the development loop. These changes should be reviewed to make sure they're sane.
 
 ---
 
@@ -128,9 +128,9 @@ git checkout origin/gemerger -- spec/
 
 | Phase / Command | Target Directory / Branch | Purpose / Description |
 | :--- | :--- | :--- |
-| `gemini -p @UPDATE.md` | `impl_<id>` | Merges main, audits specs, adjusts implementation logic, and runs local smoke tests (delegating python and local workspace environment setup to implementation-specific setup skills). |
-| `gemini -p @MERGER.md` | `gemerger` | Executes full concurrent cross-testing of all implementation pairs, refines core specs, and pushes verified specification changes. |
+| `gemini -s -p @UPDATE.md` | `impl_<id>` | Merges main, audits specs, adjusts implementation logic, and runs local smoke tests (delegating python and local workspace environment setup to implementation-specific setup skills). |
+| `gemini -s -p @MERGER.md` | `gemerger` | Executes full concurrent cross-testing of all implementation pairs, refines core specs, and pushes verified specification changes. |
 | `git checkout origin/gemerger -- spec/` | `main` | Imports the verified and refined specifications from the integration branch into the main branch. |
-| `gemini -p @REBUILD.md` | `impl_<id>` / New setup | Bootstraps a brand-new implementation from scratch or performs a clean spec-driven rebuild of `butler/` and `bin/` from files in `spec/`. |
+| `gemini -s -p @REBUILD.md` | `impl_<id>` / New setup | Bootstraps a brand-new implementation from scratch or performs a clean spec-driven rebuild of `butler/` and `bin/` from files in `spec/`. |
 | `bin/setup mqtt://localhost:<port>/` | Local workspace | Boots up local broker infrastructure on the specified isolated port and configures the UUFI connection spec. |
 | `bin/smokeit mqtt://localhost:<port>/` | Local workspace | Runs the interactive integration smoke test (Orchestrator, Verifier, and simulated DUT) on the specified port. |
