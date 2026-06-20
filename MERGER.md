@@ -37,7 +37,7 @@ For each sibling implementation branch (`impl_{ID}`):
 - If the Implementation Agent created, updated, or removed a `spec_analysis.txt` file on the branch (describing specification ambiguities or external incompatibilities), that file should also be part of the branch.
 - All implementation branches with additions or deletions of `merge_analysis.txt` or `spec_analysis.txt` must be committed and pushed back to the remote origin if permissions allow.
 
-If there are no changes to the spec or the `UPDATE.md` skill on the merger branch, then an empty commit should be pushed to the merger branch with the log message "Clean run with no spec or skill changes."
+If there are changes to the specifications or implementation guidelines on the merger branch, a summary commit detailing those changes must be created and pushed. If there are no changes, an empty commit with the exact commit message "Clean test run" must be pushed to the merger branch. A commit must be created in all cases.
 
 The primary goal is to empirically ensure that the provided specs are robust, coherent, and comply to the spec, by interoperability testing between multiple different implementations of the `butler` spec. Spec compliance is defined as successfully passing the `smokeit` test across all cross-implementation pairs with zero verification failures and consistent behavioral logs.
 
@@ -83,7 +83,10 @@ If the smoke test passes, analyze the generated log files to see if there is any
 
 The actual implementation in `*/butler/` will be different and that's expected. (Same with `*/bin/`).
 
-Any test files should be generated in directories covered by `.gitignore`. Do not clean up the test runs after execution. At the end of the testing, there should not be any artifacts left that are visible by `git status`.
+**Working Directory Integrity & Temporary File Guidelines:**
+- The working directory MUST remain completely clean (as verified by `git status`) of any temporary files, logs, diagnostics, or test artifacts generated during run-time execution.
+- All temporary work, logs, and testing outputs MUST be generated strictly inside a dedicated subdirectory that is properly ignored by the repository's `.gitignore` file (such as `tmp/` or `out/`).
+- Do not clean up or delete the test runs after execution to allow for diagnostic inspection; however, they MUST be structured in such a way that there are absolutely no artifacts, stray files, or untracked modifications left that are visible by `git status` in the main workspace.
 
 Run the setup and tests multiple times, once for each impl as `butler` with another impl as `verifier`. If there are N implementations then there should be exactly N*(N-1) test runs. Every combination of `butler` & `verifier` should be tested.
 
@@ -96,7 +99,7 @@ Create/update a file `impl/test_summary.txt` with PASS/FAIL results of the testi
 
 All branches must be committed and pushed (if possible given the permissions):
 - For each implementation branch (`impl_{ID}`): check out the branch, commit the addition or deletion of `merge_analysis.txt` and `spec_analysis.txt` (if created, updated, or deleted), and push the branch to the remote origin if permissions allow.
-- For the merger branch: commit any changes to the `spec/` directory and/or the `UPDATE.md` skill file, and push the branch. If there are no changes, push an empty commit with the log message "Clean run with no spec or skill changes."
+- For the merger branch: a commit must be created and pushed in all cases. If changes were made to files in the `spec/` directory and/or the `UPDATE.md` skill file, create a summary commit whose message clearly details the spec or guideline changes. If no changes were made, create and push an empty commit (using `git commit --allow-empty`) with the exact log message "Clean test run".
 
 **Execution Guidelines:**
 - The implementation repository root is the directory where the `impl_{ID}` branch is cloned and checked out, and `merge_analysis.txt` and `spec_analysis.txt` should be written/read at the root of that repository directory.
