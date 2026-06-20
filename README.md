@@ -38,12 +38,12 @@ impl/udmi/bin/setup_base
 
 The Butler system is organized as follows:
 
-- **spec/**: Formal architectural and protocol specifications (e.g., `butler.md`, `blobstore.md`, `update.md`).
+- **spec/**: Formal architectural and protocol specifications (e.g., [spec/butler.md](spec/butler.md)).
 - **bin/**: Operational executables and tooling for the system.
 - **butler/**: Core implementation logic (Python).
 - **README.md**: This overview document.
 - **AGENTS.md**: Mandatory instructions and constraints for agentic systems.
-- **REBUILD.md/UPDATE.md/AUDIT.md/MERGER.md/WORKFLOW.md**: System procedures and workflows.
+- **REBUILD.md/UPDATE.md/AUDIT.md/MERGER.md/[WORKFLOW.md](WORKFLOW.md)**: System procedures and workflows.
 - **.wincolor/.gitignore**: Environment and git configuration.
 - **impl/**: Cross-implementation testing workspace.
 - **testing/**: Test assets and simulation environments.
@@ -142,7 +142,6 @@ bin/smokeit mqtt://localhost:$mqtt_port/
 
 ## Documentation
 For detailed specifications and component requirements, see:
-- `spec/butler.md`: Main Butler orchestrator specification.
-- `spec/blobstore.md`: BlobStore provider interface and implementations.
-- `spec/update.md`: Software update message sequence diagram.
+- [spec/butler.md](spec/butler.md): Main Butler orchestrator specification (with links to other sub-specifications).
+- [WORKFLOW.md](WORKFLOW.md): Developer workflow and environment setup.
 - `AGENTS.md`: Mandates and instructions for agentic systems.
