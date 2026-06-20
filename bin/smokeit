@@ -72,8 +72,8 @@ def main():
         sys.stderr.write("Starting Pubber DUT simulation...\n")
         sys.stderr.flush()
         dut_cmd = [
-            "impl/udmi/bin/start_dut",
-            "testing/udmi_site_model",
+            os.path.abspath(os.path.join(project_root, "impl/udmi/bin/start_dut")),
+            os.path.abspath(os.path.join(project_root, "testing/udmi_site_model")),
             f"mqtt://localhost:{port}/",
             "AHU-1",
             "uufi-serial"
@@ -90,9 +90,9 @@ def main():
         sys.stderr.write("Triggering managed software update...\n")
         sys.stderr.flush()
         trigger_cmd = [
-            "impl/udmi/bin/site_trigger",
+            os.path.abspath(os.path.join(project_root, "impl/udmi/bin/site_trigger")),
             "update",
-            "testing/udmi_site_model",
+            os.path.abspath(os.path.join(project_root, "testing/udmi_site_model")),
             "AHU-1",
             "system",
             "1.1.0"
