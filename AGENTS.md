@@ -43,7 +43,7 @@ These top-level files/directories MUST NOT be removed or altered:
 * AUDIT.md: Audit an implementation for spec compliance.
 * MERGER.md: Specification merge logic.
 * WORKFLOW.md: Operational workflow definitions.
-* spec/: Formal system specifications (e.g., butler.md, blobstore.md, update.md). Note that spec/ is considered mutable ONLY when executing the specification merge integration procedure defined in MERGER.md on the gemerger branch.
+* spec/: Formal system specifications (e.g., butler.md, blobstore.md, update.md). Note that spec/ is considered mutable ONLY when executing the specification merge integration procedure defined in MERGER.md on the merger branch.
 * .wincolor: Terminal configuration.
 * .gitignore: Git exclusion patterns.
 
