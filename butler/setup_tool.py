@@ -203,7 +203,7 @@ def main():
             sys.stderr.write(f"Warning: Pip requirements installation failed: {e}\n")
             
     # Isolated Site Model Setup
-    src_site = "impl/udmi/tests/sites/udmi_site_model"
+    src_site = "impl/udmi/sites/udmi_site_model"
     dest_site = "testing/udmi_site_model"
     os.makedirs("testing", exist_ok=True)
     if os.path.isdir(src_site):
