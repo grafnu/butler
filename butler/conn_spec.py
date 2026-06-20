@@ -14,7 +14,28 @@ def get_branch_name():
     except Exception:
         return "unknown"
 
-def get_branch_ports():
+def get_branch_ports(force_formula=False):
+    if not force_formula:
+        # 1. Try reading the negotiated port from local configuration files if they exist on disk
+        for path in ["impl/udmi/udmis/etc/local_pod.json", "impl/udmi/etc/mosquitto_udmi.conf"]:
+            if os.path.exists(path):
+                try:
+                    with open(path, "r") as f:
+                        content = f.read()
+                    if "local_pod.json" in path:
+                        match = re.search(r'"port":\s*([0-9]+)', content)
+                        if match:
+                            mqtt_port = int(match.group(1))
+                            return mqtt_port, mqtt_port + 1
+                    elif "mosquitto_udmi.conf" in path:
+                        match = re.search(r'listener\s+([0-9]+)', content)
+                        if match:
+                            mqtt_port = int(match.group(1))
+                            return mqtt_port, mqtt_port + 1
+                except Exception:
+                    pass
+
+    # 2. Fallback to SHA256 formula
     branch = get_branch_name()
     hash_bytes = hashlib.sha256(branch.encode('utf-8')).digest()
     hash_int = int.from_bytes(hash_bytes, byteorder='big')

@@ -171,6 +171,11 @@ def main():
         offline = True
         sys.argv.remove("--offline")
         
+    # Handle stop immediately before any other initialization/parsing
+    if stop:
+        teardown_background_services()
+        sys.exit(0)
+        
     # Parse conn_spec
     try:
         conn = parse_conn_spec(sys.argv, "setup")
@@ -178,14 +183,61 @@ def main():
         sys.stderr.write(f"Error parsing connection spec: {e}\n")
         sys.exit(1)
         
-    # Get branch-specific ports and configure config files
-    mqtt_port, etcd_port = get_branch_ports()
-    configure_dynamic_ports(mqtt_port, etcd_port)
+    # Get branch-specific ports (using formula)
+    mqtt_port, etcd_port = get_branch_ports(force_formula=True)
+    
+    # Pre-check port status on original branch ports and standard ports
+    ports_to_check = [mqtt_port, etcd_port, 1883, 8883, 2379]
+    sys.stderr.write("Performing port status pre-checks...\n")
+    for p in ports_to_check:
+        proc_info = get_process_on_port(p)
+        if proc_info:
+            sys.stderr.write(f"Port {p} is OCCUPIED by active process(es):\n{proc_info}\n")
+            
+    # Check if we have our own services running from previous runs
+    our_mqtt_pid = None
+    if os.path.exists("out/mosquitto.pid"):
+        try:
+            with open("out/mosquitto.pid", "r") as f:
+                our_mqtt_pid = int(f.read().strip())
+        except Exception:
+            pass
+            
+    our_etcd_pid = None
+    if os.path.exists("out/etcd.pid"):
+        try:
+            with open("out/etcd.pid", "r") as f:
+                our_etcd_pid = int(f.read().strip())
+        except Exception:
+            pass
+
+    # A port has collision if it is open/listening, AND either we have no recorded PID or the listening PID is different from ours
+    def port_has_collision(port, our_pid):
+        if not check_port_open("localhost", port):
+            return False
+        if our_pid:
+            listening_pid = get_pid_listening_on_port(port)
+            if listening_pid == our_pid:
+                return False
+        return True
+
+    original_mqtt = mqtt_port
+    while port_has_collision(mqtt_port, our_mqtt_pid):
+        sys.stderr.write(f"Collision detected on MQTT port {mqtt_port}. Negotiating upward...\n")
+        mqtt_port += 1
         
-    # Handle stop
-    if stop:
-        teardown_background_services()
-        sys.exit(0)
+    while port_has_collision(etcd_port, our_etcd_pid):
+        sys.stderr.write(f"Collision detected on etcd port {etcd_port}. Negotiating upward...\n")
+        etcd_port += 1
+        
+    if mqtt_port != original_mqtt:
+        sys.stderr.write(f"Dynamic Port Negotiation: MQTT port shifted from {original_mqtt} to {mqtt_port}\n")
+        
+    if conn["port"] == original_mqtt:
+        conn["port"] = mqtt_port
+        
+    # Configure config files with negotiated ports
+    configure_dynamic_ports(mqtt_port, etcd_port)
         
     # Check for hard fail layout requirement
     # "The udmi directory must exist inside the impl/ directory (at impl/udmi/ relative to the workspace root). All tools must verify this filesystem layout on startup and immediately raise a hard error if the impl/udmi directory is not found."
@@ -202,6 +254,27 @@ def main():
         except Exception as e:
             sys.stderr.write(f"Warning: Pip requirements installation failed: {e}\n")
             
+    # Ensure mosquitto certs folder inside impl/udmi points to the workspace var/mosquitto/certs
+    workspace_certs = os.path.abspath("var/mosquitto/certs")
+    udmi_certs = os.path.abspath("impl/udmi/var/mosquitto/certs")
+    os.makedirs("var/mosquitto/certs", exist_ok=True)
+    if os.path.exists(udmi_certs) and not os.path.islink(udmi_certs):
+        try:
+            # If it's an empty folder or directory, remove it to make way for the symlink
+            if os.path.isdir(udmi_certs):
+                shutil.rmtree(udmi_certs)
+            else:
+                os.remove(udmi_certs)
+        except Exception as e:
+            sys.stderr.write(f"Warning: Failed to clean up {udmi_certs}: {e}\n")
+            
+    if not os.path.exists(udmi_certs):
+        try:
+            os.symlink(workspace_certs, udmi_certs)
+            sys.stderr.write(f"Created symlink: {udmi_certs} -> {workspace_certs}\n")
+        except Exception as e:
+            sys.stderr.write(f"Warning: Failed to create symlink: {e}\n")
+
     # Isolated Site Model Setup
     src_site = "impl/udmi/sites/udmi_site_model"
     dest_site = "testing/udmi_site_model"
@@ -214,14 +287,6 @@ def main():
     else:
         sys.stderr.write(f"Warning: Source site model {src_site} not found.\n")
         
-    # Pre-check port scanning
-    ports_to_check = [conn["port"], etcd_port, 1883, 8883, 2379]
-    sys.stderr.write("Performing port status pre-checks...\n")
-    for p in ports_to_check:
-        proc_info = get_process_on_port(p)
-        if proc_info:
-            sys.stderr.write(f"Port {p} is OCCUPIED by active process(es):\n{proc_info}\n")
-            
     # Start broker if not running
     if conn["scheme"] == "mqtt":
         if not check_port_open("localhost", conn["port"]):
