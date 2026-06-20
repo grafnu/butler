@@ -11,12 +11,18 @@ set -euo pipefail
 
 # 1. Internal Configuration
 IMPLEMENTATIONS=("A" "B" "C" "D")
+
+if ! command -v gemini >/dev/null 2>&1; then
+  echo "Error: gemini executable not found in PATH." >&2
+  exit 1
+fi
 GEMINI_BIN="gemini"
+
 GEMINI_OPTS=("--proxy=false" "--approval-mode" "yolo")
 
 # Determine directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MAIN_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+MAIN_DIR="$(cd "${SCRIPT_DIR}" && pwd)"
 BASE_DIR="$(cd "${MAIN_DIR}/.." && pwd)"
 
 echo "=== System Configuration ==="
@@ -70,8 +76,8 @@ for ID in "${IMPLEMENTATIONS[@]}"; do
   setup_sibling "impl_${ID}" "impl_${ID}"
 done
 
-# Setup gemerger
-setup_sibling "gemerger" "gemerger"
+# Setup merger
+setup_sibling "merger" "merger"
 
 echo "=== Base Directory Structure Verified/Constructed ==="
 
@@ -82,14 +88,19 @@ declare -A LOGS
 
 for ID in "${IMPLEMENTATIONS[@]}"; do
   IMPL_DIR="${BASE_DIR}/impl_${ID}"
-  LOG_FILE="/tmp/gemini_update_impl_${ID}.log"
+  LOG_FILE="${BASE_DIR}/impl_${ID}.log"
   LOGS["$ID"]="${LOG_FILE}"
   
   echo "Launching gemini -s -p @UPDATE.md for impl_${ID} in background (logging to ${LOG_FILE})..."
   (
+    START_INDIVIDUAL=$SECONDS
     cd "${IMPL_DIR}"
     # Execute Gemini in sandbox mode using the specified options and input @UPDATE.md
     "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" -s -p @UPDATE.md > "${LOG_FILE}" 2>&1
+    RET=$?
+    ELAPSED_INDIVIDUAL=$(( SECONDS - START_INDIVIDUAL ))
+    echo "${ELAPSED_INDIVIDUAL}" > "${BASE_DIR}/impl_${ID}.time"
+    exit ${RET}
   ) &
   PIDS["$ID"]=$!
 done
@@ -97,14 +108,20 @@ done
 # Wait for all processes to complete
 echo "Waiting for parallel update processes to complete..."
 FAILED_IMPLS=()
+declare -A INDIVIDUAL_TIMES
 for ID in "${IMPLEMENTATIONS[@]}"; do
   PID=${PIDS["$ID"]}
   if wait "${PID}"; then
-    echo "SUCCESS: impl_${ID} updated successfully."
+    ELAPSED_INDIVIDUAL=$(cat "${BASE_DIR}/impl_${ID}.time" 2>/dev/null || echo "0")
+    echo "SUCCESS: impl_${ID} updated successfully in ${ELAPSED_INDIVIDUAL}s."
+    INDIVIDUAL_TIMES["$ID"]="${ELAPSED_INDIVIDUAL}"
   else
-    echo "FAILURE: impl_${ID} update failed. Check log: ${LOGS["$ID"]}"
+    ELAPSED_INDIVIDUAL=$(cat "${BASE_DIR}/impl_${ID}.time" 2>/dev/null || echo "0")
+    echo "FAILURE: impl_${ID} update failed in ${ELAPSED_INDIVIDUAL}s. Check log: ${LOGS["$ID"]}"
     FAILED_IMPLS+=("${ID}")
+    INDIVIDUAL_TIMES["$ID"]="${ELAPSED_INDIVIDUAL}"
   fi
+  rm -f "${BASE_DIR}/impl_${ID}.time"
 done
 
 if [ ${#FAILED_IMPLS[@]} -gt 0 ]; then
@@ -141,9 +158,10 @@ done
 
 # 5. Run the Gemini Merger Workflow (@MERGER.md)
 echo "=== Running Gemini Merger (@MERGER.md) ==="
-cd "${BASE_DIR}/gemerger"
-echo "Executing gemini -s -p @MERGER.md in gemerger..."
-LOG_FILE_MERGER="/tmp/gemini_merger.log"
+START_MERGER=$SECONDS
+cd "${BASE_DIR}/merger"
+echo "Executing gemini -s -p @MERGER.md in merger..."
+LOG_FILE_MERGER="${BASE_DIR}/merger.log"
 echo "Logging output to ${LOG_FILE_MERGER}..."
 
 if "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" -s -p @MERGER.md > "${LOG_FILE_MERGER}" 2>&1; then
@@ -153,16 +171,26 @@ else
   exit 1
 fi
 
+ELAPSED_MERGER=$(( SECONDS - START_MERGER ))
+echo "=== Gemini Merger completed in ${ELAPSED_MERGER}s ==="
+
 # Check and push any merger changes
-UPSTREAM_MERGER=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo "origin/gemerger")
+UPSTREAM_MERGER=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo "origin/merger")
 UNPUSHED_MERGER=$(git log "${UPSTREAM_MERGER}..HEAD" --oneline 2>/dev/null || echo "")
 if [ -n "${UNPUSHED_MERGER}" ]; then
-  echo "Found unpushed commits in gemerger:"
+  echo "Found unpushed commits in merger:"
   echo "${UNPUSHED_MERGER}"
-  echo "Pushing merger updates to origin/gemerger..."
-  git push origin HEAD:gemerger
+  echo "Pushing merger updates to origin/merger..."
+  git push origin HEAD:merger
 else
-  echo "No unpushed commits for gemerger."
+  echo "No unpushed commits for merger."
 fi
 
 echo "=== All Workflow Tasks Completed ==="
+echo ""
+echo "=== Workflow Time Report ==="
+for ID in "${IMPLEMENTATIONS[@]}"; do
+  echo "Update impl_${ID}:  ${INDIVIDUAL_TIMES["$ID"]}s"
+done
+echo "Gemini Merger:    ${ELAPSED_MERGER}s"
+echo "============================="
