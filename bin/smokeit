@@ -137,11 +137,15 @@ def main():
     print("[smokeit] Step 3: Launching Pubber DUT...", file=sys.stderr)
     start_dut_script = os.path.join(ROOT_DIR, "impl/udmi/bin/start_dut")
     
+    # Settle on absolute path for site_model as start_dut changes working directories
+    site_model_abs = os.path.abspath(os.path.join(ROOT_DIR, "testing/udmi_site_model"))
+    
     env = os.environ.copy()
     env["MQTT_PORT"] = str(port)
+    env["PATH"] = os.path.join(ROOT_DIR, "out/bin") + os.pathsep + env.get("PATH", "")
     
     dut_p = subprocess.Popen(
-        [start_dut_script, "testing/udmi_site_model", "vibrant", "AHU-1"],
+        [start_dut_script, site_model_abs, "vibrant", "AHU-1"],
         env=env,
         cwd=ROOT_DIR,
         preexec_fn=os.setsid,

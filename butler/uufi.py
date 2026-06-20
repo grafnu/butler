@@ -68,6 +68,9 @@ class UUFIClient:
             return False
 
     def build_topic(self, sub_type, sub_folder, site_id=None, device_id=None):
+        # Topic Suffix Standard Formatting (Section 12.7)
+        if not sub_type or not sub_folder:
+            raise ValueError("Both sub_type and sub_folder must be provided to build a compliant UUFI topic path.")
         # Topic Slashes: All UUFI topics MUST start with a leading slash `/`.
         # [/{prefix}]/uufi/[r/{deviceRegistryId}/[d/{deviceId}/]]c/{subType}/{subFolder}
         parts = []
@@ -254,14 +257,24 @@ class UUFIClient:
         config_topic = self.build_topic("config", "udmi")
         
         def on_handshake_reply(topic, envelope):
+            # Handshake Request and Reply Payload Formatting (Section 12.1)
+            # Enforce that the handshake config reply's envelope includes transactionId matching original request's transaction ID
+            reply_tx_id = envelope.get("transactionId") or envelope.get("transaction_id")
+            if reply_tx_id != transaction_id:
+                # Reject handshake replies that do not match their original request's transaction ID
+                return
+
             payload = envelope.get("payload", {})
-            setup = payload.get("setup", {})
-            reply = setup.get("reply", {})
+            # Flattened format (Section 12.1): 'reply' block resides directly at the payload root
+            reply = payload.get("reply")
+            if not reply:
+                # Fallback support if needed, but the main one must be flat
+                reply = payload.get("setup", {}).get("reply", {})
             
             # Check envelope principal matches or target matches
             envelope_principal = envelope.get("principal")
             if envelope_principal == self.principal or not envelope_principal:
-                if reply.get("transaction_id") == transaction_id:
+                if reply.get("transaction_id") == transaction_id or reply_tx_id == transaction_id:
                     self.handshake_completed = True
                     self.handshake_event.set()
 
@@ -290,7 +303,8 @@ class UUFIClient:
             payload = envelope.get("payload", {})
             setup = payload.get("setup", {})
             
-            transaction_id = setup.get("transaction_id")
+            # Extract transaction ID from client's request envelope or setup block
+            transaction_id = envelope.get("transactionId") or envelope.get("transaction_id") or setup.get("transaction_id")
             
             if not principal or not transaction_id:
                 return
@@ -298,6 +312,7 @@ class UUFIClient:
             print(f"Received Handshake State from {principal}. Sending Step 2 Config Reply...", file=sys.stderr)
             
             config_topic = self.build_topic("config", "udmi")
+            # Flattened format where "setup" and "reply" blocks reside directly at the payload root (Section 12.1)
             config_payload = {
                 "version": "1.5.2",
                 "timestamp": get_timestamp(),
@@ -305,10 +320,10 @@ class UUFIClient:
                     "functions_ver": 9,
                     "transaction_id": transaction_id,
                     "msg_source": self.principal,
-                    "deviceRegistryId": "default", # Provide default registry ID
-                    "reply": {
-                        "transaction_id": transaction_id
-                    }
+                    "deviceRegistryId": "default" # Provide default registry ID
+                },
+                "reply": {
+                    "transaction_id": transaction_id
                 }
             }
             

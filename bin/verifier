@@ -55,10 +55,9 @@ class VerifierTool:
             sys.exit(1)
         print(f"VERIFIER [INFO]: Handshake completed for {self.principal}")
 
-        # Step 2: Subscribe to device blobset states
-        # [/{prefix}]/uufi/r/+/d/+/state/blobset
-        state_pattern = self.client.build_topic("state", "blobset", "+", "+")
-        self.client.subscribe(state_pattern, self._on_device_state)
+        # Step 2: Subscribe to device states on state/udmi and state/blobset (Section 12.7)
+        self.client.subscribe(self.client.build_topic("state", "udmi", "+", "+"), self._on_device_state)
+        self.client.subscribe(self.client.build_topic("state", "blobset", "+", "+"), self._on_device_state)
 
         print("Verifier running and monitoring transitions...", file=sys.stderr)
         return True
@@ -94,14 +93,21 @@ class VerifierTool:
         device_id = topic_info["device_id"]
 
         payload = envelope.get("payload", {})
-        blobset = payload.get("blobset", {})
-        blobs = blobset.get("blobs", {})
+        
+        # Subsystem State and Catalog Model Alignment (Section 12.2)
+        # Sourcing of actual software versions MUST be done exclusively under system.software.<blob_id>
+        system_data = payload.get("system", {})
+        software_data = system_data.get("software", {})
+        if not software_data:
+            return
 
-        for blob_id, blob_state in blobs.items():
+        for blob_id, software_info in software_data.items():
+            if not isinstance(software_info, dict):
+                continue
             key = (site_id, device_id, blob_id)
             old_state = self.device_states.get(key, "unknown")
             
-            new_state = blob_state.get("status") or blob_state.get("phase") or "unknown"
+            new_state = software_info.get("status") or software_info.get("phase") or "unknown"
 
             if new_state != old_state:
                 self.device_states[key] = new_state

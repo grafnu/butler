@@ -45,11 +45,10 @@ class ButlerOrchestrator:
         self.client.setup_handshake_responder(self._on_client_active)
 
         # 2. Subscribe to Model Updates and Device States
-        # Model updates: [/{prefix}]/uufi/c/model/cloud
-        # Model replies: [/{prefix}]/uufi/c/config/cloud
-        # Device states: [/{prefix}]/uufi/r/+/d/+/state/blobset
+        # Model updates: [/{prefix}]/uufi/c/model/cloud (Section 12.5)
+        # Device states: state/udmi and state/blobset (Section 12.7)
         self.client.subscribe(self.client.build_topic("model", "cloud"), self._on_model_update)
-        self.client.subscribe(self.client.build_topic("config", "cloud"), self._on_model_reply)
+        self.client.subscribe(self.client.build_topic("state", "udmi", "+", "+"), self._on_device_state)
         self.client.subscribe(self.client.build_topic("state", "blobset", "+", "+"), self._on_device_state)
 
         # 3. Start background timeout checking thread
@@ -73,15 +72,18 @@ class ButlerOrchestrator:
     def _on_client_active(self, principal):
         print(f"Client became active: {principal}", file=sys.stderr)
 
-    def _on_model_reply(self, topic, envelope):
-        self._on_model_update(topic, envelope)
-
     def _on_model_update(self, topic, envelope):
         # Sourced over UUFI bus
         # Extract registries -> {site_id} -> devices -> {device_id} -> system -> software -> {blob_id} = version_tag
         payload = envelope.get("payload", {})
-        registries = payload.get("registries", {})
         
+        # Cloud Model Update Payload Structure (Section 12.5)
+        # Sourcing updates from config/cloud is prohibited, and wrapping/nesting update payload in "cloud" is prohibited
+        if "cloud" in payload:
+            print("[butler] ERROR: Non-compliant wrapped model update with 'cloud' root object detected. Rejecting.", file=sys.stderr)
+            return
+
+        registries = payload.get("registries", {})
         if not registries:
             return
 
@@ -90,8 +92,13 @@ class ButlerOrchestrator:
                 devices_data = site_data.get("devices", {})
                 for device_id, device_data in devices_data.items():
                     system_data = device_data.get("system", {})
-                    software_data = system_data.get("software", {})
                     
+                    # Single Method for Expected Version Configuration (Section 12.6)
+                    # Any alternative or custom configuration properties, such as target_version, are strictly prohibited
+                    if "target_version" in system_data:
+                        print(f"[butler] WARNING: Non-compliant target_version configuration detected for {device_id}. Ignoring.", file=sys.stderr)
+                    
+                    software_data = system_data.get("software", {})
                     for blob_id, expected_version in software_data.items():
                         if site_id not in self.expected_versions:
                             self.expected_versions[site_id] = {}
@@ -115,22 +122,33 @@ class ButlerOrchestrator:
         device_id = topic_info["device_id"]
         
         payload = envelope.get("payload", {})
-        blobset = payload.get("blobset", {})
-        blobs = blobset.get("blobs", {})
         
+        # Subsystem State and Catalog Model Alignment (Section 12.2)
+        # Sourcing of actual software versions MUST be done exclusively under the standard system.software.<blob_id> state payload path.
+        # Sourcing or parsing from blobset is strictly prohibited.
+        system_data = payload.get("system", {})
+        software_data = system_data.get("software", {})
+        
+        if not software_data:
+            # Sourcing actual versions from blobset is prohibited.
+            return
+
         # Device state reports are authoritative and must be processed immediately
         with self.lock:
-            for blob_id, blob_state in blobs.items():
-                # Extract actual version
-                actual_version = blob_state.get("current_version") or blob_state.get("version")
+            for blob_id, software_info in software_data.items():
+                if not isinstance(software_info, dict):
+                    continue
+                # Extract actual version from standard path
+                actual_version = software_info.get("version") or software_info.get("current_version")
                 # Default to "0.0.0" if unknown as per spec
                 if not actual_version:
                     actual_version = "0.0.0"
                     
-                status = blob_state.get("status") or blob_state.get("phase") or "unknown"
-                lkg_version = blob_state.get("lkg_version") or "0.0.0"
-                make = blob_state.get("make") or "unknown"
-                model = blob_state.get("model") or "unknown"
+                status = software_info.get("status") or software_info.get("phase") or "unknown"
+                lkg_version = software_info.get("lkg_version") or "0.0.0"
+                # Make and model must also be sourced from system.software.<blob_id> (Section 3.3)
+                make = software_info.get("make") or "unknown"
+                model = software_info.get("model") or "unknown"
 
                 if site_id not in self.devices:
                     self.devices[site_id] = {}
@@ -151,6 +169,32 @@ class ButlerOrchestrator:
                         "last_command_payload": None
                     }
                     self.devices[site_id][device_id][blob_id] = dev_info
+
+                # Reset timeout timer on measurable progress update (Section 2)
+                blobset_info = payload.get("blobset", {}).get("blobs", {}).get(blob_id, {})
+                has_progress = False
+                progress_val = None
+                progress_keys = [
+                    "progress", "download_progress", "percentage", "percent",
+                    "block_count", "blocks", "bytes_downloaded", "downloaded_bytes",
+                    "position", "offset", "chunk_count", "chunks"
+                ]
+                for info in [software_info, blobset_info]:
+                    if not isinstance(info, dict):
+                        continue
+                    for key in progress_keys:
+                        if key in info:
+                            val = info[key]
+                            if val is not None and (isinstance(val, (int, float)) or (isinstance(val, str) and val.strip().isdigit())):
+                                has_progress = True
+                                progress_val = val
+                                break
+                    if has_progress:
+                        break
+
+                if has_progress and dev_info["tracking_state"] == "pending":
+                    print(f"[butler] Active progress update detected for {site_id}/{device_id}/{blob_id}: {progress_val}. Resetting BUTLER_TIMEOUT timer.", file=sys.stderr)
+                    dev_info["last_command_time"] = time.time()
 
                 # Update reported values
                 # Type safety: a non-zero version string MUST NEVER be overwritten by "0.0.0"
@@ -227,6 +271,7 @@ class ButlerOrchestrator:
             return
 
         # Build blobset config update command
+        # Config Command Target Version Attribute (Section 12.3)
         config_payload = {
             "version": "1.5.2",
             "timestamp": get_timestamp(),
@@ -236,6 +281,7 @@ class ButlerOrchestrator:
                         "phase": "apply",
                         "url": metadata.url,
                         "sha256": metadata.sha256,
+                        "version": expected_version, # Standard target version inside blob's dictionary
                         "generation": get_timestamp()
                     }
                 }
