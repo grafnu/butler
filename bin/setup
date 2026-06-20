@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+import os
+import sys
+import shutil
+import subprocess
+import socket
+import time
+import signal
+import hashlib
+
+# Add project root to sys.path to load butler modules
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, project_root)
+
+# Prepend bin directory to PATH for local fake sudo or other local utilities
+os.environ["PATH"] = os.path.join(project_root, "bin") + os.pathsep + os.environ.get("PATH", "")
+
+from butler.conn_spec import parse_conn_spec, print_conn_spec, get_branch_name, get_branch_port
+
+def is_port_occupied(port):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind(("127.0.0.1", port))
+            return False
+        except socket.error:
+            return True
+
+def get_port_occupier_info(port):
+    # Try to find PID/process info on Linux
+    try:
+        out = subprocess.check_output(f"ss -lptn 'sport = :{port}'", shell=True, stderr=subprocess.DEVNULL)
+        lines = out.decode("utf-8").strip().split("\n")
+        for line in lines:
+            if f":{port}" in line:
+                return line
+    except Exception:
+        pass
+    try:
+        pid = subprocess.check_output(["lsof", "-t", f"-i:{port}"], stderr=subprocess.DEVNULL).decode("utf-8").strip()
+        if pid:
+            return f"Process with PID {pid}"
+    except Exception:
+        pass
+    return "Unknown process"
+
+def handle_stop():
+    sys.stderr.write("Stopping running background services...\n")
+    sys.stderr.flush()
+    pid_files = ["out/etcd.pid", "out/mosquitto.pid"]
+    for pf in pid_files:
+        path = os.path.join(project_root, pf)
+        if os.path.exists(path):
+            try:
+                with open(path, "r") as f:
+                    pid_str = f.read().strip()
+                if pid_str:
+                    pid = int(pid_str)
+                    sys.stderr.write(f"Stopping process {pid} from {pf}...\n")
+                    sys.stderr.flush()
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass
+                    # Wait up to 5 seconds
+                    for _ in range(50):
+                        time.sleep(0.1)
+                        try:
+                            os.kill(pid, 0)
+                        except ProcessLookupError:
+                            break
+                    else:
+                        sys.stderr.write(f"Force killing process {pid}...\n")
+                        sys.stderr.flush()
+                        try:
+                            os.kill(pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+            except Exception as e:
+                sys.stderr.write(f"Error stopping process for {pf}: {e}\n")
+                sys.stderr.flush()
+            try:
+                os.remove(path)
+            except Exception:
+                pass
+    sys.stderr.write("Teardown completed.\n")
+    sys.stderr.flush()
+
+def main():
+    args = sys.argv[1:]
+    
+    # Parse options
+    offline = "--offline" in args
+    stop = "--stop" in args
+    
+    # Filter out options to get conn_spec if any
+    filtered_args = [a for a in args if a not in ["--offline", "--stop"]]
+    
+    conn_spec_arg = None
+    if filtered_args:
+        conn_spec_arg = filtered_args[0]
+        
+    # Get parsed spec
+    spec = parse_conn_spec(conn_spec_arg, "setup")
+    
+    if stop:
+        # Stop flag skips initialization, python environment validation, and broker startup
+        handle_stop()
+        sys.exit(0)
+        
+    # Print connection spec details to stderr on startup
+    print_conn_spec(spec)
+    
+    # Verify that cloned impl/udmi directory exists directly
+    udmi_dir = os.path.join(project_root, "impl/udmi")
+    if not os.path.exists(udmi_dir):
+        sys.stderr.write("FATAL: impl/udmi directory not found!\n")
+        sys.stderr.flush()
+        sys.exit(1)
+        
+    # Python & Pip Requirement Validation
+    if not offline:
+        sys.stderr.write("Validating python requirements...\n")
+        sys.stderr.flush()
+        requirements_file = os.path.join(project_root, "butler/requirements.txt")
+        pip_bin = os.path.join(project_root, "venv/bin/pip3")
+        if os.path.exists(pip_bin) and os.path.exists(requirements_file):
+            try:
+                subprocess.check_call([pip_bin, "install", "-r", requirements_file], stdout=subprocess.DEVNULL)
+            except Exception as e:
+                sys.stderr.write(f"Warning: pip install failed: {e}\n")
+                sys.stderr.flush()
+                
+    # Clone site model using standard UDMI clone_model utility
+    sys.stderr.write("Cloning standard site model...\n")
+    sys.stderr.flush()
+    clone_script = os.path.join(udmi_dir, "bin/clone_model")
+    try:
+        subprocess.check_call([clone_script], stdout=subprocess.DEVNULL)
+    except Exception as e:
+        sys.stderr.write(f"Warning: clone_model failed or skipped: {e}\n")
+        sys.stderr.flush()
+        
+    # Isolated Site Model Setup
+    sys.stderr.write("Setting up isolated site model...\n")
+    sys.stderr.flush()
+    testing_dir = os.path.join(project_root, "testing")
+    os.makedirs(testing_dir, exist_ok=True)
+    
+    src_site_model = os.path.join(udmi_dir, "sites/udmi_site_model")
+    dest_site_model = os.path.join(testing_dir, "udmi_site_model")
+    
+    if os.path.exists(dest_site_model):
+        shutil.rmtree(dest_site_model)
+        
+    shutil.copytree(src_site_model, dest_site_model)
+    
+    # Dynamic Port and Broker Startup Check
+    port = spec["port"]
+    
+    sys.stderr.write(f"Checking port status for broker port {port}...\n")
+    sys.stderr.flush()
+    
+    # Port pre-check for dynamic and etcd ports (standard etcd is 2379)
+    for p in [port, 2379]:
+        if is_port_occupied(p):
+            info = get_port_occupier_info(p)
+            sys.stderr.write(f"Port {p} is already occupied by: {info}\n")
+            sys.stderr.flush()
+            
+    # If the local broker is not already running, invoke start_local
+    if not is_port_occupied(port):
+        sys.stderr.write(f"Starting local services on port {port}...\n")
+        sys.stderr.flush()
+        
+        # Configure sub-process environment with our custom MQTT_PORT
+        sub_env = os.environ.copy()
+        sub_env["MQTT_PORT"] = str(port)
+        sub_env["LD_LIBRARY_PATH"] = "/tmp/mosq/usr/lib/x86_64-linux-gnu" + os.pathsep + os.environ.get("LD_LIBRARY_PATH", "")
+        
+        start_local_script = os.path.join(udmi_dir, "bin/start_local")
+        try:
+            # Execute start_local using our dest_site_model
+            subprocess.check_call([start_local_script, dest_site_model], env=sub_env, stdout=subprocess.DEVNULL)
+            sys.stderr.write("Local broker started successfully.\n")
+            sys.stderr.flush()
+        except Exception as e:
+            sys.stderr.write(f"Error starting local broker: {e}\n")
+            sys.stderr.flush()
+            sys.exit(1)
+            
+        # Record Process IDs (PIDs) to out/
+        out_dir = os.path.join(project_root, "out")
+        os.makedirs(out_dir, exist_ok=True)
+        time.sleep(2.0) # wait for processes to fully spawn
+        
+        # Write mosquitto PID
+        try:
+            # We can use pgrep or find process listening on our port
+            mosq_pid = subprocess.check_output(["pgrep", "mosquitto"]).decode().strip().split()
+            if mosq_pid:
+                with open(os.path.join(out_dir, "mosquitto.pid"), "w") as f:
+                    f.write(mosq_pid[0])
+        except Exception:
+            pass
+            
+        # Write etcd PID
+        try:
+            etcd_pid = subprocess.check_output(["pgrep", "etcd"]).decode().strip().split()
+            if etcd_pid:
+                with open(os.path.join(out_dir, "etcd.pid"), "w") as f:
+                    f.write(etcd_pid[0])
+        except Exception:
+            pass
+    else:
+        sys.stderr.write(f"Broker already running on port {port}.\n")
+        sys.stderr.flush()
+
+if __name__ == "__main__":
+    main()

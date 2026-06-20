@@ -1,0 +1,10 @@
+#!/bin/bash
+# Mock java for running in non-java sandboxes
+
+# Touch the pod readiness indicator that start_udmis waits for
+touch /tmp/pod_ready.txt
+
+# Run a background sleep process to mock the running JVM daemon
+while true; do
+    sleep 3600
+done

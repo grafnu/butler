@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+import os
+import sys
+import time
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, project_root)
+
+from butler.verifier import VerifierObserver
+
+def main():
+    args = sys.argv[1:]
+    conn_spec = None
+    if args:
+        conn_spec = args[0]
+        
+    verifier = VerifierObserver(conn_spec)
+    verifier.start()
+    
+    try:
+        while True:
+            time.sleep(1.0)
+    except KeyboardInterrupt:
+        sys.stderr.write("Verifier Observer interrupted. Exiting...\n")
+        sys.stderr.flush()
+    finally:
+        verifier.stop()
+
+if __name__ == "__main__":
+    main()

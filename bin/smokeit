@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+import os
+import sys
+import subprocess
+import time
+import signal
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, project_root)
+
+# Prepend bin directory to PATH for local fake sudo or other local utilities
+os.environ["PATH"] = os.path.join(project_root, "bin") + os.pathsep + os.environ.get("PATH", "")
+os.environ["LD_LIBRARY_PATH"] = "/tmp/mosq/usr/lib/x86_64-linux-gnu" + os.pathsep + os.environ.get("LD_LIBRARY_PATH", "")
+
+from butler.conn_spec import parse_conn_spec, print_conn_spec
+
+def main():
+    args = sys.argv[1:]
+    conn_spec = args[0] if args else None
+    
+    spec = parse_conn_spec(conn_spec, "smokeit")
+    print_conn_spec(spec)
+    
+    port = spec["port"]
+    processes = []
+    
+    def cleanup():
+        sys.stderr.write("Cleaning up background smoke-test processes...\n")
+        sys.stderr.flush()
+        # Kill precise child process groups
+        for p in processes:
+            try:
+                os.killpg(p.pid, signal.SIGTERM)
+            except Exception:
+                pass
+        time.sleep(2)
+        for p in processes:
+            try:
+                os.killpg(p.pid, signal.SIGKILL)
+            except Exception:
+                pass
+                
+    def sig_handler(signum, frame):
+        cleanup()
+        sys.exit(1)
+        
+    # Register standard signal handlers for clean teardown on interrupts
+    signal.signal(signal.SIGINT, sig_handler)
+    signal.signal(signal.SIGTERM, sig_handler)
+    
+    try:
+        # 1. Start Butler Orchestrator
+        sys.stderr.write("Starting Butler Orchestrator in background...\n")
+        sys.stderr.flush()
+        butler_cmd = [sys.executable, "bin/butler", f"mqtt://localhost:{port}/"]
+        p_butler = subprocess.Popen(butler_cmd, preexec_fn=os.setsid, cwd=project_root)
+        processes.append(p_butler)
+        
+        # 2. Start Verifier Observer
+        sys.stderr.write("Starting Verifier Observer in background...\n")
+        sys.stderr.flush()
+        verifier_cmd = [sys.executable, "bin/verifier", f"mqtt://localhost:{port}/"]
+        p_verifier = subprocess.Popen(verifier_cmd, preexec_fn=os.setsid, cwd=project_root)
+        processes.append(p_verifier)
+        
+        # 3. Startup synchronization delay
+        sys.stderr.write("Waiting 15s for UDMIS startup synchronization...\n")
+        sys.stderr.flush()
+        time.sleep(15)
+        
+        # 4. Start Simulated DUT (Pubber)
+        sys.stderr.write("Starting Pubber DUT simulation...\n")
+        sys.stderr.flush()
+        dut_cmd = [
+            "impl/udmi/bin/start_dut",
+            "testing/udmi_site_model",
+            f"mqtt://localhost:{port}/",
+            "AHU-1",
+            "uufi-serial"
+        ]
+        # Execute with working directory set to isolated workspace root
+        p_dut = subprocess.Popen(dut_cmd, preexec_fn=os.setsid, cwd=project_root)
+        processes.append(p_dut)
+        
+        sys.stderr.write("Waiting 10s for Handshake and baseline state...\n")
+        sys.stderr.flush()
+        time.sleep(10)
+        
+        # 5. Trigger Managed Update
+        sys.stderr.write("Triggering managed software update...\n")
+        sys.stderr.flush()
+        trigger_cmd = [
+            "impl/udmi/bin/site_trigger",
+            "update",
+            "testing/udmi_site_model",
+            "AHU-1",
+            "system",
+            "1.1.0"
+        ]
+        subprocess.check_call(trigger_cmd, cwd=project_root)
+        
+        sys.stderr.write("Monitoring execution for 15s...\n")
+        sys.stderr.flush()
+        time.sleep(15)
+        
+        sys.stderr.write("Automated smoke test completed.\n")
+        sys.stderr.flush()
+        
+    except KeyboardInterrupt:
+        sys.stderr.write("Smoke test interrupted.\n")
+        sys.stderr.flush()
+    except Exception as e:
+        sys.stderr.write(f"Smoke test encountered error: {e}\n")
+        sys.stderr.flush()
+    finally:
+        cleanup()
+
+if __name__ == "__main__":
+    main()
