@@ -90,6 +90,7 @@ def main():
         sys.stderr.write("Triggering managed software update...\n")
         sys.stderr.flush()
         trigger_cmd = [
+            sys.executable,
             os.path.abspath(os.path.join(project_root, "impl/udmi/bin/site_trigger")),
             "update",
             os.path.abspath(os.path.join(project_root, "testing/udmi_site_model")),
