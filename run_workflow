@@ -23,12 +23,12 @@ GEMINI_OPTS=("--proxy=false" "--approval-mode" "yolo")
 # Determine directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAIN_DIR="$(cd "${SCRIPT_DIR}" && pwd)"
-BASE_DIR="$(cd "${MAIN_DIR}/.." && pwd)"
+BASE_DIR="${MAIN_DIR}"
 
 echo "=== System Configuration ==="
 echo "Script directory:       ${SCRIPT_DIR}"
 echo "Main workspace:         ${MAIN_DIR}"
-echo "Base parent directory:  ${BASE_DIR}"
+echo "Base workspace directory: ${BASE_DIR}"
 echo "Sub-implementations:   ${IMPLEMENTATIONS[*]}"
 echo "============================="
 
@@ -49,6 +49,7 @@ setup_sibling() {
 
   if [ ! -d "${target_dir}" ]; then
     echo "Directory ${dir_name} not found. Cloning into ${target_dir}..."
+    mkdir -p "$(dirname "${target_dir}")"
     cd "${BASE_DIR}"
     git clone "${REMOTE_URL}" "${dir_name}"
   fi
@@ -73,7 +74,7 @@ setup_sibling() {
 
 # Setup implementations
 for ID in "${IMPLEMENTATIONS[@]}"; do
-  setup_sibling "impl_${ID}" "impl_${ID}"
+  setup_sibling "impl/${ID}" "impl_${ID}"
 done
 
 # Setup merger
@@ -87,8 +88,8 @@ declare -A PIDS
 declare -A LOGS
 
 for ID in "${IMPLEMENTATIONS[@]}"; do
-  IMPL_DIR="${BASE_DIR}/impl_${ID}"
-  LOG_FILE="${BASE_DIR}/impl_${ID}.log"
+  IMPL_DIR="${BASE_DIR}/impl/${ID}"
+  LOG_FILE="${BASE_DIR}/impl/impl_${ID}.log"
   LOGS["$ID"]="${LOG_FILE}"
   
   echo "Launching gemini -s -p @UPDATE.md for impl_${ID} in background (logging to ${LOG_FILE})..."
@@ -99,7 +100,7 @@ for ID in "${IMPLEMENTATIONS[@]}"; do
     "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" -s -p @UPDATE.md > "${LOG_FILE}" 2>&1
     RET=$?
     ELAPSED_INDIVIDUAL=$(( SECONDS - START_INDIVIDUAL ))
-    echo "${ELAPSED_INDIVIDUAL}" > "${BASE_DIR}/impl_${ID}.time"
+    echo "${ELAPSED_INDIVIDUAL}" > "${BASE_DIR}/impl/impl_${ID}.time"
     exit ${RET}
   ) &
   PIDS["$ID"]=$!
@@ -112,16 +113,16 @@ declare -A INDIVIDUAL_TIMES
 for ID in "${IMPLEMENTATIONS[@]}"; do
   PID=${PIDS["$ID"]}
   if wait "${PID}"; then
-    ELAPSED_INDIVIDUAL=$(cat "${BASE_DIR}/impl_${ID}.time" 2>/dev/null || echo "0")
+    ELAPSED_INDIVIDUAL=$(cat "${BASE_DIR}/impl/impl_${ID}.time" 2>/dev/null || echo "0")
     echo "SUCCESS: impl_${ID} updated successfully in ${ELAPSED_INDIVIDUAL}s."
     INDIVIDUAL_TIMES["$ID"]="${ELAPSED_INDIVIDUAL}"
   else
-    ELAPSED_INDIVIDUAL=$(cat "${BASE_DIR}/impl_${ID}.time" 2>/dev/null || echo "0")
+    ELAPSED_INDIVIDUAL=$(cat "${BASE_DIR}/impl/impl_${ID}.time" 2>/dev/null || echo "0")
     echo "FAILURE: impl_${ID} update failed in ${ELAPSED_INDIVIDUAL}s. Check log: ${LOGS["$ID"]}"
     FAILED_IMPLS+=("${ID}")
     INDIVIDUAL_TIMES["$ID"]="${ELAPSED_INDIVIDUAL}"
   fi
-  rm -f "${BASE_DIR}/impl_${ID}.time"
+  rm -f "${BASE_DIR}/impl/impl_${ID}.time"
 done
 
 if [ ${#FAILED_IMPLS[@]} -gt 0 ]; then
@@ -132,7 +133,7 @@ fi
 # 4. Check and Push Git Updates for Each Implementation
 echo "=== Checking and Pushing Git Updates ==="
 for ID in "${IMPLEMENTATIONS[@]}"; do
-  IMPL_DIR="${BASE_DIR}/impl_${ID}"
+  IMPL_DIR="${BASE_DIR}/impl/${ID}"
   cd "${IMPL_DIR}"
   
   echo "Checking git status for impl_${ID}..."
@@ -161,7 +162,7 @@ echo "=== Running Gemini Merger (@MERGER.md) ==="
 START_MERGER=$SECONDS
 cd "${BASE_DIR}/merger"
 echo "Executing gemini -s -p @MERGER.md in merger..."
-LOG_FILE_MERGER="${BASE_DIR}/merger.log"
+LOG_FILE_MERGER="${BASE_DIR}/impl/merger.log"
 echo "Logging output to ${LOG_FILE_MERGER}..."
 
 if "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" -s -p @MERGER.md > "${LOG_FILE_MERGER}" 2>&1; then

@@ -82,7 +82,7 @@ For each implementation branch `impl_<id>` (where `<id>` is the implementation i
 
 1. **Update and Audit the Implementation:**
    ```bash
-   cd ../impl_<id>
+   cd impl/<id>
    gemini -s -p @UPDATE.md
    ```
    *Action:* Gemini merges `origin/main` into the current branch, parses specifications, and delegates environment preparation, dependency management, port validation, and local smoke testing (`bin/smokeit`) on isolated, branch-mapped MQTT/testing ports directly to the implementation-specific automated scripts and setup skills.
@@ -99,7 +99,7 @@ Once all implementations have updated and verified themselves against the update
 
 Switch to the `merger` directory:
 ```bash
-cd ../merger/
+cd merger/
 gemini -s -p @MERGER.md
 ```
 *Action:* Under the hood, Gemini runs a complete cross-implementation matrix:
@@ -116,7 +116,7 @@ Once the specifications have been refined and proven to be robust through intero
 
 In the `main` branch terminal, run:
 ```bash
-cd ../main/
+cd ..
 git fetch
 git checkout origin/merger -- spec/
 ```
