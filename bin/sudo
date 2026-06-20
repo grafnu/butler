@@ -1,13 +1,23 @@
 #!/bin/bash
-# Safely correct paths in generated mosquitto.conf to non-root user accessible paths
-CONF_FILE="/home/peringknife/vibrant/impl_A/impl/udmi/var/mosquitto/mosquitto.conf"
-if [[ -f "$CONF_FILE" ]]; then
-    if ! grep -q "/home/peringknife/vibrant/impl_A/var/log" "$CONF_FILE"; then
-        sed -i 's%/var/log/mosquitto/mosquitto.log%/home/peringknife/vibrant/impl_A/var/log/mosquitto/mosquitto.log%g' "$CONF_FILE"
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+# 1. Safely correct paths in generated mosquitto config files to current root dir
+CONF_DIR="$ROOT_DIR/impl/udmi/var/mosquitto"
+if [[ -d "$CONF_DIR" ]]; then
+    # Rewrite main conf file if exists
+    if [[ -f "$CONF_DIR/mosquitto.conf" ]]; then
+        sed -i "s%/home/peringknife/vibrant/impl_A%$ROOT_DIR%g" "$CONF_DIR/mosquitto.conf"
     fi
-    if ! grep -q "/home/peringknife/vibrant/impl_A/var/lib" "$CONF_FILE"; then
-        sed -i 's%/var/lib/mosquitto/%/home/peringknife/vibrant/impl_A/var/lib/mosquitto/%g' "$CONF_FILE"
+    # Rewrite udmi.conf if exists
+    if [[ -f "$CONF_DIR/conf.d/udmi.conf" ]]; then
+        sed -i "s%/home/peringknife/vibrant/impl_A%$ROOT_DIR%g" "$CONF_DIR/conf.d/udmi.conf"
     fi
 fi
 
-exec "$@"
+# 2. Rewrite any arguments passed to sudo that refer to the old impl_A path
+ARGS=()
+for arg in "$@"; do
+    ARGS+=("${arg//\/home\/peringknife\/vibrant\/impl_A/$ROOT_DIR}")
+done
+
+exec "${ARGS[@]}"

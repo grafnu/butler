@@ -1,7 +1,8 @@
 #!/bin/bash
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 for arg in "$@"; do
     if [[ "$arg" == *"mosquitto_dynamic_security.so"* ]]; then
-        echo "/home/peringknife/vibrant/impl_A/tmp/deb/extracted/usr/lib/x86_64-linux-gnu/mosquitto_dynamic_security.so"
+        echo "$ROOT_DIR/tmp/deb/extracted/usr/lib/x86_64-linux-gnu/mosquitto_dynamic_security.so"
         exit 0
     fi
 done

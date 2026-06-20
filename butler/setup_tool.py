@@ -8,6 +8,58 @@ import re
 import subprocess
 from butler.conn_spec import parse_conn_spec, get_branch_name, get_branch_ports
 
+def update_hardcoded_paths():
+    old_path = "/home/peringknife/vibrant/impl_A"
+    new_path = os.getcwd()
+    sys.stderr.write(f"Adapting hardcoded paths in impl/udmi from {old_path} to {new_path}...\n")
+    for root, dirs, files in os.walk("impl/udmi"):
+        for file in files:
+            filepath = os.path.join(root, file)
+            if filepath.endswith((".jar", ".png", ".jpg", ".gif", ".pdf", ".db", ".so", ".bin")):
+                continue
+            try:
+                with open(filepath, "r", errors="ignore") as f:
+                    content = f.read()
+                if old_path in content:
+                    new_content = content.replace(old_path, new_path)
+                    with open(filepath, "w", errors="ignore") as f:
+                        f.write(new_content)
+                    sys.stderr.write(f"Updated hardcoded paths in: {filepath}\n")
+            except Exception:
+                pass
+
+def recreate_var_symlinks():
+    root_dir = os.getcwd()
+    var_mosq = os.path.join(root_dir, "var/mosquitto")
+    os.makedirs(var_mosq, exist_ok=True)
+    
+    links = {
+        "mosquitto.passwd": "impl/udmi/var/mosquitto/mosquitto.passwd",
+        "dynamic_security.json": "impl/udmi/var/mosquitto/dynamic_security.json",
+        "conf.d": "impl/udmi/var/mosquitto/conf.d",
+    }
+    
+    for name, target_rel in links.items():
+        link_path = os.path.join(var_mosq, name)
+        target_path = os.path.join(root_dir, target_rel)
+        
+        if os.path.islink(link_path) or os.path.exists(link_path):
+            try:
+                if os.path.islink(link_path):
+                    os.remove(link_path)
+                elif os.path.isdir(link_path):
+                    shutil.rmtree(link_path)
+                else:
+                    os.remove(link_path)
+            except Exception as e:
+                sys.stderr.write(f"Warning: Failed to clean up {link_path}: {e}\n")
+                
+        try:
+            os.symlink(target_path, link_path)
+            sys.stderr.write(f"Recreated symlink: {link_path} -> {target_path}\n")
+        except Exception as e:
+            sys.stderr.write(f"Warning: Failed to create symlink: {e}\n")
+
 def configure_dynamic_ports(mqtt_port, etcd_port):
     # 1. Update local_pod.json files
     for path in ["impl/udmi/udmis/etc/local_pod.json", "impl/udmi/etc/local_pod.json"]:
@@ -245,6 +297,10 @@ def main():
         sys.stderr.write("Hard Fail: 'impl/udmi' directory is missing!\n")
         sys.exit(1)
         
+    # Dynamically adapt hardcoded paths in the cloned immutable repository
+    update_hardcoded_paths()
+    recreate_var_symlinks()
+        
     # Automatic Environment & Pip Requirement Validation
     if not offline:
         sys.stderr.write("Validating pip requirements...\n")
@@ -258,22 +314,24 @@ def main():
     workspace_certs = os.path.abspath("var/mosquitto/certs")
     udmi_certs = os.path.abspath("impl/udmi/var/mosquitto/certs")
     os.makedirs("var/mosquitto/certs", exist_ok=True)
-    if os.path.exists(udmi_certs) and not os.path.islink(udmi_certs):
+    
+    # Robustly clean up any existing folder, file, or symlink (broken or intact)
+    if os.path.islink(udmi_certs) or os.path.exists(udmi_certs):
         try:
-            # If it's an empty folder or directory, remove it to make way for the symlink
-            if os.path.isdir(udmi_certs):
+            if os.path.islink(udmi_certs):
+                os.remove(udmi_certs)
+            elif os.path.isdir(udmi_certs):
                 shutil.rmtree(udmi_certs)
             else:
                 os.remove(udmi_certs)
         except Exception as e:
             sys.stderr.write(f"Warning: Failed to clean up {udmi_certs}: {e}\n")
             
-    if not os.path.exists(udmi_certs):
-        try:
-            os.symlink(workspace_certs, udmi_certs)
-            sys.stderr.write(f"Created symlink: {udmi_certs} -> {workspace_certs}\n")
-        except Exception as e:
-            sys.stderr.write(f"Warning: Failed to create symlink: {e}\n")
+    try:
+        os.symlink(workspace_certs, udmi_certs)
+        sys.stderr.write(f"Created symlink: {udmi_certs} -> {workspace_certs}\n")
+    except Exception as e:
+        sys.stderr.write(f"Warning: Failed to create symlink: {e}\n")
 
     # Isolated Site Model Setup
     src_site = "impl/udmi/sites/udmi_site_model"

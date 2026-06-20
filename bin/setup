@@ -2,5 +2,5 @@
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 export PYTHONPATH="$ROOT_DIR:$PYTHONPATH"
 export LD_LIBRARY_PATH="$ROOT_DIR/tmp/deb/extracted/usr/lib/x86_64-linux-gnu:$ROOT_DIR/tmp/deb/extracted/usr/lib:$LD_LIBRARY_PATH"
-export PATH="$ROOT_DIR/tmp/deb/extracted/usr/sbin:$ROOT_DIR/tmp/deb/extracted/usr/bin:$ROOT_DIR/bin:$PATH"
+export PATH="$ROOT_DIR/bin:$ROOT_DIR/tmp/deb/extracted/usr/sbin:$ROOT_DIR/tmp/deb/extracted/usr/bin:$PATH"
 exec "$ROOT_DIR/venv/bin/python3" "$ROOT_DIR/butler/setup_tool.py" "$@"
