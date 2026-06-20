@@ -11,12 +11,18 @@ set -euo pipefail
 
 # 1. Internal Configuration
 IMPLEMENTATIONS=("A" "B" "C" "D")
+
+if ! command -v gemini >/dev/null 2>&1; then
+  echo "Error: gemini executable not found in PATH." >&2
+  exit 1
+fi
 GEMINI_BIN="gemini"
+
 GEMINI_OPTS=("--proxy=false" "--approval-mode" "yolo")
 
 # Determine directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MAIN_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+MAIN_DIR="$(cd "${SCRIPT_DIR}" && pwd)"
 BASE_DIR="$(cd "${MAIN_DIR}/.." && pwd)"
 
 echo "=== System Configuration ==="
@@ -82,7 +88,7 @@ declare -A LOGS
 
 for ID in "${IMPLEMENTATIONS[@]}"; do
   IMPL_DIR="${BASE_DIR}/impl_${ID}"
-  LOG_FILE="/tmp/gemini_update_impl_${ID}.log"
+  LOG_FILE="${BASE_DIR}/impl_${ID}.log"
   LOGS["$ID"]="${LOG_FILE}"
   
   echo "Launching gemini -s -p @UPDATE.md for impl_${ID} in background (logging to ${LOG_FILE})..."
@@ -143,7 +149,7 @@ done
 echo "=== Running Gemini Merger (@MERGER.md) ==="
 cd "${BASE_DIR}/gemerger"
 echo "Executing gemini -s -p @MERGER.md in gemerger..."
-LOG_FILE_MERGER="/tmp/gemini_merger.log"
+LOG_FILE_MERGER="${BASE_DIR}/gemerger.log"
 echo "Logging output to ${LOG_FILE_MERGER}..."
 
 if "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" -s -p @MERGER.md > "${LOG_FILE_MERGER}" 2>&1; then
