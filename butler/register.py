@@ -50,7 +50,7 @@ def main():
     conn_spec = parse_conn_spec(conn_spec_str, differentiator="cli")
     sys.stderr.write(f"{conn_spec.format_conn_spec()}\n")
     repo = ModelRepository()
-    repo.set_device_info(registry_id, device_id, "main", make, model)
+    repo.set_device_info(registry_id, device_id, "system", make, model)
 
     # Publish the updated model to MQTT
     transport = get_transport(conn_spec)
@@ -70,7 +70,7 @@ def main():
             registry_id: {
                 "devices": {
                     device_id: {
-                        "main": {
+                        "system": {
                             "make": make,
                             "model": model
                         }

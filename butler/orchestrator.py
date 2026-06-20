@@ -54,19 +54,136 @@ class Orchestrator:
                         return
                 self.processed_transactions[dedup_id] = now
 
-            # Filtering by principal for Handshake replies
-            if sub_type == "state" and sub_folder == "udmi" and not device_id:
-                # UUFI Section 3: Handshake reply MUST use principal or source as fallback
-                target_principal = principal or source
-                self.handle_handshake_state(payload, tid, target_principal)
+            # Device state update / Handshake
+            if sub_type == "state" and sub_folder == "udmi":
+                # Check for Handshake Step 1 (setup block)
+                setup = payload.get("setup")
+                if setup:
+                    if "udmi" in payload:
+                        print(f"[butler] PROTOCOL VIOLATION: Handshake wrapped inside 'udmi' root. Rejecting.", flush=True)
+                        return
+                    # Filtering by principal for Handshake replies
+                    target_principal = principal or source
+                    self.handle_handshake_state(payload, tid, target_principal)
+                    return
+                
+                # Device state updates (sourcing from system.software.<subsystem>)
+                system_block = payload.get("system", {})
+                software = system_block.get("software", {})
+                if software:
+                    for subsystem, sub_update in software.items():
+                        if isinstance(sub_update, dict):
+                            if not registry_id or not device_id: continue
+                            
+                            status = sub_update.get("status")
+                            current_version = sub_update.get("version") or sub_update.get("current_version") or "0.0.0"
+                            reported_lkg = sub_update.get("lkg_version") or "0.0.0"
+                            make = sub_update.get("make")
+                            model = sub_update.get("model")
+                            
+                            print(f"[butler] Status from {registry_id}/{device_id}/{subsystem}: {status} ({current_version}, reported lkg: {reported_lkg})", flush=True)
+                            
+                            key = (registry_id, device_id, subsystem)
+                            dev_info = self.models.get(registry_id, {}).get(device_id, {}).get(subsystem, {})
+                            
+                            # LKG Management (Butler 2.2): Orchestrator is primary authority.
+                            # Use cached LKG unless we're promoting a new one.
+                            lkg_version = dev_info.get("lkg_version") or "0.0.0"
+
+                            # Ingest make/model from state report if present (Butler 2.2)
+                            if make or model:
+                                # UUFI 8.5: Metadata Fallback - don't overwrite known with "unknown"
+                                if make == "unknown" and dev_info.get("make") not in [None, "unknown"]:
+                                    make = dev_info.get("make")
+                                if model == "unknown" and dev_info.get("model") not in [None, "unknown"]:
+                                    model = dev_info.get("model")
+
+                                if (make and make != dev_info.get("make")) or (model and model != dev_info.get("model")):
+                                    print(f"[butler] Ingesting metadata for {registry_id}/{device_id}/{subsystem}: {make}/{model}", flush=True)
+                                    if registry_id not in self.models: self.models[registry_id] = {}
+                                    if device_id not in self.models[registry_id]: self.models[registry_id][device_id] = {}
+                                    if subsystem not in self.models[registry_id][device_id]: self.models[registry_id][device_id][subsystem] = {}
+                                    if make: self.models[registry_id][device_id][subsystem]["make"] = make
+                                    if model: self.models[registry_id][device_id][subsystem]["model"] = model
+
+                            # Enforce state transition rule (Butler 4.3): Transitions to success/failure MUST occur from pending
+                            in_pending = key in self.pending_updates
+                            if status == "pending" and in_pending:
+                                self.pending_updates[key]["has_reported_pending"] = True
+
+                            # Reset BUTLER_TIMEOUT timer if specific, measurable blob progress update is present (Section 12.2)
+                            has_progress = False
+                            for k, v in sub_update.items():
+                                kl = k.lower()
+                                if any(x in kl for x in ["progress", "percent", "block"]):
+                                    if v is not None:
+                                        has_progress = True
+                                        break
+                            if in_pending and has_progress:
+                                self.pending_updates[key]["timestamp"] = time.time()
+                                print(f"[butler] Measurable progress detected for {key}, resetting timeout timer.", flush=True)
+
+                            # Identify pre-update quiescent reports to avoid race conditions
+                            is_pre_update_quiescent = False
+                            if status == "quiescent" and in_pending:
+                                target_version = self.pending_updates[key].get("target_version") or "0.0.0"
+                                has_reported_pending = self.pending_updates[key].get("has_reported_pending", False)
+                                has_reached_terminal = (current_version == target_version)
+                                if not has_reported_pending and not has_reached_terminal:
+                                    is_pre_update_quiescent = True
+
+                            is_terminal = status in ["success", "failure", "quiescent"]
+                            
+                            if status in ["success", "failure"] and not in_pending and status != dev_info.get("status"):
+                                print(f"[butler] PROTOCOL VIOLATION: {registry_id}/{device_id}/{subsystem} transitioned to {status} while not in PENDING state. Rejecting update.", flush=True)
+                                continue
+
+                            if is_terminal:
+                                # ASSUMPTION: Pre-update quiescent state reports are not interpreted as termination of the pending transition
+                                if not is_pre_update_quiescent:
+                                    print(f"[butler] Device {registry_id}/{device_id}/{subsystem} terminal state {status} with version {current_version}", flush=True)
+                                    if status == "success":
+                                        # Butler 2.2: Successful update where current_version matches target_version MUST update lkg_version
+                                        target_version = dev_info.get("target_version") or "0.0.0"
+                                        if current_version == target_version and current_version != "0.0.0":
+                                            if current_version != dev_info.get("lkg_version"):
+                                                lkg_version = current_version
+                            
+                            # Version Safety (UUFI 8.4): Non-zero MUST NEVER be overwritten by "0.0.0"
+                            if current_version == "0.0.0" and (dev_info.get("current_version") or "0.0.0") != "0.0.0":
+                                current_version = dev_info.get("current_version")
+
+                            # Robust model synchronization (Butler 2.2): update if version or status differs
+                            should_sync = (current_version != dev_info.get("current_version") or 
+                                           lkg_version != dev_info.get("lkg_version") or
+                                           status != dev_info.get("status"))
+                            
+                            if should_sync:
+                                print(f"[butler] Triggering model sync for {registry_id}/{device_id}/{subsystem}: {status} ({current_version}, lkg: {lkg_version})", flush=True)
+                                self.update_cloud_model(registry_id, device_id, subsystem, current_version=current_version, lkg_version=lkg_version, status=status)
+                            
+                            if status in ["success", "failure", "quiescent"]:
+                                if in_pending:
+                                    # ASSUMPTION: If is_pre_update_quiescent is True, do not pop from self.pending_updates to keep the transition tracking active.
+                                    if is_pre_update_quiescent:
+                                        print(f"[butler] Pre-update quiescent report detected for {registry_id}/{device_id}/{subsystem}. Keeping pending update active.", flush=True)
+                                    else:
+                                        self.pending_updates.pop(key, None)
+                                if status == "failure":
+                                    self.rollback_cloud_model(registry_id, device_id, subsystem)
+                
+                if self.is_active:
+                    self.check_reconciliation()
                 return
-            
+
             if sub_type == "config" and sub_folder == "udmi" and not device_id:
+                if "udmi" in payload:
+                    print(f"[butler] PROTOCOL VIOLATION: Handshake reply wrapped inside 'udmi'. Rejecting.", flush=True)
+                    return
                 if principal and not match_principal(principal, self.principal):
                     return
                 self.handle_handshake_reply(payload, env.get("transactionId"))
                 return
-
 
             # Cloud model query
             if sub_folder == "cloud" and sub_type == "query":
@@ -76,9 +193,11 @@ class Orchestrator:
                 return
 
             # Cloud model update
-            if sub_folder == "cloud" and sub_type in ["config", "model"]:
-                cloud = payload.get("cloud", payload)
-                registries = cloud.get("registries", {})
+            if sub_folder == "cloud" and sub_type == "model":
+                if "cloud" in payload:
+                    print(f"[butler] PROTOCOL VIOLATION: Cloud model update wrapped inside 'cloud' root sub-object. Rejecting.", flush=True)
+                    return
+                registries = payload.get("registries", {})
                 if not isinstance(registries, dict): return
                 for reg_id, reg_data in registries.items():
                     if not isinstance(reg_data, dict): continue
@@ -91,32 +210,32 @@ class Orchestrator:
                         if dev_id not in self.models[reg_id]:
                             self.models[reg_id][dev_id] = {}
                         
-                        # Handle both nested (by subsystem) and flat (legacy) device data
-                        if any(isinstance(v, dict) for v in dev_data.values()):
-                            for sub, sub_data in dev_data.items():
-                                if isinstance(sub_data, dict):
-                                    if sub not in self.models[reg_id][dev_id]:
-                                        self.models[reg_id][dev_id][sub] = {}
+                        system_block = dev_data.get("system", {})
+                        if not isinstance(system_block, dict): continue
+                        
+                        if "target_version" in system_block:
+                            print(f"[butler] Ignoring prohibited target_version field at system configuration root.", flush=True)
+                            
+                        software = system_block.get("software", {})
+                        if isinstance(software, dict):
+                            for sub, ver in software.items():
+                                if sub not in self.models[reg_id][dev_id]:
+                                    self.models[reg_id][dev_id][sub] = {}
+                                
+                                if isinstance(ver, str):
+                                    target_version = ver
+                                elif isinstance(ver, dict):
+                                    target_version = ver.get("version") or ver.get("current_version") or "0.0.0"
+                                else:
+                                    target_version = "0.0.0"
                                     
-                                    # Controlled update for cloud model
-                                    for k, v in sub_data.items():
-                                        self.models[reg_id][dev_id][sub][k] = v
-
-                                    # Update cache
-                                    for k, v in sub_data.items():
-                                        self.models[reg_id][dev_id][sub][k] = v
-                        else:
-                            sub = "main"
-                            if sub not in self.models[reg_id][dev_id]:
-                                self.models[reg_id][dev_id][sub] = {}
-                            
-                            # Controlled update for cloud model
-                            for k, v in dev_data.items():
-                                self.models[reg_id][dev_id][sub][k] = v
-                            
-                            # Update cache
-                            for k, v in dev_data.items():
-                                self.models[reg_id][dev_id][sub][k] = v
+                                self.models[reg_id][dev_id][sub]["target_version"] = target_version
+                                make = dev_data.get("make") or system_block.get("make")
+                                model = dev_data.get("model") or system_block.get("model")
+                                if make: self.models[reg_id][dev_id][sub]["make"] = make
+                                if model: self.models[reg_id][dev_id][sub]["model"] = model
+                                if "status" in system_block:
+                                    self.models[reg_id][dev_id][sub]["status"] = system_block["status"]
                     print(f"[butler] Received model update for registry {reg_id}", flush=True)
                 if self.is_active:
                     self.check_reconciliation()
@@ -135,118 +254,6 @@ class Orchestrator:
                 if self.is_active:
                     self.check_reconciliation()
                 return
-
-            # Device state update
-            if sub_type == "state" and sub_folder == "blobset":
-                blobset = payload.get("blobset", {})
-                
-                if not registry_id or not device_id: return
-
-                # Handle both nested (by subsystem) and flat (legacy) payloads
-                updates_to_process = []
-                if any(isinstance(v, dict) for v in blobset.values()):
-                    if "blobs" in blobset and isinstance(blobset["blobs"], dict):
-                        # UUFI 8.1: subsystems are inside 'blobs'
-                        for sub_id, sub_data in blobset["blobs"].items():
-                            if isinstance(sub_data, dict):
-                                updates_to_process.append((sub_id, sub_data))
-                    else:
-                        # Direct nesting under 'blobset'
-                        for sub_id, sub_data in blobset.items():
-                            if isinstance(sub_data, dict):
-                                updates_to_process.append((sub_id, sub_data))
-                else:
-                    subsystem = blobset.get("subsystem", "main")
-                    updates_to_process.append((subsystem, blobset))
-
-                for subsystem, sub_update in updates_to_process:
-                    status = sub_update.get("status")
-                    current_version = sub_update.get("current_version") or "0.0.0"
-                    reported_lkg = sub_update.get("lkg_version") or "0.0.0"
-                    make = sub_update.get("make")
-                    model = sub_update.get("model")
-
-                    print(f"[butler] Status from {registry_id}/{device_id}/{subsystem}: {status} ({current_version}, reported lkg: {reported_lkg})", flush=True)
-                    
-                    key = (registry_id, device_id, subsystem)
-                    dev_info = self.models.get(registry_id, {}).get(device_id, {}).get(subsystem, {})
-                    
-                    # LKG Management (Butler 2.2): Orchestrator is primary authority.
-                    # Use cached LKG unless we're promoting a new one.
-                    lkg_version = dev_info.get("lkg_version") or "0.0.0"
-
-                    # Ingest make/model from state report if present (Butler 2.2)
-                    if make or model:
-                        # UUFI 8.5: Metadata Fallback - don't overwrite known with "unknown"
-                        if make == "unknown" and dev_info.get("make") not in [None, "unknown"]:
-                            make = dev_info.get("make")
-                        if model == "unknown" and dev_info.get("model") not in [None, "unknown"]:
-                            model = dev_info.get("model")
-
-                        if (make and make != dev_info.get("make")) or (model and model != dev_info.get("model")):
-                            print(f"[butler] Ingesting metadata for {registry_id}/{device_id}/{subsystem}: {make}/{model}", flush=True)
-                            if registry_id not in self.models: self.models[registry_id] = {}
-                            if device_id not in self.models[registry_id]: self.models[registry_id][device_id] = {}
-                            if subsystem not in self.models[registry_id][device_id]: self.models[registry_id][device_id][subsystem] = {}
-                            if make: self.models[registry_id][device_id][subsystem]["make"] = make
-                            if model: self.models[registry_id][device_id][subsystem]["model"] = model
-
-                    # Enforce state transition rule (Butler 4.3): Transitions to success/failure MUST occur from pending
-                    in_pending = key in self.pending_updates
-                    if status == "pending" and in_pending:
-                        self.pending_updates[key]["has_reported_pending"] = True
-
-                    # Identify pre-update quiescent reports to avoid race conditions
-                    is_pre_update_quiescent = False
-                    if status == "quiescent" and in_pending:
-                        target_version = self.pending_updates[key].get("target_version") or "0.0.0"
-                        has_reported_pending = self.pending_updates[key].get("has_reported_pending", False)
-                        has_reached_terminal = (current_version == target_version)
-                        if not has_reported_pending and not has_reached_terminal:
-                            is_pre_update_quiescent = True
-
-                    is_terminal = status in ["success", "failure", "quiescent"]
-                    
-                    if status in ["success", "failure"] and not in_pending and status != dev_info.get("status"):
-                        print(f"[butler] PROTOCOL VIOLATION: {registry_id}/{device_id}/{subsystem} transitioned to {status} while not in PENDING state. Rejecting update.", flush=True)
-                        continue
-
-                    if is_terminal:
-                        # ASSUMPTION: Pre-update quiescent state reports are not interpreted as termination of the pending transition
-                        if not is_pre_update_quiescent:
-                            print(f"[butler] Device {registry_id}/{device_id}/{subsystem} terminal state {status} with version {current_version}", flush=True)
-                            if status == "success":
-                                # Butler 2.2: Successful update where current_version matches target_version MUST update lkg_version
-                                target_version = dev_info.get("target_version") or "0.0.0"
-                                if current_version == target_version and current_version != "0.0.0":
-                                    if current_version != dev_info.get("lkg_version"):
-                                        lkg_version = current_version
-                    
-                    # Version Safety (UUFI 8.4): Non-zero MUST NEVER be overwritten by "0.0.0"
-                    if current_version == "0.0.0" and (dev_info.get("current_version") or "0.0.0") != "0.0.0":
-                        current_version = dev_info.get("current_version")
-
-                    # Robust model synchronization (Butler 2.2): update if version or status differs
-                    should_sync = (current_version != dev_info.get("current_version") or 
-                                   lkg_version != dev_info.get("lkg_version") or
-                                   status != dev_info.get("status"))
-                    
-                    if should_sync:
-                        print(f"[butler] Triggering model sync for {registry_id}/{device_id}/{subsystem}: {status} ({current_version}, lkg: {lkg_version})", flush=True)
-                        self.update_cloud_model(registry_id, device_id, subsystem, current_version=current_version, lkg_version=lkg_version, status=status)
-                    
-                    if status in ["success", "failure", "quiescent"]:
-                        if in_pending:
-                            # ASSUMPTION: If is_pre_update_quiescent is True, do not pop from self.pending_updates to keep the transition tracking active.
-                            if is_pre_update_quiescent:
-                                print(f"[butler] Pre-update quiescent report detected for {registry_id}/{device_id}/{subsystem}. Keeping pending update active.", flush=True)
-                            else:
-                                self.pending_updates.pop(key, None)
-                        if status == "failure":
-                            self.rollback_cloud_model(registry_id, device_id, subsystem)
-                
-                if self.is_active:
-                    self.check_reconciliation()
 
 
     def handle_handshake_state(self, payload, tid, principal):
@@ -322,10 +329,10 @@ class Orchestrator:
         self.transport.publish(env, payload)
 
     def push_full_model(self, principal=None):
-        # Push the entire model as a config/cloud message
+        # Push the entire model as a model/cloud message (Section 12.5)
         # Format: {"registries": {rid: {"devices": devs}}, "operation": "READ"}
         env = create_envelope(
-            sub_type="config",
+            sub_type="model",
             sub_folder="cloud",
             source=self.conn_spec.source_id,
             principal=principal
@@ -526,14 +533,11 @@ class Orchestrator:
             prefix = self.conn_spec.prefix + '/' if self.conn_spec.prefix else ''
             self.transport.subscribe(f"/{prefix}uufi/c/state/udmi", self.on_message)
             self.transport.subscribe(f"/{prefix}uufi/c/config/udmi", self.on_message)
-            self.transport.subscribe(f"/{prefix}uufi/c/config/cloud", self.on_message)
             self.transport.subscribe(f"/{prefix}uufi/c/query/cloud", self.on_message)
             self.transport.subscribe(f"/{prefix}uufi/c/model/cloud", self.on_message)
             self.transport.subscribe(f"/{prefix}uufi/c/events/discovery", self.on_message)
-            self.transport.subscribe(f"/{prefix}uufi/r/+/d/+/c/state/blobset", self.on_message)
-            self.transport.subscribe(f"/{prefix}uufi/r/+/d/+/c/config/cloud", self.on_message)
+            self.transport.subscribe(f"/{prefix}uufi/r/+/d/+/c/state/udmi", self.on_message)
             self.transport.subscribe(f"/{prefix}uufi/r/+/d/+/c/model/cloud", self.on_message)
-            self.transport.subscribe(f"/{prefix}uufi/c/state/blobset", self.on_message)
         else:
             self.transport.subscribe(self.on_message)
 

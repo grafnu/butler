@@ -57,8 +57,13 @@ class Verifier:
         self.transport.publish(env, payload)
 
     def handle_handshake_reply(self, payload, tid):
-        udmi = payload.get("udmi", payload)
-        reply = udmi.get("reply", {})
+        if "udmi" in payload:
+            print(f"[verifier] PROTOCOL VIOLATION: Handshake wrapped inside 'udmi'. Rejecting.", flush=True)
+            return
+        if tid != self.handshake_tid:
+            print(f"[verifier] Handshake reply transaction ID mismatch: expected {self.handshake_tid}, got {tid}. Rejecting.", flush=True)
+            return
+        reply = payload.get("reply", {})
         reply_tid = reply.get("transaction_id")
         if reply_tid == self.handshake_tid:
             print(f"[verifier] UUFI Handshake complete (tid: {reply_tid}). Verifier is ACTIVE.", flush=True)
@@ -89,6 +94,9 @@ class Verifier:
 
             # Monitor Handshake on /uufi/c/ (UUFI Section 9.3)
             if sub_folder == "udmi" and not device_id:
+                if "udmi" in payload:
+                    self.log_verification(registry_id, device_id or "verifier", "PROTOCOL VIOLATION: Handshake payload blocks wrapped inside 'udmi' root sub-object", level="FAIL")
+                    return
                 if principal:
                     # Section 11: Principal Suffix Standardization
                     is_valid_principal = False
@@ -101,16 +109,14 @@ class Verifier:
                         self.log_verification(registry_id, "verifier", f"PROTOCOL VIOLATION: Non-standard principal string or suffix: {principal}", level="FAIL")
 
                 if sub_type == "state":
-                    udmi = payload.get("udmi", payload)
-                    setup = udmi.get("setup", {})
+                    setup = payload.get("setup", {})
                     tid = setup.get("transaction_id")
                     if principal:
                         self.handshakes[principal] = {"tid": tid, "active": False}
                         # UUFI Section 9.1: Self-reporting uses unknown/verifier
                         self.log_verification("unknown", "verifier", f"Handshake started for {principal}")
                 elif sub_type == "config":
-                    udmi = payload.get("udmi", payload)
-                    reply = udmi.get("reply", {})
+                    reply = payload.get("reply", {})
                     tid = reply.get("transaction_id")
                     if principal in self.handshakes and self.handshakes[principal]["tid"] == tid:
                         self.handshakes[principal]["active"] = True
@@ -123,6 +129,15 @@ class Verifier:
                 if principal and not match_principal(principal, self.conn_spec.principal):
                     return
                 self.handle_handshake_reply(payload, env.get("transactionId"))
+                return
+
+            # Monitor cloud model updates and reject if non-compliant
+            if sub_folder == "cloud" and sub_type == "model":
+                if "cloud" in payload:
+                    self.log_verification(registry_id or "unknown", "verifier", "PROTOCOL VIOLATION: Cloud model update wrapped inside 'cloud' root sub-object", level="FAIL")
+                    return
+            if sub_folder == "cloud" and sub_type == "config":
+                self.log_verification(registry_id or "unknown", "verifier", "PROTOCOL VIOLATION: Cloud model update sourced from /uufi/c/config/cloud is prohibited", level="FAIL")
                 return
 
             # Mandatory field validation
@@ -141,45 +156,36 @@ class Verifier:
                     self.log_verification(registry_id, device_id or "verifier", f"VALIDATION ERROR: Invalid timestamp format from {source}: {timestamp}", level="FAIL")
                     return
 
-            # Monitor Updates on /uufi/r/
-            if sub_type == "state" and sub_folder == "blobset" and device_id:
-                blobset = payload.get("blobset", {})
+            # Monitor Updates on /uufi/r/ (sourcing software state exclusively from state/udmi)
+            if sub_type == "state" and sub_folder == "udmi" and device_id:
+                if "udmi" in payload:
+                    self.log_verification(registry_id, device_id, "PROTOCOL VIOLATION: State update wrapped inside 'udmi' root sub-object", level="FAIL")
+                    return
                 
-                # Handle both nested (by subsystem) and flat (legacy) payloads
-                updates_to_process = []
-                if any(isinstance(v, dict) for v in blobset.values()):
-                    if "blobs" in blobset and isinstance(blobset["blobs"], dict):
-                        # UUFI Section 8.1 / UDMI Standard: subsystems are inside 'blobs'
-                        for sub_id, sub_data in blobset["blobs"].items():
-                            if isinstance(sub_data, dict):
-                                updates_to_process.append((sub_id, sub_data))
-                    else:
-                        # Direct nesting under 'blobset'
-                        for sub_id, sub_data in blobset.items():
-                            if isinstance(sub_data, dict):
-                                updates_to_process.append((sub_id, sub_data))
-                else:
-                    subsystem = blobset.get("subsystem", "main")
-                    updates_to_process.append((subsystem, blobset))
-
-                for subsystem, sub_update in updates_to_process:
-                    status = sub_update.get("status")
-                    
-                    key = (registry_id, device_id, subsystem)
-                    prev_status = self.device_states.get(key, "unknown")
-                    
-                    if status == prev_status:
-                        continue
-                        
-                    self.device_states[key] = status
-                    
-                    self.log_verification(registry_id, device_id, f"State transition for {registry_id}/{device_id}/{subsystem}: {prev_status} -> {status}", subsystem_id=subsystem)
-                    
-                    # Check for invalid transitions
-                    if prev_status == "quiescent" and status not in ["pending", "quiescent"]:
-                        self.log_verification(registry_id, device_id, f"VALIDATION ERROR: {registry_id}/{device_id}/{subsystem} went from quiescent to {status}", level="FAIL", subsystem_id=subsystem)
-                    elif prev_status == "pending" and status not in ["success", "failure", "pending"]:
-                        self.log_verification(registry_id, device_id, f"VALIDATION ERROR: {registry_id}/{device_id}/{subsystem} went from pending to {status}", level="FAIL", subsystem_id=subsystem)
+                system_block = payload.get("system", {})
+                software = system_block.get("software", {})
+                if software:
+                    for subsystem, sub_update in software.items():
+                        if isinstance(sub_update, dict):
+                            status = sub_update.get("status")
+                            if status is None:
+                                continue
+                                
+                            key = (registry_id, device_id, subsystem)
+                            prev_status = self.device_states.get(key, "unknown")
+                            
+                            if status == prev_status:
+                                continue
+                                
+                            self.device_states[key] = status
+                            
+                            self.log_verification(registry_id, device_id, f"State transition for {registry_id}/{device_id}/{subsystem}: {prev_status} -> {status}", subsystem_id=subsystem)
+                            
+                            # Check for invalid transitions
+                            if prev_status == "quiescent" and status not in ["pending", "quiescent"]:
+                                self.log_verification(registry_id, device_id, f"VALIDATION ERROR: {registry_id}/{device_id}/{subsystem} went from quiescent to {status}", level="FAIL", subsystem_id=subsystem)
+                            elif prev_status == "pending" and status not in ["success", "failure", "pending"]:
+                                self.log_verification(registry_id, device_id, f"VALIDATION ERROR: {registry_id}/{device_id}/{subsystem} went from pending to {status}", level="FAIL", subsystem_id=subsystem)
 
     def log_verification(self, registry_id, device_id, text, level="PASS", subsystem_id=None):
         log_level = "ERROR" if level == "FAIL" else "INFO"

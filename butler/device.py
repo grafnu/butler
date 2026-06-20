@@ -23,7 +23,7 @@ class MockDevice:
         self.target_version = "0.0.0"
         self.state = "quiescent"
         self.transport = get_transport(conn_spec)
-        self.subsystem = "main"
+        self.subsystem = "system"
         self.model_repo = ModelRepository()
         
         # Initialize state from model repo if available
@@ -72,10 +72,13 @@ class MockDevice:
         self.transport.publish(env, payload)
 
     def handle_handshake_reply(self, payload, tid):
-        # Handle both nested (legacy) and flat (new) payloads
-        udmi = payload.get("udmi", payload)
-        setup = udmi.get("setup", {})
-        reply = udmi.get("reply", {})
+        if "udmi" in payload:
+            print(f"[mocket] PROTOCOL VIOLATION: Handshake wrapped inside 'udmi'. Rejecting.", flush=True)
+            return
+        if tid != self.handshake_tid:
+            print(f"[mocket] Handshake reply transaction ID mismatch: expected {self.handshake_tid}, got {tid}. Rejecting.", flush=True)
+            return
+        reply = payload.get("reply", {})
         reply_tid = reply.get("transaction_id")
         if reply_tid == self.handshake_tid:
             # UUFI Section 3: Priority: Pre-configured registry ID MUST be prioritized over 
@@ -235,6 +238,7 @@ class MockDevice:
     def report_status(self, category=None):
         sub_data = {
             "current_version": self.current_version or "0.0.0",
+            "version": self.current_version or "0.0.0",
             "target_version": self.target_version or "0.0.0",
             "lkg_version": self.lkg_version or "0.0.0",
             "status": self.state,
@@ -243,20 +247,26 @@ class MockDevice:
         }
         if category:
             sub_data["category"] = category
+        if self.state == "pending":
+            # Simulate measurable active progress update to test timer resets (Section 12.2)
+            sub_data["progress"] = 50.0
+            sub_data["download_percentage"] = 50.0
             
         update_data = {
-            "blobs": {
-                self.subsystem: sub_data
+            "system": {
+                "software": {
+                    self.subsystem: sub_data
+                }
             }
         }
         env = create_envelope(
             registry_id=self.registry_id,
             device_id=self.device_id,
             sub_type="state",
-            sub_folder="blobset",
+            sub_folder="udmi",
             source=self.conn_spec.source_id
         )
-        payload = create_payload("blobset", update_data)
+        payload = create_payload("udmi", update_data)
         self.transport.publish(env, payload)
 
     def send_discovery(self):

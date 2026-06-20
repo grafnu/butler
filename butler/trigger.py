@@ -87,15 +87,17 @@ def main():
         source=conn_spec.source_id
     )
 
-    # Construct the partial merge update payload
+    # Construct the partial merge update payload (Section 12.6)
     update_data = {
         "operation": "UPDATE",
         "registries": {
             registry_id: {
                 "devices": {
                     device_id: {
-                        subsystem: {
-                            "target_version": version,
+                        "system": {
+                            "software": {
+                                subsystem: version
+                            },
                             "make": state.get("make", "unknown"),
                             "model": state.get("model", "unknown")
                         }

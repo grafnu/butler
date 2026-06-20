@@ -23,10 +23,7 @@ class BlobRepository:
             f.write(data)
         
         sha256 = hashlib.sha256(data).hexdigest()
-        hash_path = os.path.join(target_dir, "sha256.txt")
-        with open(hash_path, "w") as f:
-            f.write(sha256)
-        
+        # Separate static hash files (such as sha256.txt) or database columns are strictly PROHIBITED (spec/blobstore.md)
         return blob_path, sha256
 
     def get_blob_metadata(self, make, model, subsystem, version):
@@ -57,25 +54,13 @@ class BlobRepository:
                 resolved_path = os.path.abspath(os.path.join(workspace_root, resolved_path))
             
             if os.path.exists(resolved_path):
-                # Try to read sha256.txt from the same directory if it exists
-                dir_name = os.path.dirname(resolved_path)
-                sha_file = os.path.join(dir_name, "sha256.txt")
-                sha256 = None
-                if os.path.exists(sha_file):
-                    try:
-                        with open(sha_file, "r") as f:
-                            sha256 = f.read().strip()
-                    except Exception:
-                        pass
-                
-                # Calculate sha256 dynamically if missing
-                if not sha256:
-                    try:
-                        with open(resolved_path, "rb") as f:
-                            sha256 = hashlib.sha256(f.read()).hexdigest()
-                    except Exception as e:
-                        sys.stderr.write(f"[blob_repo] Error hashing file {resolved_path}: {e}\n")
-                        return None
+                # Separate static hash files (such as sha256.txt) or database columns are strictly PROHIBITED (spec/blobstore.md)
+                try:
+                    with open(resolved_path, "rb") as f:
+                        sha256 = hashlib.sha256(f.read()).hexdigest()
+                except Exception as e:
+                    sys.stderr.write(f"[blob_repo] Error hashing file {resolved_path}: {e}\n")
+                    return None
                 
                 return {
                     "url": url,
@@ -92,20 +77,12 @@ class BlobRepository:
                 break
         
         if blob_path:
-            sha_file = os.path.join(target_dir, "sha256.txt")
-            sha256 = None
-            if os.path.exists(sha_file):
-                try:
-                    with open(sha_file, "r") as f:
-                        sha256 = f.read().strip()
-                except Exception:
-                    pass
-            if not sha256:
-                try:
-                    with open(blob_path, "rb") as f:
-                        sha256 = hashlib.sha256(f.read()).hexdigest()
-                except Exception:
-                    return None
+            # Separate static hash files (such as sha256.txt) or database columns are strictly PROHIBITED (spec/blobstore.md)
+            try:
+                with open(blob_path, "rb") as f:
+                    sha256 = hashlib.sha256(f.read()).hexdigest()
+            except Exception:
+                return None
             
             rel_path = os.path.relpath(blob_path, workspace_root)
             return {

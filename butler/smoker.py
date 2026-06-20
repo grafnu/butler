@@ -98,7 +98,7 @@ def main():
         (["-m", "butler.register"], []), # missing device_id
         (["-m", "butler.trigger"], []), # missing device_id, subsystem_id, blob_version, blob_path
         (["-m", "butler.trigger"], ["smoke-dev"]), # missing subsystem_id, blob_version, blob_path
-        (["-m", "butler.trigger"], ["smoke-dev", "main", "1.0"]), # missing blob_path
+        (["-m", "butler.trigger"], ["smoke-dev", "system", "1.0"]), # missing blob_path
         (["-m", "butler.device"], []), # missing device_id
     ]:
         res = subprocess.run([sys.executable] + cmd + cmd_args, capture_output=True, env=env)
@@ -126,7 +126,7 @@ def main():
     print("Verifying optional registry_id in bin/trigger...")
     dummy_blob = os.path.join(test_dir, "dummy_init.bin")
     with open(dummy_blob, "wb") as f: f.write(b"INIT_CONTENT")
-    subprocess.run([sys.executable, "-m", "butler.trigger", "--conn_spec", conn_spec, "env-dev", "main", "1.0.0", dummy_blob], env=env, check=True)
+    subprocess.run([sys.executable, "-m", "butler.trigger", "--conn_spec", conn_spec, "env-dev", "system", "1.0.0", dummy_blob], env=env, check=True)
     print("Optional registry_id in trigger verified.")
     
     # Verify multi-segment prefix (UUFI Section 8.4)
@@ -158,7 +158,7 @@ def main():
         dev = env_msg.get("deviceId")
         if sub_folder == "blobset" and sub_type == "config" and dev == "ms-dev":
             blobs = payload_msg.get("blobset", {}).get("blobs", {}) or payload_msg.get("blobs", {})
-            main_sub = blobs.get("main", {})
+            main_sub = blobs.get("system", {})
             if isinstance(main_sub, dict) and main_sub.get("version") == "1.1.0":
                 ms_success.append(True)
     
@@ -168,7 +168,7 @@ def main():
     try:
         time.sleep(5)
         # Trigger update on multi-segment prefix
-        subprocess.run([sys.executable, "-m", "butler.trigger", registry_id, "ms-dev", "main", "1.1.0", dummy_blob, "--conn_spec", ms_conn_spec], env=env, check=True)
+        subprocess.run([sys.executable, "-m", "butler.trigger", registry_id, "ms-dev", "system", "1.1.0", dummy_blob, "--conn_spec", ms_conn_spec], env=env, check=True)
         
         timeout = 30
         start_time = time.time()
@@ -191,13 +191,10 @@ def main():
         ms_transport.loop_stop()
 
     # Prep local storage for packages when using local provider
-    package_dir = os.path.join(blobs_dir, "vibrant", "butler-v1", "main", "1.1.0")
+    package_dir = os.path.join(blobs_dir, "vibrant", "butler-v1", "system", "1.1.0")
     os.makedirs(package_dir, exist_ok=True)
     with open(os.path.join(package_dir, "bundle.bin"), "wb") as f:
         f.write(b"SMOKE_TEST_CONTENT")
-    with open(os.path.join(package_dir, "sha256.txt"), "w") as f:
-        import hashlib
-        f.write(hashlib.sha256(b"SMOKE_TEST_CONTENT").hexdigest())
 
     print("Registering smoke-dev...")
     subprocess.run([sys.executable, "-m", "butler.register", "--conn_spec", conn_spec, registry_id, device_id, "vibrant", "butler-v1"], env=env, check=True)
@@ -232,7 +229,7 @@ def main():
         dev = env_msg.get("deviceId")
         if sub_folder == "blobset" and sub_type == "config" and dev == device_id:
             blobs = payload_msg.get("blobset", {}).get("blobs", {}) or payload_msg.get("blobs", {})
-            main_sub = blobs.get("main", {})
+            main_sub = blobs.get("system", {})
             if isinstance(main_sub, dict) and main_sub.get("version") == "1.1.0":
                 main_success.append(True)
                 
@@ -244,7 +241,7 @@ def main():
         print("Triggering update...")
         dummy_blob = os.path.join(test_dir, "dummy.bin")
         with open(dummy_blob, "wb") as f: f.write(b"NEW_VERSION_CONTENT")
-        subprocess.run([sys.executable, "-m", "butler.trigger", registry_id, device_id, "main", "1.1.0", dummy_blob, "--conn_spec", conn_spec], env=env, check=True)
+        subprocess.run([sys.executable, "-m", "butler.trigger", registry_id, device_id, "system", "1.1.0", dummy_blob, "--conn_spec", conn_spec], env=env, check=True)
         
         timeout = 40
         start_time = time.time()
