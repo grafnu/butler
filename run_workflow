@@ -76,8 +76,8 @@ for ID in "${IMPLEMENTATIONS[@]}"; do
   setup_sibling "impl_${ID}" "impl_${ID}"
 done
 
-# Setup gemerger
-setup_sibling "gemerger" "gemerger"
+# Setup merger
+setup_sibling "merger" "merger"
 
 echo "=== Base Directory Structure Verified/Constructed ==="
 
@@ -159,9 +159,9 @@ done
 # 5. Run the Gemini Merger Workflow (@MERGER.md)
 echo "=== Running Gemini Merger (@MERGER.md) ==="
 START_MERGER=$SECONDS
-cd "${BASE_DIR}/gemerger"
-echo "Executing gemini -s -p @MERGER.md in gemerger..."
-LOG_FILE_MERGER="${BASE_DIR}/gemerger.log"
+cd "${BASE_DIR}/merger"
+echo "Executing gemini -s -p @MERGER.md in merger..."
+LOG_FILE_MERGER="${BASE_DIR}/merger.log"
 echo "Logging output to ${LOG_FILE_MERGER}..."
 
 if "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" -s -p @MERGER.md > "${LOG_FILE_MERGER}" 2>&1; then
@@ -175,15 +175,15 @@ ELAPSED_MERGER=$(( SECONDS - START_MERGER ))
 echo "=== Gemini Merger completed in ${ELAPSED_MERGER}s ==="
 
 # Check and push any merger changes
-UPSTREAM_MERGER=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo "origin/gemerger")
+UPSTREAM_MERGER=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo "origin/merger")
 UNPUSHED_MERGER=$(git log "${UPSTREAM_MERGER}..HEAD" --oneline 2>/dev/null || echo "")
 if [ -n "${UNPUSHED_MERGER}" ]; then
-  echo "Found unpushed commits in gemerger:"
+  echo "Found unpushed commits in merger:"
   echo "${UNPUSHED_MERGER}"
-  echo "Pushing merger updates to origin/gemerger..."
-  git push origin HEAD:gemerger
+  echo "Pushing merger updates to origin/merger..."
+  git push origin HEAD:merger
 else
-  echo "No unpushed commits for gemerger."
+  echo "No unpushed commits for merger."
 fi
 
 echo "=== All Workflow Tasks Completed ==="

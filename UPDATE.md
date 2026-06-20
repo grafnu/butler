@@ -37,7 +37,7 @@ Through this continuous loop of verification and feedback (Merger Agent) and ref
 
 1. **Branch Verification:**
    - This procedure MUST only be applied to branches that start with `impl_` (e.g., `impl_B`).
-   - This procedure MUST NOT be performed on the `main` or `gemerger` branch, or any other unrecognized branch.
+   - This procedure MUST NOT be performed on the `main` or `merger` branch, or any other unrecognized branch.
    - Verify that the active git branch name is valid and the working directory is clean before beginning.
 
 2. **Upstream Synchronization:**

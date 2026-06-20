@@ -29,7 +29,7 @@ Through this continuous loop of verification and feedback (Merger Agent) and ref
 
 ---
 
-The merger branch (typically `gemerger`) can commit and push changes to the `spec/` directory and/or the `UPDATE.md` skill file. No code changes should be made to any implementation code under `impl/` or other directories.
+The merger branch (typically `merger`) can commit and push changes to the `spec/` directory and/or the `UPDATE.md` skill file. No code changes should be made to any implementation code under `impl/` or other directories.
 
 For each sibling implementation branch (`impl_{ID}`):
 - If the implementation is deemed to be at fault (failed tests or spec non-compliance), a `merge_analysis.txt` file must be created or updated at the root of that implementation's repository, providing a detailed summary of why the implementation is bad or non-compliant so a subsequent agent can diagnose and fix it properly.
