@@ -315,8 +315,8 @@ def main():
                 
                 # Run the start_local script to spin up mosquitto and other local infrastructure in an isolated process group
                 env = os.environ.copy()
-                env["PATH"] = f"/home/peringknife/vibrant/impl_D/tmp/bin:{env.get('PATH', '')}"
-                env["LD_LIBRARY_PATH"] = f"/home/peringknife/vibrant/impl_D/tmp/bin:{env.get('LD_LIBRARY_PATH', '')}"
+                env["PATH"] = f"{workspace_root}/tmp/bin:{env.get('PATH', '')}"
+                env["LD_LIBRARY_PATH"] = f"{workspace_root}/tmp/bin:{env.get('LD_LIBRARY_PATH', '')}"
                 subprocess.Popen([start_local_script, site_path, project_spec], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setsid, env=env)
                 
                 # Wait for up to 20 seconds for the broker to start
