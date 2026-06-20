@@ -26,6 +26,8 @@ requirements, avoiding "should" and "may", focusing on what is
 strictly required, what the system must do to function and be compliant.
 Either something is done correctly, or it doesn't matter how it's done.
 
+The output of the skill MUST be an updated spec (`.md`) file (e.g., under `spec/` such as `spec/butler.md`). Simply patching or updating the local implementation code in `impl/` is NOT sufficient, as changes there will not be saved or committed. Any temporary code adjustments, patches, or test workarounds that are required to bring implementations into compliance or to let the integration tests pass MUST be codified as strict, explicit requirements in the formal specification files under `spec/`.
+
 First merge `origin/main` into this branch to make sure all specs and
 other details are up to date.
 
@@ -47,14 +49,25 @@ Execute the functional equivalent of the `smokeit` integration tests using the a
 
 Run and capture the output/logs of both the `butler` and `verifier` processes to separate log files (`impl/{ID}.log`).
 
+**Specification Audit and Update Guidelines:**
+The specification MUST be strict, authoritative, clear, and unambiguous. It must NOT be relaxed or updated just to accommodate non-compliant behaviors of buggy test frameworks or sub-implementations. If a test harness (like a cross-testing monitor) or any system implementation is found to use a non-compliant or deviant format (such as nested payload wrappers or custom version fields), the test harness or implementation itself MUST be failed and corrected to comply with the authoritative specification, rather than modifying the specification to allow non-standard alternatives.
+
+Ensure that the specifications clearly define strict, unique, and unambiguous requirements for the following critical interoperability areas:
+1.  **Handshake Payload Formatting:** Mandate exactly ONE standard flattened format for Handshake Step 1 and Step 2 request/reply blocks, where the `"setup"` and `"reply"` payload blocks reside directly at the payload root (no nested `"udmi"` wrappers).
+2.  **Model Updates Structure:** Mandate exactly ONE standard format for cloud model update payloads, where the `"registries"` key resides directly at the payload root (no nested `"cloud"` wrappers).
+3.  **Expected Version Configuration:** Specify exactly ONE standard way to define the expected version: under the standard software dictionary structure within the device's system configuration (`system.software.<subsystem>`). Any alternative properties like `"target_version"` are strictly prohibited and MUST NOT be accepted.
+4.  **Topic Suffix Formatting:** Clarify that all UUFI topic paths MUST include both a subtype and a subfolder segment (`/c/{subtype}/{subfolder}`), and topic generation utilities must not generate truncated or omitted suffixes.
+5.  **Subsystem Reporting Structure:** Ensure the actual state reporting matches standard UDMI schemas, wrapping the subsystem ID (specifically `"system"`) within the `"blobs"` dictionary under `"blobset"`.
+6.  **Envelope and Configuration Attributes:** Specify compliance rules for envelope attributes like `"nonce"` deduplication/graceful-processing, and config attributes like `"version"`.
+
 If the smoke test fails, indicating that there is an incompatibility
 in the implementations, diagnose and analyze to determine what the
-problem is, and recommend a change to the specs (in `spec/`) to
+problem is, and update the specs (in `spec/`) to
 remediate.
 
 If the smoke test passes, analyze the generated log files to see if
 there is any other discrepancy or ambiguities that should be addressed
-and likewise recommend changes to `spec/`.
+and likewise update `spec/`.
 
 The actual implementation in `*/butler/` will be different and that's
 expected. (Same with `*/bin/`).

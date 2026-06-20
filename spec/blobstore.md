@@ -40,7 +40,7 @@ This provider is optimized for local integration testing, offline development, a
     `{BUTLER_BLOBS_DIR}/{make}/{model}/{blob_id}/{version}/`
 *   **File Layout:**
     *   `bundle.bin` or `bundle.txt`: The raw update package payload binary or text file.
-    *   *Note:* No separate hash files or database columns are required. The Local Disk provider calculates the SHA-256 hash of the payload file dynamically at runtime whenever `resolve_package_metadata` is invoked, preventing configuration skew.
+    *   *Note:* Separate static hash files (such as `sha256.txt`) or database columns are strictly PROHIBITED to prevent redundancy and configuration skew. The Local Disk provider MUST dynamically calculate the SHA-256 hash of the payload file (`bundle.bin` or `bundle.txt`) at runtime whenever `resolve_package_metadata` is invoked.
 *   **Software Catalog Schema (`model.json`):** Sourced from the file specified by `BUTLER_MODEL_FILE` (default: `udmi_blob_store/model.json`), this database maps target software versions to their relative or absolute file package URIs. It MUST follow the nested JSON schema:
     ```json
     {
