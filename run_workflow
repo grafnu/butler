@@ -1,0 +1,168 @@
+#!/bin/bash
+#
+#
+# This script constructs the base directory structure (cloning sibling repos/branches as needed),
+# runs the parallel Gemini update workflow on implementations A, B, C, D, checks and pushes git updates,
+# and finally runs the Gemini merger integration tests.
+#
+# Usage: ./bin/run_workflow.sh
+
+set -euo pipefail
+
+# 1. Internal Configuration
+IMPLEMENTATIONS=("A" "B" "C" "D")
+GEMINI_BIN="gemini"
+GEMINI_OPTS=("--proxy=false" "--approval-mode" "yolo")
+
+# Determine directories
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MAIN_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+BASE_DIR="$(cd "${MAIN_DIR}/.." && pwd)"
+
+echo "=== System Configuration ==="
+echo "Script directory:       ${SCRIPT_DIR}"
+echo "Main workspace:         ${MAIN_DIR}"
+echo "Base parent directory:  ${BASE_DIR}"
+echo "Sub-implementations:   ${IMPLEMENTATIONS[*]}"
+echo "============================="
+
+# 2. Construct Base Directory Structure as Needed
+cd "${MAIN_DIR}"
+REMOTE_URL=$(git config --get remote.origin.url || echo "")
+if [ -z "${REMOTE_URL}" ]; then
+  echo "Error: Could not retrieve remote origin URL from ${MAIN_DIR}." >&2
+  exit 1
+fi
+echo "Using remote repository URL: ${REMOTE_URL}"
+
+# Helper function to clone/setup a sibling directory with its branch
+setup_sibling() {
+  local dir_name="$1"
+  local branch_name="$2"
+  local target_dir="${BASE_DIR}/${dir_name}"
+
+  if [ ! -d "${target_dir}" ]; then
+    echo "Directory ${dir_name} not found. Cloning into ${target_dir}..."
+    cd "${BASE_DIR}"
+    git clone "${REMOTE_URL}" "${dir_name}"
+  fi
+
+  cd "${target_dir}"
+  echo "Fetching all updates for ${dir_name}..."
+  git fetch --all --prune
+
+  # Switch to the correct branch
+  if git show-ref --verify --quiet "refs/heads/${branch_name}"; then
+    echo "Switching ${dir_name} to existing local branch ${branch_name}..."
+    git checkout "${branch_name}"
+  else
+    echo "Checking out new tracking branch ${branch_name} from origin/${branch_name} in ${dir_name}..."
+    git checkout -b "${branch_name}" "origin/${branch_name}"
+  fi
+  
+  # Ensure the working directory is updated to match origin
+  echo "Resetting ${dir_name} to origin/${branch_name} to ensure freshness..."
+  git reset --hard "origin/${branch_name}"
+}
+
+# Setup implementations
+for ID in "${IMPLEMENTATIONS[@]}"; do
+  setup_sibling "impl_${ID}" "impl_${ID}"
+done
+
+# Setup gemerger
+setup_sibling "gemerger" "gemerger"
+
+echo "=== Base Directory Structure Verified/Constructed ==="
+
+# 3. Run Parallel Gemini Update Workflows (@UPDATE.md)
+echo "=== Running Parallel Gemini Updates (@UPDATE.md) ==="
+declare -A PIDS
+declare -A LOGS
+
+for ID in "${IMPLEMENTATIONS[@]}"; do
+  IMPL_DIR="${BASE_DIR}/impl_${ID}"
+  LOG_FILE="/tmp/gemini_update_impl_${ID}.log"
+  LOGS["$ID"]="${LOG_FILE}"
+  
+  echo "Launching gemini -s -p @UPDATE.md for impl_${ID} in background (logging to ${LOG_FILE})..."
+  (
+    cd "${IMPL_DIR}"
+    # Execute Gemini in sandbox mode using the specified options and input @UPDATE.md
+    "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" -s -p @UPDATE.md > "${LOG_FILE}" 2>&1
+  ) &
+  PIDS["$ID"]=$!
+done
+
+# Wait for all processes to complete
+echo "Waiting for parallel update processes to complete..."
+FAILED_IMPLS=()
+for ID in "${IMPLEMENTATIONS[@]}"; do
+  PID=${PIDS["$ID"]}
+  if wait "${PID}"; then
+    echo "SUCCESS: impl_${ID} updated successfully."
+  else
+    echo "FAILURE: impl_${ID} update failed. Check log: ${LOGS["$ID"]}"
+    FAILED_IMPLS+=("${ID}")
+  fi
+done
+
+if [ ${#FAILED_IMPLS[@]} -gt 0 ]; then
+  echo "Warning: The following implementations failed to update: ${FAILED_IMPLS[*]}"
+  echo "Continuing to push check and merger as requested..."
+fi
+
+# 4. Check and Push Git Updates for Each Implementation
+echo "=== Checking and Pushing Git Updates ==="
+for ID in "${IMPLEMENTATIONS[@]}"; do
+  IMPL_DIR="${BASE_DIR}/impl_${ID}"
+  cd "${IMPL_DIR}"
+  
+  echo "Checking git status for impl_${ID}..."
+  UNCOMMITTED=$(git status --porcelain 2>/dev/null || echo "")
+  if [ -n "${UNCOMMITTED}" ]; then
+    echo "WARNING: There are uncommitted/unstaged changes in impl_${ID}:"
+    echo "${UNCOMMITTED}"
+  fi
+  
+  # Find unpushed commits against upstream
+  UPSTREAM=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo "origin/impl_${ID}")
+  UNPUSHED_COMMITS=$(git log "${UPSTREAM}..HEAD" --oneline 2>/dev/null || echo "")
+  
+  if [ -n "${UNPUSHED_COMMITS}" ]; then
+    echo "Found unpushed commits in impl_${ID}:"
+    echo "${UNPUSHED_COMMITS}"
+    echo "Pushing updates to origin/impl_${ID}..."
+    git push origin "HEAD:impl_${ID}"
+  else
+    echo "No unpushed commits for impl_${ID}."
+  fi
+done
+
+# 5. Run the Gemini Merger Workflow (@MERGER.md)
+echo "=== Running Gemini Merger (@MERGER.md) ==="
+cd "${BASE_DIR}/gemerger"
+echo "Executing gemini -s -p @MERGER.md in gemerger..."
+LOG_FILE_MERGER="/tmp/gemini_merger.log"
+echo "Logging output to ${LOG_FILE_MERGER}..."
+
+if "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" -s -p @MERGER.md > "${LOG_FILE_MERGER}" 2>&1; then
+  echo "SUCCESS: Gemini merger run completed successfully."
+else
+  echo "FAILURE: Gemini merger run failed. Check log: ${LOG_FILE_MERGER}"
+  exit 1
+fi
+
+# Check and push any merger changes
+UPSTREAM_MERGER=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo "origin/gemerger")
+UNPUSHED_MERGER=$(git log "${UPSTREAM_MERGER}..HEAD" --oneline 2>/dev/null || echo "")
+if [ -n "${UNPUSHED_MERGER}" ]; then
+  echo "Found unpushed commits in gemerger:"
+  echo "${UNPUSHED_MERGER}"
+  echo "Pushing merger updates to origin/gemerger..."
+  git push origin HEAD:gemerger
+else
+  echo "No unpushed commits for gemerger."
+fi
+
+echo "=== All Workflow Tasks Completed ==="
