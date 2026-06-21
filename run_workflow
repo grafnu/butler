@@ -109,7 +109,7 @@ declare -A LOGS
 
 for ID in "${IMPLEMENTATIONS[@]}"; do
   IMPL_DIR="${BASE_DIR}/impl/${ID}"
-  LOG_FILE="${BASE_DIR}/impl/impl_${ID}.log"
+  LOG_FILE="${IMPL_DIR}.log"
   LOGS["$ID"]="${LOG_FILE}"
   
   echo "Launching gemini ${SANDBOX_OPTS[*]} -p @UPDATE.md for impl_${ID} in background (logging to ${LOG_FILE})..."
@@ -186,7 +186,7 @@ echo "=== Running Gemini Merger (@MERGER.md) ==="
 START_MERGER=$SECONDS
 cd "${BASE_DIR}/merger"
 echo "Executing gemini ${SANDBOX_OPTS[*]} -p @MERGER.md in merger..."
-LOG_FILE_MERGER="${BASE_DIR}/impl/merger.log"
+LOG_FILE_MERGER="${BASE_DIR}/merger.log"
 echo "Logging output to ${LOG_FILE_MERGER}..."
 
 if "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" "${SANDBOX_OPTS[@]}" -p @MERGER.md > "${LOG_FILE_MERGER}" 2>&1; then
