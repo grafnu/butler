@@ -9,6 +9,11 @@
 
 set -euo pipefail
 
+# Force non-interactive fail-fast execution across all sub-shells/tools
+export CLOUDSDK_CORE_DISABLE_PROMPTS=1
+export DEBIAN_FRONTEND=noninteractive
+export SUDO_ASKPASS=/bin/false
+
 # 1. Internal Configuration
 IMPLEMENTATIONS=("A" "B" "C" "D")
 
@@ -117,7 +122,7 @@ for ID in "${IMPLEMENTATIONS[@]}"; do
     START_INDIVIDUAL=$SECONDS
     cd "${IMPL_DIR}"
     # Execute Gemini using the specified options and input @UPDATE.md
-    "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" "${SANDBOX_OPTS[@]}" -p @UPDATE.md > "${LOG_FILE}" 2>&1
+    "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" "${SANDBOX_OPTS[@]}" -p @UPDATE.md < /dev/null > "${LOG_FILE}" 2>&1
     RET=$?
     ELAPSED_INDIVIDUAL=$(( SECONDS - START_INDIVIDUAL ))
     echo "${ELAPSED_INDIVIDUAL}" > "${BASE_DIR}/impl/impl_${ID}.time"
@@ -189,7 +194,7 @@ echo "Executing gemini ${SANDBOX_OPTS[*]} -p @MERGER.md in merger..."
 LOG_FILE_MERGER="${BASE_DIR}/merger.log"
 echo "Logging output to ${LOG_FILE_MERGER}..."
 
-if "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" "${SANDBOX_OPTS[@]}" -p @MERGER.md > "${LOG_FILE_MERGER}" 2>&1; then
+if "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" "${SANDBOX_OPTS[@]}" -p @MERGER.md < /dev/null > "${LOG_FILE_MERGER}" 2>&1; then
   echo "SUCCESS: Gemini merger run completed successfully."
 else
   echo "FAILURE: Gemini merger run failed. Check log: ${LOG_FILE_MERGER}"
