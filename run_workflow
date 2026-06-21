@@ -14,6 +14,22 @@ export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 export DEBIAN_FRONTEND=noninteractive
 export SUDO_ASKPASS=/bin/false
 
+# Read and parse the authoritative UDMI version specification
+UDMI_VERSION_FILE="udmi_version.txt"
+if [ ! -f "${UDMI_VERSION_FILE}" ]; then
+  echo "Error: Authoritative UDMI version specification file '${UDMI_VERSION_FILE}' not found. Aborting." >&2
+  exit 1
+fi
+
+# Securely read space-separated fields without eval or variable injection risks
+read -r UDMI_REPO_URL UDMI_TARGET < "${UDMI_VERSION_FILE}"
+
+# Verify both variables are populated
+if [ -z "${UDMI_REPO_URL:-}" ] || [ -z "${UDMI_TARGET:-}" ]; then
+  echo "Error: Incomplete UDMI version specification in '${UDMI_VERSION_FILE}'. Must contain exactly: <repo_url> <branch/commit/tag>" >&2
+  exit 1
+fi
+
 # 1. Internal Configuration
 IMPLEMENTATIONS=("A" "B" "C" "D")
 
@@ -95,6 +111,33 @@ setup_sibling() {
   # Ensure the working directory is updated to match origin
   echo "Resetting ${dir_name} to origin/${branch_name} to ensure freshness..."
   git reset --hard "origin/${branch_name}"
+
+  # Automatically setup and pin the UDMI repository under impl/udmi inside this sibling workspace
+  local sibling_udmi_dir="${target_dir}/impl/udmi"
+  mkdir -p "$(dirname "${sibling_udmi_dir}")"
+
+  # Determine the cloning source (support local development path override for developers)
+  local udmi_source="${UDMI_REPO_URL}"
+  if [ -n "${UDMI_LOCAL_PATH:-}" ]; then
+    if [ -d "${UDMI_LOCAL_PATH}/.git" ]; then
+      udmi_source="${UDMI_LOCAL_PATH}"
+    else
+      echo "Error: Explicit UDMI_LOCAL_PATH is set but does not point to a valid git repository (missing .git): '${UDMI_LOCAL_PATH}'" >&2
+      exit 1
+    fi
+  fi
+
+  if [ ! -d "${sibling_udmi_dir}/.git" ]; then
+    echo "Cloning UDMI repository into ${sibling_udmi_dir} from ${udmi_source}..."
+    git clone "${udmi_source}" "${sibling_udmi_dir}"
+  fi
+
+  echo "Syncing and pinning ${sibling_udmi_dir} to target ${UDMI_TARGET}..."
+  # Ensure the origin URL in the clone is always set back to the canonical URL
+  git -C "${sibling_udmi_dir}" remote set-url origin "${UDMI_REPO_URL}"
+  git -C "${sibling_udmi_dir}" fetch --all
+  git -C "${sibling_udmi_dir}" checkout -f "${UDMI_TARGET}"
+  git -C "${sibling_udmi_dir}" reset --hard "${UDMI_TARGET}"
 }
 
 # Setup implementations
