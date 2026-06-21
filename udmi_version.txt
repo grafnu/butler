@@ -1,1 +1,2 @@
-https://github.com/grafnu/udmi.git uufi
+https://github.com/faucetsdn/udmi.git master
+
