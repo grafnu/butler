@@ -107,7 +107,7 @@ setup_sibling() {
     echo "Checking out new tracking branch ${branch_name} from origin/${branch_name} in ${dir_name}..."
     git checkout -b "${branch_name}" "origin/${branch_name}"
   fi
-  
+
   # Ensure the working directory is updated to match origin
   echo "Resetting ${dir_name} to origin/${branch_name} to ensure freshness..."
   git reset --hard "origin/${branch_name}"
@@ -150,6 +150,54 @@ setup_sibling "merger" "merger"
 
 echo "=== Base Directory Structure Verified/Constructed ==="
 
+# Calculate branch-specific port and clean up lingering processes on it
+cleanup_branch_ports() {
+  local branch_name="$1"
+
+  # Calculate SHA256 of branch_name using sha256sum
+  local hash_hex
+  hash_hex=$(echo -n "${branch_name}" | sha256sum | awk '{print $1}')
+
+  # Extract first 12 characters of hex to convert safely in bash (prevents 64-bit overflow)
+  local hash_dec
+  hash_dec=$((16#${hash_hex:0:12}))
+
+  local port=$((45000 + (hash_dec % 3000)))
+  local etcd_port=$((port + 1))
+  local etcd_peer_port=$((port + 1001))
+
+  for p in "${port}" "${etcd_port}" "${etcd_peer_port}"; do
+    if lsof -i :"${p}" -t >/dev/null 2>&1; then
+      local pids
+      pids=$(lsof -i :"${p}" -t)
+      echo "Port ${p} is occupied by lingering processes (PIDs: ${pids}) for ${branch_name}. Terminating..."
+      for pid in ${pids}; do
+        if kill -0 "${pid}" 2>/dev/null; then
+          kill -15 "${pid}" 2>/dev/null # SIGTERM
+          # Wait up to 3 seconds for graceful exit
+          for _ in {1..30}; do
+            sleep 0.1
+            if ! kill -0 "${pid}" 2>/dev/null; then
+              break
+            fi
+          done
+          # Force kill if still running
+          if kill -0 "${pid}" 2>/dev/null; then
+            echo "Process ${pid} did not terminate gracefully. Force killing..."
+            kill -9 "${pid}" 2>/dev/null # SIGKILL
+          fi
+        fi
+      done
+    fi
+  done
+}
+
+echo "=== Cleaning Up Lingering Port Processes on Startup ==="
+for ID in "${IMPLEMENTATIONS[@]}"; do
+  cleanup_branch_ports "impl_${ID}"
+done
+cleanup_branch_ports "merger"
+
 # 3. Run Parallel Gemini Update Workflows (@UPDATE.md)
 echo "=== Running Parallel Gemini Updates (@UPDATE.md) ==="
 declare -A PIDS
@@ -159,12 +207,12 @@ for ID in "${IMPLEMENTATIONS[@]}"; do
   IMPL_DIR="${BASE_DIR}/impl/${ID}"
   LOG_FILE="${IMPL_DIR}.log"
   LOGS["$ID"]="${LOG_FILE}"
-  
+
   echo "Launching gemini ${SANDBOX_OPTS[*]} -p @UPDATE.md for impl_${ID} in background (logging to ${LOG_FILE})..."
   (
     START_INDIVIDUAL=$SECONDS
     cd "${IMPL_DIR}"
-    
+
     # Execute Gemini using the specified options and input @UPDATE.md with a 10m timeout
     timeout 10m "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" "${SANDBOX_OPTS[@]}" -p @UPDATE.md < /dev/null > "${LOG_FILE}" 2>&1
     RET=$?
@@ -177,7 +225,7 @@ for ID in "${IMPLEMENTATIONS[@]}"; do
         echo -e "PROCESSING ERROR: Gemini update run failed with exit code ${RET}.\n" > "${IMPL_DIR}/spec_analysis.txt"
       fi
     fi
-    
+
     ELAPSED_INDIVIDUAL=$(( SECONDS - START_INDIVIDUAL ))
     echo "${ELAPSED_INDIVIDUAL}" > "${BASE_DIR}/impl/impl_${ID}.time"
     exit ${RET}
@@ -214,19 +262,19 @@ echo "=== Checking and Pushing Git Updates ==="
 for ID in "${IMPLEMENTATIONS[@]}"; do
   IMPL_DIR="${BASE_DIR}/impl/${ID}"
   cd "${IMPL_DIR}"
-  
+
   echo "Checking git status for impl_${ID}..."
   UNCOMMITTED=$(git status --porcelain 2>/dev/null || echo "")
   if [ -n "${UNCOMMITTED}" ]; then
     echo "WARNING: There are uncommitted/unstaged changes in impl_${ID}:"
     echo "${UNCOMMITTED}"
   fi
-  
+
   # Find unpushed commits against upstream
   UPSTREAM=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo "origin/impl_${ID}")
   UNPUSHED_COMMITS=$(git log "${UPSTREAM}..HEAD" --oneline -n 3 2>/dev/null || echo "")
   TOTAL_UNPUSHED=$(git rev-list --count "${UPSTREAM}..HEAD" 2>/dev/null || echo "0")
-  
+
   if [ "${TOTAL_UNPUSHED}" -gt 0 ]; then
     echo "Found ${TOTAL_UNPUSHED} unpushed commits in impl_${ID}:"
     echo "${UNPUSHED_COMMITS}"

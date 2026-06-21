@@ -111,7 +111,7 @@ The actual implementation in `*/butler/` will be different and that's expected. 
      - *Cleanup & Teardown:* The duration spent terminating and cleaning up the background services and targeting ports.
   4. *Track Duration:* The total execution duration of each Verifier Implementation's sequential track.
   5. *Overall Run Duration:* The total time taken for the entire merger execution suite.
-- All recorded metrics MUST be compiled and structured into a standard performance profile report written exclusively to a nested, ignored file path (such as `out/performance_analysis.txt` or `out/performance_analysis.json`). This file MUST NOT be tracked by git to maintain workspace cleanliness.
+- All recorded metrics MUST be compiled and structured into a standard performance profile report written exclusively to the explicit, ignored file path `out/performance_analysis.txt`. This file MUST NOT be tracked by git to maintain workspace cleanliness.
 
 Run the setup and tests multiple times, once for each impl as `butler` with another impl as `verifier`. If there are N implementations then there should be exactly N*(N-1) test runs. Every combination of `butler` & `verifier` should be tested.
 
