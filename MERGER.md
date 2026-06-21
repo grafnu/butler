@@ -99,6 +99,20 @@ The actual implementation in `*/butler/` will be different and that's expected. 
 - All temporary work, logs, and testing outputs MUST be generated strictly inside a dedicated subdirectory that is properly ignored by the repository's `.gitignore` file (such as `tmp/` or `out/`).
 - Do not clean up or delete the test runs after execution to allow for diagnostic inspection; however, they MUST be structured in such a way that there are absolutely no artifacts, stray files, or untracked modifications left that are visible by `git status` in the main workspace.
 
+**Evidence-Based Time Tracking & Performance Metrics Logging:**
+- To enable robust, empirical determination of the root causes of system or test performance bottlenecks, the merger agent and test runner MUST programmatically record and preserve the exact execution durations of all major steps.
+- The test runner MUST track and report the elapsed time (in seconds) for each of the following phases:
+  1. *Implementation Sync:* The time taken to concurrently clone, fetch, reset, and audit the sibling implementation workspaces.
+  2. *Virtual Environment Setup:* The duration of establishing isolation and installing python requirements.
+  3. *Cross-Testing Pairings (Individual PAIRED tracks):* For every single cross-testing execution pair (e.g. `impl_A verifies impl_B`), the runner MUST measure and record:
+     - *Broker Startup:* The exact time elapsed from invoking `start_local` to the broker successfully accepting TCP socket connections.
+     - *Setup Utility Execution:* The time taken for the implementation's `bin/setup` script to complete.
+     - *Active Verification Loop:* The time spent starting background orchestrator, verifier, and device processes, performing registration, and waiting/polling for the expected version update state-machine transition.
+     - *Cleanup & Teardown:* The duration spent terminating and cleaning up the background services and targeting ports.
+  4. *Track Duration:* The total execution duration of each Verifier Implementation's sequential track.
+  5. *Overall Run Duration:* The total time taken for the entire merger execution suite.
+- All recorded metrics MUST be compiled and structured into a standard performance profile report written exclusively to a nested, ignored file path (such as `out/performance_analysis.txt` or `out/performance_analysis.json`). This file MUST NOT be tracked by git to maintain workspace cleanliness.
+
 Run the setup and tests multiple times, once for each impl as `butler` with another impl as `verifier`. If there are N implementations then there should be exactly N*(N-1) test runs. Every combination of `butler` & `verifier` should be tested.
 
 **Dynamic Port Allocation for Parallel Runs:**
