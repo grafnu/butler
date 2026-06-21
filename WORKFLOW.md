@@ -63,7 +63,7 @@ Below is the workflow sequence detailing how to update specifications, update im
                                |                                |
                                v                                |
                   +-------------------------+                   |
-                  |     gemerger Branch     |                   |
+                  |      merger Branch      |                   |
                   |        @MERGER.md       |                   |
                   +------------+------------+                   |
                                |                                |
@@ -82,7 +82,7 @@ For each implementation branch `impl_<id>` (where `<id>` is the implementation i
 
 1. **Update and Audit the Implementation:**
    ```bash
-   cd ../impl_<id>
+   cd impl/<id>
    gemini -s -p @UPDATE.md
    ```
    *Action:* Gemini merges `origin/main` into the current branch, parses specifications, and delegates environment preparation, dependency management, port validation, and local smoke testing (`bin/smokeit`) on isolated, branch-mapped MQTT/testing ports directly to the implementation-specific automated scripts and setup skills.
@@ -93,34 +93,34 @@ For each implementation branch `impl_<id>` (where `<id>` is the implementation i
    git log
    ```
 
-### Phase 2: Cross-Implementation Interoperability Testing (`gemerger` Branch)
+### Phase 2: Cross-Implementation Interoperability Testing (`merger` Branch)
 
-Once all implementations have updated and verified themselves against the updated specification, reconcile them on the `gemerger` branch to ensure they are fully interoperable. This is automated via the Gemini developer agent using the `MERGER.md` instructions.
+Once all implementations have updated and verified themselves against the updated specification, reconcile them on the `merger` branch to ensure they are fully interoperable. This is automated via the Gemini developer agent using the `MERGER.md` instructions.
 
-Switch to the `gemerger` directory:
+Switch to the `merger` directory:
 ```bash
-cd ../gemerger/
+cd merger/
 gemini -s -p @MERGER.md
 ```
 *Action:* Under the hood, Gemini runs a complete cross-implementation matrix:
-- Concurrently fetches and clones/syncs all remote `impl_*` branches into `gemerger/impl/`.
+- Concurrently fetches and clones/syncs all remote `impl_*` branches into `merger/impl/`.
 - Delegates the creation and management of isolated python virtual environments directly to each implementation's own setup skills.
 - Generates and executes the complete `N * (N - 1)` cross-implementation test runs (running each implementation as `butler` against every other implementation as `verifier`, and vice-versa) on dynamically allocated local TCP ports to avoid collisions.
 - Collects test logs into `impl/{ID}.log` and summarizes the results in `impl/test_summary.txt`.
 - If interoperability issues or ambiguities are uncovered, the specifications in `spec/` are dynamically adjusted and updated to achieve full spec compliance.
-- Finally, the updated specs are committed and pushed to `origin/gemerger`.
+- Finally, the updated specs are committed and pushed to `origin/merger`.
 
 ### Phase 3: Merging Verified Specs Back to `main`
 
-Once the specifications have been refined and proven to be robust through interoperability cross-testing on `gemerger`, the verified changes are checked out back into the `main` branch's `spec/` folder.
+Once the specifications have been refined and proven to be robust through interoperability cross-testing on `merger`, the verified changes are checked out back into the `main` branch's `spec/` folder.
 
 In the `main` branch terminal, run:
 ```bash
-cd ../main/
+cd ..
 git fetch
-git checkout origin/gemerger -- spec/
+git checkout origin/merger -- spec/
 ```
-*Action:* This command fetches the latest remote changes and checks out the validated `spec/` files from the `gemerger` branch directly into the local `main` branch workspace, completing the development loop. These changes should be reviewed to make sure they're sane.
+*Action:* This command fetches the latest remote changes and checks out the validated `spec/` files from the `merger` branch directly into the local `main` branch workspace, completing the development loop. These changes should be reviewed to make sure they're sane.
 
 ---
 
@@ -129,8 +129,8 @@ git checkout origin/gemerger -- spec/
 | Phase / Command | Target Directory / Branch | Purpose / Description |
 | :--- | :--- | :--- |
 | `gemini -s -p @UPDATE.md` | `impl_<id>` | Merges main, audits specs, adjusts implementation logic, and runs local smoke tests (delegating python and local workspace environment setup to implementation-specific setup skills). |
-| `gemini -s -p @MERGER.md` | `gemerger` | Executes full concurrent cross-testing of all implementation pairs, refines core specs, and pushes verified specification changes. |
-| `git checkout origin/gemerger -- spec/` | `main` | Imports the verified and refined specifications from the integration branch into the main branch. |
+| `gemini -s -p @MERGER.md` | `merger` | Executes full concurrent cross-testing of all implementation pairs, refines core specs, and pushes verified specification changes. |
+| `git checkout origin/merger -- spec/` | `main` | Imports the verified and refined specifications from the integration branch into the main branch. |
 | `gemini -s -p @REBUILD.md` | `impl_<id>` / New setup | Bootstraps a brand-new implementation from scratch or performs a clean spec-driven rebuild of `butler/` and `bin/` from files in `spec/`. |
 | `bin/setup mqtt://localhost:<port>/` | Local workspace | Boots up local broker infrastructure on the specified isolated port and configures the UUFI connection spec. |
 | `bin/smokeit mqtt://localhost:<port>/` | Local workspace | Runs the interactive integration smoke test (Orchestrator, Verifier, and simulated DUT) on the specified port. |
