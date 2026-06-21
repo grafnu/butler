@@ -34,12 +34,6 @@ echo "============================="
 
 # 2. Construct Base Directory Structure as Needed
 cd "${MAIN_DIR}"
-REMOTE_URL=$(git config --get remote.origin.url || echo "")
-if [ -z "${REMOTE_URL}" ]; then
-  echo "Error: Could not retrieve remote origin URL from ${MAIN_DIR}." >&2
-  exit 1
-fi
-echo "Using remote repository URL: ${REMOTE_URL}"
 
 # Helper function to clone/setup a sibling directory with its branch
 setup_sibling() {
@@ -47,11 +41,23 @@ setup_sibling() {
   local branch_name="$2"
   local target_dir="${BASE_DIR}/${dir_name}"
 
+  # Ensure the branch exists and is fully up-to-date locally in MAIN_DIR
+  # so that git clone . copies the freshest commit from origin
+  cd "${MAIN_DIR}"
+  local current_branch
+  current_branch=$(git rev-parse --abbrev-ref HEAD)
+  if [ "${branch_name}" != "${current_branch}" ]; then
+    if git show-ref --verify --quiet "refs/remotes/origin/${branch_name}"; then
+      echo "Updating/creating local branch ${branch_name} in MAIN_DIR to match origin/${branch_name}..."
+      git branch -f "${branch_name}" "origin/${branch_name}"
+    fi
+  fi
+
   if [ ! -d "${target_dir}" ]; then
     echo "Directory ${dir_name} not found. Cloning into ${target_dir}..."
     mkdir -p "$(dirname "${target_dir}")"
     cd "${BASE_DIR}"
-    git clone "${REMOTE_URL}" "${dir_name}"
+    git clone . "${dir_name}"
   fi
 
   cd "${target_dir}"
@@ -145,11 +151,15 @@ for ID in "${IMPLEMENTATIONS[@]}"; do
   
   # Find unpushed commits against upstream
   UPSTREAM=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo "origin/impl_${ID}")
-  UNPUSHED_COMMITS=$(git log "${UPSTREAM}..HEAD" --oneline 2>/dev/null || echo "")
+  UNPUSHED_COMMITS=$(git log "${UPSTREAM}..HEAD" --oneline -n 3 2>/dev/null || echo "")
+  TOTAL_UNPUSHED=$(git rev-list --count "${UPSTREAM}..HEAD" 2>/dev/null || echo "0")
   
-  if [ -n "${UNPUSHED_COMMITS}" ]; then
-    echo "Found unpushed commits in impl_${ID}:"
+  if [ "${TOTAL_UNPUSHED}" -gt 0 ]; then
+    echo "Found ${TOTAL_UNPUSHED} unpushed commits in impl_${ID}:"
     echo "${UNPUSHED_COMMITS}"
+    if [ "${TOTAL_UNPUSHED}" -gt 3 ]; then
+      echo "... (truncated ${TOTAL_UNPUSHED} total)"
+    fi
     echo "Pushing updates to origin/impl_${ID}..."
     git push origin "HEAD:impl_${ID}"
   else
@@ -178,8 +188,10 @@ echo "=== Gemini Merger completed in ${ELAPSED_MERGER}s ==="
 # Check and push any merger changes
 UPSTREAM_MERGER=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo "origin/merger")
 UNPUSHED_MERGER=$(git log "${UPSTREAM_MERGER}..HEAD" --oneline 2>/dev/null || echo "")
-if [ -n "${UNPUSHED_MERGER}" ]; then
-  echo "Found unpushed commits in merger:"
+TOTAL_UNPUSHED_MERGER=$(git rev-list --count "${UPSTREAM_MERGER}..HEAD" 2>/dev/null || echo "0")
+
+if [ "${TOTAL_UNPUSHED_MERGER}" -gt 0 ]; then
+  echo "Found ${TOTAL_UNPUSHED_MERGER} unpushed commits in merger:"
   echo "${UNPUSHED_MERGER}"
   echo "Pushing merger updates to origin/merger..."
   git push origin HEAD:merger
