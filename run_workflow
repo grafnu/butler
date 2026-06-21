@@ -20,6 +20,19 @@ GEMINI_BIN="gemini"
 
 GEMINI_OPTS=("--proxy=false" "--approval-mode" "yolo")
 
+# Determine if sandbox mode should be used (default: false)
+USE_SANDBOX="${USE_SANDBOX:-false}"
+for arg in "$@"; do
+  if [ "$arg" = "-s" ] || [ "$arg" = "--sandbox" ]; then
+    USE_SANDBOX="true"
+  fi
+done
+
+SANDBOX_OPTS=()
+if [ "${USE_SANDBOX}" = "true" ]; then
+  SANDBOX_OPTS=("-s")
+fi
+
 # Determine directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAIN_DIR="$(cd "${SCRIPT_DIR}" && pwd)"
@@ -30,6 +43,7 @@ echo "Script directory:       ${SCRIPT_DIR}"
 echo "Main workspace:         ${MAIN_DIR}"
 echo "Base workspace directory: ${BASE_DIR}"
 echo "Sub-implementations:   ${IMPLEMENTATIONS[*]}"
+echo "Sandbox mode enabled:   ${USE_SANDBOX}"
 echo "============================="
 
 # 2. Construct Base Directory Structure as Needed
@@ -98,12 +112,12 @@ for ID in "${IMPLEMENTATIONS[@]}"; do
   LOG_FILE="${BASE_DIR}/impl/impl_${ID}.log"
   LOGS["$ID"]="${LOG_FILE}"
   
-  echo "Launching gemini -s -p @UPDATE.md for impl_${ID} in background (logging to ${LOG_FILE})..."
+  echo "Launching gemini ${SANDBOX_OPTS[*]} -p @UPDATE.md for impl_${ID} in background (logging to ${LOG_FILE})..."
   (
     START_INDIVIDUAL=$SECONDS
     cd "${IMPL_DIR}"
-    # Execute Gemini in sandbox mode using the specified options and input @UPDATE.md
-    "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" -s -p @UPDATE.md > "${LOG_FILE}" 2>&1
+    # Execute Gemini using the specified options and input @UPDATE.md
+    "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" "${SANDBOX_OPTS[@]}" -p @UPDATE.md > "${LOG_FILE}" 2>&1
     RET=$?
     ELAPSED_INDIVIDUAL=$(( SECONDS - START_INDIVIDUAL ))
     echo "${ELAPSED_INDIVIDUAL}" > "${BASE_DIR}/impl/impl_${ID}.time"
@@ -171,11 +185,11 @@ done
 echo "=== Running Gemini Merger (@MERGER.md) ==="
 START_MERGER=$SECONDS
 cd "${BASE_DIR}/merger"
-echo "Executing gemini -s -p @MERGER.md in merger..."
+echo "Executing gemini ${SANDBOX_OPTS[*]} -p @MERGER.md in merger..."
 LOG_FILE_MERGER="${BASE_DIR}/impl/merger.log"
 echo "Logging output to ${LOG_FILE_MERGER}..."
 
-if "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" -s -p @MERGER.md > "${LOG_FILE_MERGER}" 2>&1; then
+if "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" "${SANDBOX_OPTS[@]}" -p @MERGER.md > "${LOG_FILE_MERGER}" 2>&1; then
   echo "SUCCESS: Gemini merger run completed successfully."
 else
   echo "FAILURE: Gemini merger run failed. Check log: ${LOG_FILE_MERGER}"

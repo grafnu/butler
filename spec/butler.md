@@ -201,7 +201,9 @@ If the `--offline` flag is provided to the setup utility, it MUST NOT attempt to
 Establish an isolated copy of the pre-existing test site model by copying the model from the cloned UDMI sites directory (`impl/udmi/sites/udmi_site_model`) into the local workspace testing directory (`testing/udmi_site_model`).
 
 #### 10.1.3. Running Setup and Starting/Stopping the Broker
-Next, run the Butler setup utility to prepare the environment (initializing local workspace directories, local model files, and other Butler-specific resources). The utility MUST first verify that the cloned `impl/udmi` directory exists directly, immediately raising a hard fail if it is missing. Execute the setup utility pointing to the dynamically resolved branch-specific port. If the local broker is not already running on that port, the setup utility MUST automatically invoke the cloned UDMI start utility to start it on that unique port.
+Next, run the Butler setup utility to prepare the environment (initializing local workspace directories, local model files, and other Butler-specific resources). The utility MUST first verify that the cloned `impl/udmi` directory exists directly, immediately raising a hard fail if it is missing. Execute the setup utility pointing to the dynamically resolved branch-specific port. If the local broker is not already running on that port, the setup utility MUST automatically invoke the cloned UDMI start utility (`impl/udmi/bin/start_local`) to start it on that unique port.
+
+*   **Explicit Broker Invocation:** The `start_local` utility MUST be invoked directly by passing the connectivity specification URL (e.g., `mqtt://localhost:$mqtt_port/`) as its first command line argument to start and configure the local MQTT broker on the unique negotiated port. Under no circumstances should any tool or runtime script attempt to read, parse, or analyze the internal contents of `start_local` or other local setup utilities to determine port configurations; tools must rely strictly and exclusively on passing the connection specification argument directly on the command line.
 
 *   **Graceful Reflector Cleanup/Shutdown (`--stop` flag):**
     If the `--stop` flag is passed (e.g., `bin/setup --stop` or `setup [conn_spec] --stop`), the setup utility MUST NOT perform any environment initialization, python environment validation, or broker startup. Instead, it MUST execute a clean, hermetic teardown of the locally running background services (`etcd`, `mosquitto`/broker, etc.) utilizing stored PID files (`out/etcd.pid`, `out/mosquitto.pid`, or similar). 
@@ -216,6 +218,9 @@ Next, run the Butler setup utility to prepare the environment (initializing loca
 
 *   **Automatic Port Status Pre-Check:**
     Prior to launching any local brokers, the setup utility MUST perform a quick, dynamic port-scanning check on the dynamically resolved branch-specific port and standard etcd/MQTT ports. If the target port is already occupied, the setup utility MUST detect and list the active process info and PID (if accessible) to standard error (`stderr`) before attempting any execution. This makes it easier to debug when a rogue or manually started broker has occupied ports outside the test runner's orchestration.
+
+*   **Non-Privileged/Non-Sudo Execution (`UDMI_NO_SUDO=true`):**
+    To ensure safe, permission-isolated execution inside sandboxes without requiring administrative or root privileges, all environment setups and automated runs MUST export the environment variable `UDMI_NO_SUDO=true`. This forces the UDMI background scripts to run both `mosquitto` and `etcd` entirely in user-space on the dynamically resolved non-default ports, bypassing any systemd or `sudo` requirements.
 
 ### 10.2. Starting the Butler Orchestrator
 Launch the core Butler orchestrator. It MUST connect to the running MQTT broker on the dynamically resolved branch-specific port and act as the authoritative Cloud Model Server on the UUFI bus.
