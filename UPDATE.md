@@ -104,7 +104,8 @@ Before finishing, the implementation MUST be verified to prevent regressions:
 1. **Strict File Restrictions:**
    - At the end of the run, the *only* allowed changes in the repository are to files in the `butler/` and `bin/` directories, the removal/update of `merge_analysis.txt`, the creation, update, or removal of `spec_analysis.txt`, and changes to `UPDATE.md` itself when explicitly directed.
    - There should NOT be any other stray files or changes made to any other files (e.g., `spec/`, `.gitignore`, `AGENTS.md`, `WORKFLOW.md`, etc.).
-   - It is acceptable to have temporary files in directories ignored by `.gitignore` (such as `testing/`), but the `.gitignore` file itself MUST NOT be modified. Any generated verifier, smoke test logs, or summary files MUST NOT be committed or tracked.
+   - It is acceptable to have temporary files in directories ignored by `.gitignore` (such as `testing/` or `tmp/`), but the `.gitignore` file itself MUST NOT be modified. Any generated verifier, smoke test logs, or summary files MUST NOT be committed or tracked.
+   - **Repository and Workspace Cleanliness:** All runtime-created operational folders, log directories, virtual environments, custom overlays, and script outputs (including `var/`, `etc/`, `venv/`, `.venv/`) MUST be nested exclusively inside pre-defined ignored locations (specifically within the `tmp/` or `testing/` directories). Creating these runtime files at the repository root or any non-ignored directories is strictly prohibited to prevent repository pollution and untracked changes.
 
 2. **Commit and Push Procedure:**
    - Stage and commit only the allowed changed files (do not use global or untargeted add commands unprompted).

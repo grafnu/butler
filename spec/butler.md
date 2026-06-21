@@ -226,6 +226,9 @@ Next, run the Butler setup utility to prepare the environment (initializing loca
 *   **Non-Privileged/Non-Sudo Execution (`UDMI_NO_SUDO=true`):**
     To ensure safe, permission-isolated execution inside sandboxes without requiring administrative or root privileges, all environment setups and automated runs MUST export the environment variable `UDMI_NO_SUDO=true`. This forces the UDMI background scripts to run both `mosquitto` and `etcd` entirely in user-space on the dynamically resolved non-default ports, bypassing any systemd or `sudo` requirements.
 
+*   **Repository and Workspace Cleanliness:**
+    To maintain a clean working directory and ensure no temporary files or run-time artifacts are tracked by git, all dynamically created directories, runtime logs, configuration overlays, mock executables, and virtual environments (such as `var/`, `etc/`, `bin/ps`, `venv/`, or `.venv/`) MUST be created and stored exclusively inside pre-defined ignored locations (specifically within the `tmp/` or `testing/` directories, e.g., `tmp/var/`, `tmp/etc/`, `tmp/venv/`, `tmp/bin/ps`). Storing run-time or temporary files outside of these pre-defined `.gitignore` paths is strictly prohibited.
+
 ### 10.2. Starting the Butler Orchestrator
 Launch the core Butler orchestrator. It MUST connect to the running MQTT broker on the dynamically resolved branch-specific port and act as the authoritative Cloud Model Server on the UUFI bus.
 
