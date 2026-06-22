@@ -41,11 +41,17 @@ GEMINI_BIN="gemini"
 
 GEMINI_OPTS=("--proxy=false" "--approval-mode" "yolo")
 
-# Determine if sandbox mode should be used (default: false)
+# ASSUMPTION: By default, the workflow runs sub-implementations in serial.
+# The user can enable parallel execution using the optional '-p' or '--parallel' flag.
+# Sibling workspace tasks will still write their standard log files for isolation,
+# consistency, and error analysis.
 USE_SANDBOX="${USE_SANDBOX:-false}"
+USE_PARALLEL="${USE_PARALLEL:-false}"
 for arg in "$@"; do
   if [ "$arg" = "-s" ] || [ "$arg" = "--sandbox" ]; then
     USE_SANDBOX="true"
+  elif [ "$arg" = "-p" ] || [ "$arg" = "--parallel" ]; then
+    USE_PARALLEL="true"
   fi
 done
 
@@ -75,6 +81,7 @@ echo "Main workspace:         ${MAIN_DIR}"
 echo "Base workspace directory: ${BASE_DIR}"
 echo "Sub-implementations:   ${IMPLEMENTATIONS[*]}"
 echo "Sandbox mode enabled:   ${USE_SANDBOX}"
+echo "Parallel updates enabled: ${USE_PARALLEL}"
 echo "============================="
 
 # 2. Construct Base Directory Structure as Needed
@@ -208,18 +215,49 @@ for ID in "${IMPLEMENTATIONS[@]}"; do
 done
 cleanup_branch_ports "merger"
 
-# 3. Run Parallel Gemini Update Workflows (@UPDATE.md)
-echo "=== Running Parallel Gemini Updates (@UPDATE.md) ==="
+# 3. Run Gemini Update Workflows (@UPDATE.md)
+if [ "${USE_PARALLEL}" = "true" ]; then
+  echo "=== Running Parallel Gemini Updates (@UPDATE.md) ==="
+else
+  echo "=== Running Serial Gemini Updates (@UPDATE.md) ==="
+fi
+
 declare -A PIDS
 declare -A LOGS
+declare -A INDIVIDUAL_TIMES
+FAILED_IMPLS=()
 
 for ID in "${IMPLEMENTATIONS[@]}"; do
   IMPL_DIR="${BASE_DIR}/impl/${ID}"
   LOG_FILE="${IMPL_DIR}.log"
   LOGS["$ID"]="${LOG_FILE}"
 
-  echo "Launching gemini ${SANDBOX_OPTS[*]} -p @UPDATE.md for impl_${ID} in background (logging to ${LOG_FILE})..."
-  (
+  if [ "${USE_PARALLEL}" = "true" ]; then
+    echo "Launching gemini ${SANDBOX_OPTS[*]} -p @UPDATE.md for impl_${ID} in background (logging to ${LOG_FILE})..."
+    (
+      START_INDIVIDUAL=$SECONDS
+      cd "${IMPL_DIR}"
+
+      # Execute Gemini using the specified options and input @UPDATE.md with a 10m timeout
+      RET=0
+      timeout 10m "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" "${SANDBOX_OPTS[@]}" -p @UPDATE.md < /dev/null > "${LOG_FILE}" 2>&1 || RET=$?
+      if [ "${RET}" -ne 0 ]; then
+        if [ "${RET}" -eq 124 ]; then
+          echo "Error: Gemini @UPDATE.md run for impl_${ID} timed out after 10 minutes." >&2
+          echo -e "PROCESSING ERROR: Gemini update run timed out after 10 minutes.\n" > "${IMPL_DIR}/spec_analysis.txt"
+        else
+          echo "Error: Gemini @UPDATE.md run for impl_${ID} failed with exit code ${RET}." >&2
+          echo -e "PROCESSING ERROR: Gemini update run failed with exit code ${RET}.\n" > "${IMPL_DIR}/spec_analysis.txt"
+        fi
+      fi
+
+      ELAPSED_INDIVIDUAL=$(( SECONDS - START_INDIVIDUAL ))
+      echo "${ELAPSED_INDIVIDUAL}" > "${BASE_DIR}/impl/impl_${ID}.time"
+      exit ${RET}
+    ) &
+    PIDS["$ID"]=$!
+  else
+    echo "Running gemini ${SANDBOX_OPTS[*]} -p @UPDATE.md for impl_${ID} sequentially (logging to ${LOG_FILE})..."
     START_INDIVIDUAL=$SECONDS
     cd "${IMPL_DIR}"
 
@@ -237,30 +275,35 @@ for ID in "${IMPLEMENTATIONS[@]}"; do
     fi
 
     ELAPSED_INDIVIDUAL=$(( SECONDS - START_INDIVIDUAL ))
-    echo "${ELAPSED_INDIVIDUAL}" > "${BASE_DIR}/impl/impl_${ID}.time"
-    exit ${RET}
-  ) &
-  PIDS["$ID"]=$!
+    INDIVIDUAL_TIMES["$ID"]="${ELAPSED_INDIVIDUAL}"
+
+    if [ "${RET}" -eq 0 ]; then
+      echo "SUCCESS: impl_${ID} updated successfully in ${ELAPSED_INDIVIDUAL}s."
+    else
+      echo "FAILURE: impl_${ID} update failed in ${ELAPSED_INDIVIDUAL}s. Check log: ${LOG_FILE}"
+      FAILED_IMPLS+=("${ID}")
+    fi
+  fi
 done
 
-# Wait for all processes to complete
-echo "Waiting for parallel update processes to complete..."
-FAILED_IMPLS=()
-declare -A INDIVIDUAL_TIMES
-for ID in "${IMPLEMENTATIONS[@]}"; do
-  PID=${PIDS["$ID"]}
-  if wait "${PID}"; then
-    ELAPSED_INDIVIDUAL=$(cat "${BASE_DIR}/impl/impl_${ID}.time" 2>/dev/null || echo "0")
-    echo "SUCCESS: impl_${ID} updated successfully in ${ELAPSED_INDIVIDUAL}s."
-    INDIVIDUAL_TIMES["$ID"]="${ELAPSED_INDIVIDUAL}"
-  else
-    ELAPSED_INDIVIDUAL=$(cat "${BASE_DIR}/impl/impl_${ID}.time" 2>/dev/null || echo "0")
-    echo "FAILURE: impl_${ID} update failed in ${ELAPSED_INDIVIDUAL}s. Check log: ${LOGS["$ID"]}"
-    FAILED_IMPLS+=("${ID}")
-    INDIVIDUAL_TIMES["$ID"]="${ELAPSED_INDIVIDUAL}"
-  fi
-  rm -f "${BASE_DIR}/impl/impl_${ID}.time"
-done
+# Wait for all processes to complete if running in parallel
+if [ "${USE_PARALLEL}" = "true" ]; then
+  echo "Waiting for parallel update processes to complete..."
+  for ID in "${IMPLEMENTATIONS[@]}"; do
+    PID=${PIDS["$ID"]}
+    if wait "${PID}"; then
+      ELAPSED_INDIVIDUAL=$(cat "${BASE_DIR}/impl/impl_${ID}.time" 2>/dev/null || echo "0")
+      echo "SUCCESS: impl_${ID} updated successfully in ${ELAPSED_INDIVIDUAL}s."
+      INDIVIDUAL_TIMES["$ID"]="${ELAPSED_INDIVIDUAL}"
+    else
+      ELAPSED_INDIVIDUAL=$(cat "${BASE_DIR}/impl/impl_${ID}.time" 2>/dev/null || echo "0")
+      echo "FAILURE: impl_${ID} update failed in ${ELAPSED_INDIVIDUAL}s. Check log: ${LOGS["$ID"]}"
+      FAILED_IMPLS+=("${ID}")
+      INDIVIDUAL_TIMES["$ID"]="${ELAPSED_INDIVIDUAL}"
+    fi
+    rm -f "${BASE_DIR}/impl/impl_${ID}.time"
+  done
+fi
 
 if [ ${#FAILED_IMPLS[@]} -gt 0 ]; then
   echo "Warning: The following implementations failed to update: ${FAILED_IMPLS[*]}"
