@@ -1,2 +1,3 @@
-https://github.com/faucetsdn/udmi.git master
+https://github.com/faucetsdn/udmi.git uufi
+
 
