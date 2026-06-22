@@ -59,6 +59,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAIN_DIR="$(cd "${SCRIPT_DIR}" && pwd)"
 BASE_DIR="${MAIN_DIR}"
 
+# Check for any uncommitted changes in the parent/main repository
+if [ -d "${MAIN_DIR}/.git" ]; then
+  UNCOMMITTED_CHANGES=$(git -C "${MAIN_DIR}" status --porcelain 2>/dev/null || echo "")
+  if [ -n "${UNCOMMITTED_CHANGES}" ]; then
+    echo "Error: Uncommitted or unstaged changes detected in the parent repository. Aborting workflow to prevent stale synchronizations." >&2
+    echo "${UNCOMMITTED_CHANGES}" >&2
+    exit 1
+  fi
+fi
+
 echo "=== System Configuration ==="
 echo "Script directory:       ${SCRIPT_DIR}"
 echo "Main workspace:         ${MAIN_DIR}"
