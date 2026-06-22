@@ -57,8 +57,9 @@ Through this continuous loop of verification and feedback (Merger Agent) and ref
 To ensure the codebase complies with any new or modified specifications, resolves interoperability failures, and raises precise specification-level feedback:
 
 1. **Audit Spec Changes and Merger Feedback:**
-   - Identify which specification files changed during the merge by running a differences check on the `spec/` directory.
-   - Carefully review changes in `spec/butler.md`, `spec/blobstore.md`, and `spec/update.md`.
+   - **Specification & Skill Files Re-evaluation Trigger:** Sibling implementation branches MUST consider any change in **either the formal specifications (in `spec/`) OR the core workspace skill and configuration files (specifically `AGENTS.md` or `UPDATE.md`)** as a direct trigger for full code auditing, re-evaluation, and test execution.
+   - Identify which files changed during the merge by running a differences check on the `spec/` directory, as well as checking if `AGENTS.md` or `UPDATE.md` have been updated.
+   - Carefully review changes in `spec/butler.md`, `spec/blobstore.md`, `spec/update.md`, `AGENTS.md`, and `UPDATE.md`. Any change to these files nullifies any previous "No changes required" status; the agent MUST execute the full code verification and testing workflow under the newly introduced rules and policies, rather than fast-pathing to success.
    - **Check for Merger Agent Feedback:** Check if `merge_analysis.txt` exists at the root of the repository. This file is provided by the merger agent (via the `MERGER.md` skill) and contains detailed diagnostic reports on implementation-specific failures and non-compliance uncovered during cross-implementation testing.
 
 2. **Audit the Specification and Generate Spec Analysis:**
