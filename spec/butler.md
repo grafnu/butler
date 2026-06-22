@@ -211,7 +211,7 @@ Next, run the Butler setup utility to prepare the environment (initializing loca
     Under no circumstances should any tool or runtime script attempt to read, parse, or analyze the internal contents of `start_local` or other local setup utilities to determine port configurations; tools must rely strictly and exclusively on passing the site model and connection specification arguments directly on the command line.
 
 *   **Graceful Reflector Cleanup/Shutdown (`--stop` flag):**
-    If the `--stop` flag is passed (e.g., `bin/setup --stop` or `setup [conn_spec] --stop`), the setup utility MUST NOT perform any environment initialization, python environment validation, or broker startup. Instead, it MUST execute a clean, hermetic teardown of the locally running background services (`etcd`, `mosquitto`/broker, etc.) utilizing stored PID files (`out/etcd.pid`, `out/mosquitto.pid`, or similar). 
+    If the `--stop` flag is passed (e.g., `bin/setup --stop` or `setup [conn_spec] --stop`), the setup utility MUST NOT perform any environment initialization, python environment validation, or broker startup. Instead, it MUST execute a clean, hermetic teardown of the locally running background services (`etcd`, `mosquitto`/broker, etc.) utilizing stored PID files (`out/etcd.pid`, `out/mosquitto.pid`, or similar).
     Specifically, the `--stop` execution sequence MUST:
     1. Verify the existence of the specific local `.pid` files associated with the background services.
     2. Read the recorded process IDs (PIDs) from these files.
@@ -241,7 +241,7 @@ Launch the simulated on-premise device in a separate terminal using the standard
 *Note:* The Butler orchestrator coordinates managed updates. While **Pubber** connects and handshakes successfully, it may fail to fully execute the specific firmware state transitions (`quiescent` -> `pending` -> `success`/`failure`) that a custom UDMI client might report. Let the tests fail on these steps if Pubber lacks full update state-machine capabilities; this is expected behavior to verify platform readiness.
 
 ### 10.5. Triggering a Managed Update (Functional Verification)
-Initiate a managed software update by using UDMI's site trigger utility (located in the cloned `impl/udmi` folder) to mutate the physical site model file on disk and publish the dynamic update event over the UUFI bus on the dynamically resolved branch-specific port.
+Initiate a managed software update by either using UDMI's site trigger utility (located in the cloned `impl/udmi` folder) or programmatically mutating the physical site model file on disk and publishing the corresponding `model/cloud` Model Update message over the UUFI bus directly on the dynamically resolved branch-specific port. This programmatic trigger avoids dependency on the external `site_trigger` command-line utility, ensuring reliable communication over non-standard dynamic MQTT ports with SSL/TLS.
 
 ### 10.6. Running Automated Smoke Tests
 To execute a fully automated, non-interactive integration run of Scope 4 (verifying the entire setup, registration, update, rollback, and verification lifecycle), execute the `smokeit` test utility pointing to the dynamically resolved branch-specific port.
@@ -274,7 +274,7 @@ Any automated integration test harness (such as `bin/smokeit`) MUST adhere to th
 5. **Dynamic Reflector Mapping:** The UDMIS reflector component MUST utilize dynamic configurations based on local environment variables to bypass hardcoded cloud model dependencies, enhancing portability across different testing environments.
 
 ## 11. Principal Suffix Standardization
-To ensure consistency across multiple implementations and avoid custom differentiator mismatches during handshake verification and log analysis, all system entities MUST adhere to a standardized principal naming schema. 
+To ensure consistency across multiple implementations and avoid custom differentiator mismatches during handshake verification and log analysis, all system entities MUST adhere to a standardized principal naming schema.
 
 ### 11.1. Principal Structure
 Every system component, tool, or utility MUST resolve and report its principal identity using the dot-separated format:

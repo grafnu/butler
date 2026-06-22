@@ -3,6 +3,16 @@ YOUR WORK WITHOUT ASKING FOR CLARIFICATION, DIRECTION, SUGGESTIONS,
 CORROBORATION, OR ANYTHING ELSE. IF YOU MAKE ASSUMPTIONS, INCLUDE
 AN "ASSUMPTION: " TAG IN THE ASSOCIATED CHANGE.
 
+JUST "MAKING THE SYSTEM WORK" IS NOT THE GOAL. THE GOAL IS TO IDENTIFY
+INACCURACIES, GAPS, OR INSUFFICIENCIES IN THE SYSTEM SPECIFICATIONS
+(SUCH AS spec/butler.md) AND ROBUSTLY RESOLVE THEM BY CORRECTING THE
+FORMAL SPECIFICATION AND ALIGNING THE IMPLEMENTATIONS ACCORDINGLY.
+
+**Empirical Defect and Impossible Constraint Policy:**
+- **Zero Workarounds for External Failures:** If a system constraint is mathematically or logically impossible to achieve due to a defect, hardcoding, or contradiction in an external third-party repository, dependency, or specification (such as the cloned `impl/udmi` repository or its standard utilities like `site_trigger`), the agent MUST NOT implement any hacky workarounds, bypasses, or custom helper wrappers to hide the defect.
+- **Explicit Failure Declaration:** Instead, the agent MUST immediately declare that the constraints are impossible to achieve, and output a hard error stating: "the UDMI spec is broken and the system will not work as intended until that is fixed."
+- **Prioritize Specification Truth over Local Build Success:** The primary directive is to preserve the absolute integrity and truth of the formal specifications. Identifying and documenting a structural defect or contradiction in the environment is considered a successful completion of the task, whereas "making the system work" via hacky bypasses is a protocol failure.
+
 Prefer python unless otherwise specified.
 mqtt and mosquitto are available on the system.
 
