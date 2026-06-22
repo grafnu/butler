@@ -25,7 +25,7 @@ The `udmi` directory must exist inside the `impl/` directory (at `impl/udmi/` re
 
 **Sandbox Isolation & Repository Constraints:**
 To enable running the system in sandbox mode (`gemini -s`) and in complete isolation from other code on the system, the `udmi` directory MUST be a local git clone of the remote repository inside the `impl/` workspace.
-1. The `impl/udmi/` clone must be kept up to date with the remote repository (e.g. via `git pull` in that directory).
+1. The `impl/udmi/` clone MUST be kept fully up to date and synchronized with the remote repository URL and commit/branch/tag target specified in the authoritative `udmi_version.txt` file at the root of the workspace. The setup utilities and agent execution loops MUST programmatically verify on startup that `impl/udmi/` matches this exact target, fetching and resetting (via `git fetch --all` and `git reset --hard`) inside that directory as needed to guarantee alignment.
 2. The `impl/udmi/` clone must be treated as immutable, and no manual code or specification changes are allowed inside it.
 Modifying files directly within `impl/udmi/` (such as cloning site models there) is strictly prohibited to preserve predictability, support sandboxed isolation, and prevent race conditions. All references to other components or external libraries must be resolved through a remote git repository cloned locally inside `impl/udmi/`.
 

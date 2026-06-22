@@ -45,7 +45,11 @@ Through this continuous loop of verification and feedback (Merger Agent) and ref
    - Merge `origin/main` into the current branch to pull in any specification updates.
    - *Conflict Resolution:* If merge conflicts occur within files in `spec/`, since they are immutable, the agent MUST always auto-resolve them in favor of `origin/main` without exception, even if it breaks the current branch's historical custom tests, as specs on `main` are the immutable source of truth.
 
-3. **Automatic Port Status Check:**
+3. **UDMI Dependency Verification:**
+   - The Implementation Agent MUST programmatically verify on startup that the local cloned `impl/udmi/` workspace is fully synchronized, updated, and pinned to the exact remote repository URL and commit/branch/tag target specified in the authoritative `udmi_version.txt` file at the root of the workspace.
+   - If the local `impl/udmi` directory is out of sync or stale compared to this target, the agent MUST programmatically update it (via `git fetch --all` and `git reset --hard <target>`) to guarantee complete alignment with the authoritative UDMI version.
+
+4. **Automatic Port Status Check:**
    - Prior to launching any local brokers or executing tests, the update process MUST run a dynamic pre-check to detect if there are any active processes currently listening on the branch-mapped MQTT/testing port (such as `40000-49999`) or standard etcd/MQTT ports.
    - This check can be performed using standard utilities (such as `ss -lntp`, `netstat`, or `lsof`) or programmatic socket connection attempts.
    - If an active broker or process is detected on the target port outside of the test runner's orchestration, the runner MUST list the active process info and PID (if accessible) to standard error to assist in diagnosing and debugging rogue or manually started brokers before proceeding.
