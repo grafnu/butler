@@ -171,15 +171,17 @@ echo "=== Base Directory Structure Verified/Constructed ==="
 cleanup_branch_ports() {
   local branch_name="$1"
 
-  # Calculate SHA256 of branch_name using sha256sum
-  local hash_hex
-  hash_hex=$(echo -n "${branch_name}" | sha256sum | awk '{print $1}')
+  # ASSUMPTION: Calculating the dynamic branch-mapped port via python3
+  # guarantees that the entire 256-bit SHA256 hex string can be parsed as
+  # an arbitrary-precision integer, perfectly matching the specification
+  # and implementation formulas while completely avoiding bash 64-bit overflow.
+  local port
+  port=$(python3 -c "
+import hashlib
+h = hashlib.sha256(b'${branch_name}').hexdigest()
+print(45000 + (int(h, 16) % 3000))
+")
 
-  # Extract first 12 characters of hex to convert safely in bash (prevents 64-bit overflow)
-  local hash_dec
-  hash_dec=$((16#${hash_hex:0:12}))
-
-  local port=$((45000 + (hash_dec % 3000)))
   local etcd_port=$((port + 1))
   local etcd_peer_port=$((port + 1001))
 
