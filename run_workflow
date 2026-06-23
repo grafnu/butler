@@ -240,13 +240,13 @@ for ID in "${IMPLEMENTATIONS[@]}"; do
       START_INDIVIDUAL=$SECONDS
       cd "${IMPL_DIR}"
 
-      # Execute Gemini using the specified options and input @UPDATE.md with a 10m timeout
+      # Execute Gemini using the specified options and input @UPDATE.md with a 20m timeout
       RET=0
-      timeout 10m "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" "${SANDBOX_OPTS[@]}" -p @UPDATE.md < /dev/null > "${LOG_FILE}" 2>&1 || RET=$?
+      timeout 20m "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" "${SANDBOX_OPTS[@]}" -p @UPDATE.md < /dev/null > "${LOG_FILE}" 2>&1 || RET=$?
       if [ "${RET}" -ne 0 ]; then
         if [ "${RET}" -eq 124 ]; then
-          echo "Error: Gemini @UPDATE.md run for impl_${ID} timed out after 10 minutes." >&2
-          echo -e "PROCESSING ERROR: Gemini update run timed out after 10 minutes.\n" > "${IMPL_DIR}/spec_analysis.txt"
+          echo "Error: Gemini @UPDATE.md run for impl_${ID} timed out after 20 minutes." >&2
+          echo -e "PROCESSING ERROR: Gemini update run timed out after 20 minutes.\n" > "${IMPL_DIR}/spec_analysis.txt"
         else
           echo "Error: Gemini @UPDATE.md run for impl_${ID} failed with exit code ${RET}." >&2
           echo -e "PROCESSING ERROR: Gemini update run failed with exit code ${RET}.\n" > "${IMPL_DIR}/spec_analysis.txt"
@@ -263,13 +263,13 @@ for ID in "${IMPLEMENTATIONS[@]}"; do
     START_INDIVIDUAL=$SECONDS
     cd "${IMPL_DIR}"
 
-    # Execute Gemini using the specified options and input @UPDATE.md with a 10m timeout
+    # Execute Gemini using the specified options and input @UPDATE.md with a 20m timeout
     RET=0
-    timeout 10m "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" "${SANDBOX_OPTS[@]}" -p @UPDATE.md < /dev/null > "${LOG_FILE}" 2>&1 || RET=$?
+    timeout 20m "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" "${SANDBOX_OPTS[@]}" -p @UPDATE.md < /dev/null > "${LOG_FILE}" 2>&1 || RET=$?
     if [ "${RET}" -ne 0 ]; then
       if [ "${RET}" -eq 124 ]; then
-        echo "Error: Gemini @UPDATE.md run for impl_${ID} timed out after 10 minutes." >&2
-        echo -e "PROCESSING ERROR: Gemini update run timed out after 10 minutes.\n" > "${IMPL_DIR}/spec_analysis.txt"
+        echo "Error: Gemini @UPDATE.md run for impl_${ID} timed out after 20 minutes." >&2
+        echo -e "PROCESSING ERROR: Gemini update run timed out after 20 minutes.\n" > "${IMPL_DIR}/spec_analysis.txt"
       else
         echo "Error: Gemini @UPDATE.md run for impl_${ID} failed with exit code ${RET}." >&2
         echo -e "PROCESSING ERROR: Gemini update run failed with exit code ${RET}.\n" > "${IMPL_DIR}/spec_analysis.txt"

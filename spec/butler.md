@@ -245,7 +245,7 @@ Launch the simulated on-premise device in a separate terminal using the standard
 *Note:* The Butler orchestrator coordinates managed updates. While **Pubber** connects and handshakes successfully, it may fail to fully execute the specific firmware state transitions (`quiescent` -> `pending` -> `success`/`failure`) that a custom UDMI client might report. Let the tests fail on these steps if Pubber lacks full update state-machine capabilities; this is expected behavior to verify platform readiness.
 
 ### 10.5. Triggering a Managed Update (Functional Verification)
-Initiate a managed software update by either using UDMI's site trigger utility (located in the cloned `impl/udmi` folder) or programmatically mutating the physical site model file on disk and publishing the corresponding `model/cloud` Model Update message over the UUFI bus directly on the dynamically resolved branch-specific port. This programmatic trigger avoids dependency on the external `site_trigger` command-line utility, ensuring reliable communication over non-standard dynamic MQTT ports with SSL/TLS.
+Initiate a managed software update by using UDMI's site trigger utility (located in the cloned `impl/udmi` folder) directly on the dynamically resolved branch-specific port. The site trigger utility modifies the physical site model on disk and publishes the corresponding `model/cloud` Model Update message over the UUFI bus to emulate a database update.
 
 ### 10.6. Running Automated Smoke Tests
 To execute a fully automated, non-interactive integration run of Scope 4 (verifying the entire setup, registration, update, rollback, and verification lifecycle), execute the `smokeit` test utility pointing to the dynamically resolved branch-specific port.
