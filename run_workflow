@@ -351,13 +351,13 @@ echo "Executing gemini ${SANDBOX_OPTS[*]} -p @MERGER.md in merger..."
 LOG_FILE_MERGER="${BASE_DIR}/merger.log"
 echo "Logging output to ${LOG_FILE_MERGER}..."
 
-# Execute Gemini merger with a 20-minute timeout to prevent infinite hangs
-if timeout 20m "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" "${SANDBOX_OPTS[@]}" -p @MERGER.md < /dev/null > "${LOG_FILE_MERGER}" 2>&1; then
+# Execute Gemini merger with a 30-minute timeout to prevent infinite hangs
+if timeout 30m "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" "${SANDBOX_OPTS[@]}" -p @MERGER.md < /dev/null > "${LOG_FILE_MERGER}" 2>&1; then
   echo "SUCCESS: Gemini merger run completed successfully."
 else
   RET=$?
   if [ "${RET}" -eq 124 ]; then
-    echo "FAILURE: Gemini merger run timed out after 20 minutes. Check log: ${LOG_FILE_MERGER}"
+    echo "FAILURE: Gemini merger run timed out after 30 minutes. Check log: ${LOG_FILE_MERGER}"
   else
     echo "FAILURE: Gemini merger run failed with exit code ${RET}. Check log: ${LOG_FILE_MERGER}"
   fi

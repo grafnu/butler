@@ -197,6 +197,11 @@ To ensure that multiple disparate implementations can be run side-by-side using 
 #### 10.1.1. Automatic Environment & Pip Requirement Validation
 Before copying the site model or configuring resources, the setup pipeline MUST validate the Python runtime environment. If a virtual environment (`venv`) is not currently active, it should be activated or created. Additionally, we must verify that all packages specified in the requirements file (`butler/requirements.txt`) are fully satisfied; if they are not, they must be automatically installed using `pip`.
 The validation sequence MUST dynamically establish the Python virtual environment and automatically execute `pip install` to satisfy dependency requirements prior to executing setup utilities.
+To prevent breaking changes and ensure inter-implementation stability, all implementations MUST strictly pin their dependencies in `butler/requirements.txt` to the following standard versions:
+- `paho-mqtt==1.6.1` (to guarantee consistent Client instantiation APIs without callback version errors).
+- `google-cloud-storage==2.7.0` (or another verified standard stable release).
+No implementation is permitted to use newer major versions of these libraries (such as `paho-mqtt` 2.x) that introduce breaking changes to the baseline communication interfaces.
+
 If the `--offline` flag is provided to the setup utility, it MUST NOT attempt to make remote network calls for package verification or installation. Instead, it must either perform package verification using local caches or ignore missing dependencies to guarantee safe, warning-free offline execution inside hermetic test sandboxes without experiencing download retry latencies.
 
 #### 10.1.2. Isolated Site Model Setup
@@ -204,6 +209,12 @@ Establish an isolated copy of the pre-existing test site model by copying the mo
 
 #### 10.1.3. Running Setup and Starting/Stopping the Broker
 Next, run the Butler setup utility to prepare the environment (initializing local workspace directories, local model files, and other Butler-specific resources). The utility MUST first verify that the cloned `impl/udmi` directory exists directly, immediately raising a hard fail if it is missing. Execute the setup utility pointing to the dynamically resolved branch-specific port. If the local broker is not already running on that port, the setup utility MUST automatically invoke the cloned UDMI start utility (`impl/udmi/bin/start_local`) to start it on that unique port.
+
+To ensure secure communication and absolute interoperability across all implementations and verifiers, setup utilities and test runners MUST standardize on the following secure cryptographic filename and path conventions when configuring the local broker and establishing connections:
+- **Certificate Authority (CA) Certificate**: MUST be named `ca.crt` (X.509 PEM format).
+- **Client Public Certificate**: MUST be named `rsa_private.crt` (X.509 PEM format).
+- **Client Private Key**: MUST be named `rsa_private.pem` (unencrypted PKCS#1 or PKCS#8 format).
+All assets MUST be stored within the designated git-ignored temporary directories (such as `tmp/var/mosquitto/certs/` or `impl/udmi/var/mosquitto/certs/`). Expecting or requiring other extensions (such as `.key` instead of `.pem`) is strictly prohibited.
 
 *   **Explicit Broker Invocation:** The `start_local` utility MUST be invoked directly by passing the local site model directory path (e.g., `testing/udmi_site_model`) as its first command-line argument, and the connectivity specification in standard UDMI compatible format (specifically `//mqtt/localhost:$mqtt_port` or `mqtt/localhost:$mqtt_port`) as its second command-line argument:
     ```bash
