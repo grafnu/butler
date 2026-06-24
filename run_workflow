@@ -150,31 +150,27 @@ setup_sibling() {
   fi
 
   if [ ! -d "${sibling_udmi_dir}/.git" ]; then
-    echo "Cloning UDMI repository into ${sibling_udmi_dir} from ${udmi_source}..."
-    git clone "${udmi_source}" "${sibling_udmi_dir}"
+    git clone -q "${udmi_source}" "${sibling_udmi_dir}" >/dev/null 2>&1
   fi
 
-  echo "Syncing and pinning ${sibling_udmi_dir} to target ${UDMI_TARGET}..."
   # Set the remote origin URL to the resolved cloning source (supporting local path override)
-  git -C "${sibling_udmi_dir}" remote set-url origin "${udmi_source}"
-  git -C "${sibling_udmi_dir}" fetch --all --prune
+  git -C "${sibling_udmi_dir}" remote set-url origin "${udmi_source}" >/dev/null 2>&1
+  git -C "${sibling_udmi_dir}" fetch -q --all --prune >/dev/null 2>&1
 
   # If target is a branch, reset to the remote tracking branch.
   # Otherwise, fall back to resetting to the local tag/commit reference.
   if git -C "${sibling_udmi_dir}" show-ref --verify --quiet "refs/remotes/origin/${UDMI_TARGET}"; then
-    git -C "${sibling_udmi_dir}" checkout -f "${UDMI_TARGET}"
-    git -C "${sibling_udmi_dir}" reset --hard "origin/${UDMI_TARGET}"
+    git -C "${sibling_udmi_dir}" checkout -q -f "${UDMI_TARGET}" >/dev/null 2>&1
+    git -C "${sibling_udmi_dir}" reset -q --hard "origin/${UDMI_TARGET}" >/dev/null 2>&1
   else
-    git -C "${sibling_udmi_dir}" checkout -f "${UDMI_TARGET}"
-    git -C "${sibling_udmi_dir}" reset --hard "${UDMI_TARGET}"
+    git -C "${sibling_udmi_dir}" checkout -q -f "${UDMI_TARGET}" >/dev/null 2>&1
+    git -C "${sibling_udmi_dir}" reset -q --hard "${UDMI_TARGET}" >/dev/null 2>&1
   fi
 
-  # Output diagnostic information of the verified working version of UDMI
+  # Output exactly one clean line of diagnostic information of the verified working version of UDMI
   local working_commit
-  working_commit=$(git -C "${sibling_udmi_dir}" rev-parse HEAD 2>/dev/null || echo "unknown")
-  local working_message
-  working_message=$(git -C "${sibling_udmi_dir}" log -1 --pretty=format:"%s" 2>/dev/null || echo "unknown")
-  echo "Empirical UDMI version for ${dir_name}: commit=${working_commit} (\"${working_message}\")"
+  working_commit=$(git -C "${sibling_udmi_dir}" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+  echo "UDMI clone for ${dir_name} aligned to commit: ${working_commit}"
 }
 
 # Setup implementations
