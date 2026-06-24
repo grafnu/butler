@@ -24,6 +24,11 @@ fi
 # Securely read space-separated fields without eval or variable injection risks
 read -r UDMI_REPO_URL UDMI_TARGET < "${UDMI_VERSION_FILE}"
 
+# Automatically default UDMI_LOCAL_PATH to /home/peringknife/udmi if it exists and is not set
+if [ -z "${UDMI_LOCAL_PATH:-}" ] && [ -d "/home/peringknife/udmi/.git" ]; then
+  export UDMI_LOCAL_PATH="/home/peringknife/udmi"
+fi
+
 # Verify both variables are populated
 if [ -z "${UDMI_REPO_URL:-}" ] || [ -z "${UDMI_TARGET:-}" ]; then
   echo "Error: Incomplete UDMI version specification in '${UDMI_VERSION_FILE}'. Must contain exactly: <repo_url> <branch/commit/tag>" >&2
