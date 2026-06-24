@@ -184,7 +184,7 @@ for ID in "${IMPLEMENTATIONS[@]}"; do
   fi
 
   commit=$(git -C "${sibling_udmi_dir}" rev-parse HEAD 2>/dev/null || echo "unknown")
-  timestamp=$(git -C "${sibling_udmi_dir}" log -1 --format="%ci" HEAD 2>/dev/null || echo "unknown")
+  timestamp=$(TZ=UTC git -C "${sibling_udmi_dir}" log -1 --format="%cd" --date=iso-strict-local HEAD 2>/dev/null || echo "unknown")
 
   if [ -z "${FIRST_UDMI_COMMIT}" ]; then
     FIRST_UDMI_COMMIT="${commit}"
