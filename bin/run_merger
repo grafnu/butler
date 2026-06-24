@@ -1,0 +1,76 @@
+#!/bin/bash
+#
+# This script runs the Gemini merger integration tests.
+#
+# Usage: ./bin/run_merger
+
+set -euo pipefail
+
+# Force non-interactive fail-fast execution across all sub-shells/tools
+export CLOUDSDK_CORE_DISABLE_PROMPTS=1
+export DEBIAN_FRONTEND=noninteractive
+export SUDO_ASKPASS=/bin/false
+
+# Determine directories
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MAIN_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+BASE_DIR="${MAIN_DIR}"
+
+USE_SANDBOX="${USE_SANDBOX:-false}"
+for arg in "$@"; do
+  if [ "$arg" = "-s" ] || [ "$arg" = "--sandbox" ]; then
+    USE_SANDBOX="true"
+  fi
+done
+
+SANDBOX_OPTS=()
+if [ "${USE_SANDBOX}" = "true" ]; then
+  SANDBOX_OPTS=("-s")
+fi
+
+if ! command -v gemini >/dev/null 2>&1; then
+  echo "Error: gemini executable not found in PATH." >&2
+  exit 1
+fi
+GEMINI_BIN="gemini"
+GEMINI_OPTS=("--proxy=false" "--approval-mode" "yolo")
+
+IMPL_TIME="${IMPL_TIME:-20}" # Default robust timeout limit
+
+# Run the Gemini Merger Workflow (@MERGER.md)
+echo "=== Running Gemini Merger (@MERGER.md) ==="
+START_MERGER=$SECONDS
+cd "${BASE_DIR}/merger"
+echo "Executing gemini ${SANDBOX_OPTS[*]} -p @MERGER.md in merger..."
+LOG_FILE_MERGER="${BASE_DIR}/merger.log"
+echo "Logging output to ${LOG_FILE_MERGER}..."
+
+# Execute Gemini merger with a timeout to prevent infinite hangs
+if timeout ${IMPL_TIME}m "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" "${SANDBOX_OPTS[@]}" -p @MERGER.md < /dev/null > "${LOG_FILE_MERGER}" 2>&1; then
+  echo "SUCCESS: Gemini merger run completed successfully."
+else
+  RET=$?
+  if [ "${RET}" -eq 124 ]; then
+    echo "FAILURE: Gemini merger run timed out after ${IMPL_TIME} minutes. Check log: ${LOG_FILE_MERGER}"
+  else
+    echo "FAILURE: Gemini merger run failed with exit code ${RET}. Check log: ${LOG_FILE_MERGER}"
+  fi
+  exit 1
+fi
+
+ELAPSED_MERGER=$(( SECONDS - START_MERGER ))
+echo "=== Gemini Merger completed in ${ELAPSED_MERGER}s ==="
+
+# Check and push any merger changes
+UPSTREAM_MERGER=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo "origin/merger")
+UNPUSHED_MERGER=$(git log "${UPSTREAM_MERGER}..HEAD" --oneline 2>/dev/null || echo "")
+TOTAL_UNPUSHED_MERGER=$(git rev-list --count "${UPSTREAM_MERGER}..HEAD" 2>/dev/null || echo "0")
+
+if [ "${TOTAL_UNPUSHED_MERGER}" -gt 0 ]; then
+  echo "Found ${TOTAL_UNPUSHED_MERGER} unpushed commits in merger:"
+  echo "${UNPUSHED_MERGER}"
+  echo "Pushing merger updates to origin/merger..."
+  git push origin HEAD:merger
+else
+  echo "No unpushed commits for merger."
+fi

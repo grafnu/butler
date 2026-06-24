@@ -66,7 +66,7 @@ fi
 
 # Determine directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MAIN_DIR="$(cd "${SCRIPT_DIR}" && pwd)"
+MAIN_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BASE_DIR="${MAIN_DIR}"
 
 # Check for any uncommitted changes in the parent/main repository
@@ -394,51 +394,10 @@ for ID in "${IMPLEMENTATIONS[@]}"; do
   fi
 done
 
-# 5. Run the Gemini Merger Workflow (@MERGER.md)
-echo "=== Running Gemini Merger (@MERGER.md) ==="
-START_MERGER=$SECONDS
-cd "${BASE_DIR}/merger"
-echo "Executing gemini ${SANDBOX_OPTS[*]} -p @MERGER.md in merger..."
-LOG_FILE_MERGER="${BASE_DIR}/merger.log"
-echo "Logging output to ${LOG_FILE_MERGER}..."
-
-MERGE_TIME=${IMPL_TIME}
-
-# Execute Gemini merger with a ${IMPL_TIME}-minute timeout to prevent infinite hangs
-if timeout ${IMPL_TIME}m "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" "${SANDBOX_OPTS[@]}" -p @MERGER.md < /dev/null > "${LOG_FILE_MERGER}" 2>&1; then
-  echo "SUCCESS: Gemini merger run completed successfully."
-else
-  RET=$?
-  if [ "${RET}" -eq 124 ]; then
-    echo "FAILURE: Gemini merger run timed out after ${IMPL_TIME} minutes. Check log: ${LOG_FILE_MERGER}"
-  else
-    echo "FAILURE: Gemini merger run failed with exit code ${RET}. Check log: ${LOG_FILE_MERGER}"
-  fi
-  exit 1
-fi
-
-ELAPSED_MERGER=$(( SECONDS - START_MERGER ))
-echo "=== Gemini Merger completed in ${ELAPSED_MERGER}s ==="
-
-# Check and push any merger changes
-UPSTREAM_MERGER=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo "origin/merger")
-UNPUSHED_MERGER=$(git log "${UPSTREAM_MERGER}..HEAD" --oneline 2>/dev/null || echo "")
-TOTAL_UNPUSHED_MERGER=$(git rev-list --count "${UPSTREAM_MERGER}..HEAD" 2>/dev/null || echo "0")
-
-if [ "${TOTAL_UNPUSHED_MERGER}" -gt 0 ]; then
-  echo "Found ${TOTAL_UNPUSHED_MERGER} unpushed commits in merger:"
-  echo "${UNPUSHED_MERGER}"
-  echo "Pushing merger updates to origin/merger..."
-  git push origin HEAD:merger
-else
-  echo "No unpushed commits for merger."
-fi
-
-echo "=== All Workflow Tasks Completed ==="
+echo "=== All Update Tasks Completed ==="
 echo ""
 echo "=== Workflow Time Report ==="
 for ID in "${IMPLEMENTATIONS[@]}"; do
   echo "Update impl_${ID}:  ${INDIVIDUAL_TIMES["$ID"]}s"
 done
-echo "Gemini Merger:    ${ELAPSED_MERGER}s"
 echo "============================="

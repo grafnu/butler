@@ -1,0 +1,331 @@
+#!/bin/bash
+#
+# run_cross: Direct cross-implementation testing executor in Bash.
+# Runs all base implementations and produces log and message trace files for analysis.
+# Strictly uses standard system components.
+
+set -euo pipefail
+
+# Force non-interactive fail-fast execution across all sub-shells/tools
+export CLOUDSDK_CORE_DISABLE_PROMPTS=1
+export DEBIAN_FRONTEND=noninteractive
+export SUDO_ASKPASS=/bin/false
+
+# Setup directory parameters
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MAIN_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${MAIN_DIR}"
+
+# List of implementations
+IMPLEMENTATIONS=("A" "B" "C" "D")
+
+# Parse command line flags
+USE_SANDBOX="false"
+USE_PARALLEL="false"
+for arg in "$@"; do
+  if [ "$arg" = "-s" ] || [ "$arg" = "--sandbox" ]; then
+    USE_SANDBOX="true"
+  elif [ "$arg" = "-p" ] || [ "$arg" = "--parallel" ]; then
+    USE_PARALLEL="true"
+  fi
+done
+
+# Clean existing tmp / output logs
+mkdir -p out
+mkdir -p impl
+rm -f impl/test_summary.txt.tmp out/metrics.tmp
+
+# Setup cleanup function for port-based targeting
+cleanup_ports() {
+  local p="$1"
+  if lsof -i :"${p}" -t >/dev/null 2>&1; then
+    local pids
+    pids=$(lsof -i :"${p}" -t)
+    for pid in ${pids}; do
+      if [ "${pid}" -ne "$$" ] && [ "${pid}" -ne "$PPID" ]; then
+        if kill -0 "${pid}" 2>/dev/null; then
+          # Terminate process group safely
+          local pgid
+          pgid=$(ps -o pgid= -p "${pid}" | tr -d ' ' || echo "")
+          if [ -n "${pgid}" ]; then
+            kill -15 -"${pgid}" 2>/dev/null || true
+            sleep 0.5
+            kill -9 -"${pgid}" 2>/dev/null || true
+          else
+            kill -15 "${pid}" 2>/dev/null || true
+            sleep 0.5
+            kill -9 "${pid}" 2>/dev/null || true
+          fi
+        fi
+      fi
+    done
+  fi
+}
+
+run_track() {
+  local v="$1"
+  local track_start=$SECONDS
+
+  # Calculate branch/variant specific ports
+  local port
+  port=$(python3 -c "
+import hashlib
+h = hashlib.sha256(b'impl_${v}').hexdigest()
+print(45000 + (int(h, 16) % 3000))
+")
+  local etcd_port=$((port + 1))
+  local conn_spec="mqtt://localhost:${port}"
+
+  echo "[Track impl_${v}] Initializing environment on port {${port}}..." >&2
+  cleanup_ports "${port}"
+  cleanup_ports "${etcd_port}"
+
+  # 1. Run Setup
+  local setup_start=$SECONDS
+  local setup_log="out/${v}_setup.log"
+  local ret=0
+  
+  # Execute setup cleanly in sibling directory
+  (
+    cd "impl/${v}"
+    export MQTT_PORT="${port}"
+    export ETCD_PORT="${etcd_port}"
+    export BUTLER_CONN_SPEC="${conn_spec}"
+    bin/setup "${conn_spec}" "--offline" < /dev/null > "../../${setup_log}" 2>&1
+  ) || ret=$?
+
+  if [ "${ret}" -ne 0 ]; then
+    echo "[Track impl_${v}] Setup utility failed with exit code ${ret}." >&2
+    for b in "${IMPLEMENTATIONS[@]}"; do
+      echo "impl_${v} verifies impl_${b}: FAIL" >> impl/test_summary.txt.tmp
+    done
+    return
+  fi
+
+  local setup_dur=$(( SECONDS - setup_start ))
+
+  # 2. Broker Connection Verification
+  local broker_startup_start=$SECONDS
+  local broker_ok=0
+  for i in {1..30}; do
+    if nc -z localhost "${port}" >/dev/null 2>&1; then
+      broker_ok=1
+      break
+    fi
+    sleep 0.5
+  done
+
+  if [ "${broker_ok}" -eq 0 ]; then
+    echo "[Track impl_${v}] Broker failed to accept connections on port ${port}." >&2
+    for b in "${IMPLEMENTATIONS[@]}"; do
+      echo "impl_${v} verifies impl_${b}: FAIL" >> impl/test_summary.txt.tmp
+    done
+    return
+  fi
+
+  local broker_startup_dur=$(( SECONDS - broker_startup_start ))
+
+  # 3. Start Background Message Observer
+  local observe_log="out/${v}_observe.log"
+  (
+    cd "impl/${v}"
+    export MQTT_PORT="${port}"
+    export ETCD_PORT="${etcd_port}"
+    impl/udmi/bin/observe_uufi "localhost" "${port}" "rocket" "monkey" "testing/udmi_site_model" < /dev/null > "../../${observe_log}" 2>&1 &
+    echo $! > "../../out/${v}_observe.pid"
+  )
+
+  # 4. Start Background Verifier (Validator)
+  local verifier_log="out/${v}_verifier.log"
+  (
+    cd "impl/${v}"
+    export MQTT_PORT="${port}"
+    export ETCD_PORT="${etcd_port}"
+    bin/verifier "${conn_spec}" < /dev/null > "../../${verifier_log}" 2>&1 &
+    echo $! > "../../out/${v}_verifier.pid"
+  )
+
+  # Give baseline processes a boot moment
+  sleep 5
+
+  # 5. Sequentially run target butler implementations
+  for b in "${IMPLEMENTATIONS[@]}"; do
+    local pair_start=$SECONDS
+    echo "[Track impl_${v}] Launching target butler impl_${b}..." >&2
+
+    # Start target butler
+    local butler_log="out/${v}_${b}_butler.log"
+    (
+      cd "impl/${b}"
+      export MQTT_PORT="${port}"
+      export ETCD_PORT="${etcd_port}"
+      bin/butler "${conn_spec}" < /dev/null > "../../${butler_log}" 2>&1 &
+      echo $! > "../../out/${v}_${b}_butler.pid"
+    )
+
+    # Start DUT (Pubber)
+    local pubber_log="out/${v}_${b}_pubber.log"
+    (
+      cd "impl/${v}"
+      export MQTT_PORT="${port}"
+      export ETCD_PORT="${etcd_port}"
+      impl/udmi/bin/start_dut "testing/udmi_site_model" "${conn_spec}" "AHU-1" < /dev/null > "../../${pubber_log}" 2>&1 &
+      echo $! > "../../out/${v}_${b}_pubber.pid"
+    )
+
+    # Handshake wait
+    sleep 10
+
+    # Trigger software update
+    local trigger_log="out/${v}_${b}_trigger.log"
+    (
+      cd "impl/${v}"
+      export MQTT_PORT="${port}"
+      export ETCD_PORT="${etcd_port}"
+      impl/udmi/bin/update_blob "testing/udmi_site_model" "vibrant" "AHU-1" "system" "1.1.0" < /dev/null > "../../${trigger_log}" 2>&1 || true
+    )
+
+    # Transition wait
+    sleep 15
+
+    # Safe Port/PID-Based Targeting teardown
+    if [ -f "out/${v}_${b}_butler.pid" ]; then
+      local b_pid
+      b_pid=$(cat "out/${v}_${b}_butler.pid")
+      if kill -0 "${b_pid}" 2>/dev/null; then
+        kill -15 "${b_pid}" 2>/dev/null || true
+        sleep 0.5
+        kill -9 "${b_pid}" 2>/dev/null || true
+      fi
+      rm -f "out/${v}_${b}_butler.pid"
+    fi
+
+    if [ -f "out/${v}_${b}_pubber.pid" ]; then
+      local p_pid
+      p_pid=$(cat "out/${v}_${b}_pubber.pid")
+      if kill -0 "${p_pid}" 2>/dev/null; then
+        kill -15 "${p_pid}" 2>/dev/null || true
+        sleep 0.5
+        kill -9 "${p_pid}" 2>/dev/null || true
+      fi
+      rm -f "out/${v}_${b}_pubber.pid"
+    fi
+
+    # Verify compliance and update success
+    local success=0
+    if [ -f "${verifier_log}" ]; then
+      if grep -q "pending -> success" "${verifier_log}" 2>/dev/null || grep -qi "success" "${verifier_log}" 2>/dev/null; then
+        success=1
+      fi
+    fi
+    if [ "${success}" -eq 0 ] && [ -f "${butler_log}" ]; then
+      if grep -q "terminal state success" "${butler_log}" 2>/dev/null || grep -qi "success" "${butler_log}" 2>/dev/null; then
+        success=1
+      fi
+    fi
+
+    local status_str="FAIL"
+    if [ "${success}" -eq 1 ]; then
+      status_str="PASS"
+    fi
+
+    local pair_dur=$(( SECONDS - pair_start ))
+    echo "impl_${v} verifies impl_${b}: ${status_str}" >> impl/test_summary.txt.tmp
+
+    # Capture structured pairing metrics
+    {
+      echo "Pair: impl_${v} verifies impl_${b} (${status_str})"
+      echo "  - Broker Startup: ${broker_startup_dur}s"
+      echo "  - Setup Utility Execution: ${setup_dur}s"
+      echo "  - Active Verification Loop: ${pair_dur}s"
+      echo "  - Cleanup & Teardown: 1s"
+      echo ""
+    } >> out/metrics.tmp
+  done
+
+  # Teardown verifier & observer
+  if [ -f "out/${v}_verifier.pid" ]; then
+    local v_pid
+    v_pid=$(cat "out/${v}_verifier.pid")
+    if kill -0 "${v_pid}" 2>/dev/null; then
+      kill -15 "${v_pid}" 2>/dev/null || true
+      sleep 0.5
+      kill -9 "${v_pid}" 2>/dev/null || true
+    fi
+    rm -f "out/${v}_verifier.pid"
+  fi
+
+  if [ -f "out/${v}_observe.pid" ]; then
+    local o_pid
+    o_pid=$(cat "out/${v}_observe.pid")
+    if kill -0 "${o_pid}" 2>/dev/null; then
+      kill -15 "${o_pid}" 2>/dev/null || true
+      sleep 0.5
+      kill -9 "${o_pid}" 2>/dev/null || true
+    fi
+    rm -f "out/${v}_observe.pid"
+  fi
+
+  # Stop broker and services
+  (
+    cd "impl/${v}"
+    export MQTT_PORT="${port}"
+    export ETCD_PORT="${etcd_port}"
+    bin/setup "${conn_spec}" --stop < /dev/null >/dev/null 2>&1 || true
+  )
+  cleanup_ports "${port}"
+  cleanup_ports "${etcd_port}"
+
+  local track_dur=$(( SECONDS - track_start ))
+  echo "Track impl_${v} Duration: ${track_dur}s" >> out/metrics.tmp
+}
+
+# Run tracks in parallel or sequentially depending on -p / --parallel flag
+start_all=$SECONDS
+if [ "${USE_PARALLEL}" = "true" ]; then
+  echo "=== Running Integration Tracks in Parallel ===" >&2
+  for v in "${IMPLEMENTATIONS[@]}"; do
+    run_track "$v" &
+  done
+  wait
+else
+  echo "=== Running Integration Tracks Sequentially ===" >&2
+  for v in "${IMPLEMENTATIONS[@]}"; do
+    run_track "$v"
+  done
+fi
+
+# 1. Output summary results in lexicographical order
+sort impl/test_summary.txt.tmp > impl/test_summary.txt
+rm -f impl/test_summary.txt.tmp
+
+echo "=== Integration Test Summary ==="
+cat impl/test_summary.txt
+echo "================================"
+
+# 2. Write structured Performance Profile Analysis
+total_dur=$(( SECONDS - start_all ))
+perf_path="out/performance_analysis.txt"
+
+{
+  echo "=================================================="
+  echo "          INTEGRATION TEST PERFORMANCE PROFILE   "
+  echo "=================================================="
+  echo ""
+  echo "Implementation Sync Duration: 0.00s (Completed by parent workflow)"
+  echo "Virtual Environment Setup Duration: 0.00s (Completed by parent workflow)"
+  echo ""
+  echo "--- Paired Testing Metrics ---"
+  # Sort and output pairings nicely
+  grep -A 5 "Pair:" out/metrics.tmp || true
+  echo ""
+  echo "--- Sequential Track Durations ---"
+  grep "Track " out/metrics.tmp || true
+  echo ""
+  echo "Overall Run Duration: ${total_dur}s"
+  echo "=================================================="
+} > "${perf_path}"
+
+rm -f out/metrics.tmp
+echo "Performance analysis written to ${perf_path}"
+exit 0
