@@ -278,6 +278,8 @@ declare -A LOGS
 declare -A INDIVIDUAL_TIMES
 FAILED_IMPLS=()
 
+IMPL_TIMEOUT=20
+
 for ID in "${IMPLEMENTATIONS[@]}"; do
   IMPL_DIR="${BASE_DIR}/impl/${ID}"
   LOG_FILE="${IMPL_DIR}.log"
@@ -289,13 +291,13 @@ for ID in "${IMPLEMENTATIONS[@]}"; do
       START_INDIVIDUAL=$SECONDS
       cd "${IMPL_DIR}"
 
-      # Execute Gemini using the specified options and input @UPDATE.md with a 20m timeout
+      # Execute Gemini using the specified options and input @UPDATE.md with a ${IMPL_TIME}m timeout
       RET=0
-      timeout 20m "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" "${SANDBOX_OPTS[@]}" -p @UPDATE.md < /dev/null > "${LOG_FILE}" 2>&1 || RET=$?
+      timeout ${IMPL_TIME}m "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" "${SANDBOX_OPTS[@]}" -p @UPDATE.md < /dev/null > "${LOG_FILE}" 2>&1 || RET=$?
       if [ "${RET}" -ne 0 ]; then
         if [ "${RET}" -eq 124 ]; then
-          echo "Error: Gemini @UPDATE.md run for impl_${ID} timed out after 20 minutes." >&2
-          echo -e "PROCESSING ERROR: Gemini update run timed out after 20 minutes.\n" > "${IMPL_DIR}/spec_analysis.txt"
+          echo "Error: Gemini @UPDATE.md run for impl_${ID} timed out after ${IMPL_TIME} minutes." >&2
+          echo -e "PROCESSING ERROR: Gemini update run timed out after ${IMPL_TIME} minutes.\n" > "${IMPL_DIR}/spec_analysis.txt"
         else
           echo "Error: Gemini @UPDATE.md run for impl_${ID} failed with exit code ${RET}." >&2
           echo -e "PROCESSING ERROR: Gemini update run failed with exit code ${RET}.\n" > "${IMPL_DIR}/spec_analysis.txt"
@@ -312,13 +314,13 @@ for ID in "${IMPLEMENTATIONS[@]}"; do
     START_INDIVIDUAL=$SECONDS
     cd "${IMPL_DIR}"
 
-    # Execute Gemini using the specified options and input @UPDATE.md with a 20m timeout
+    # Execute Gemini using the specified options and input @UPDATE.md with a ${IMPL_TIME}m timeout
     RET=0
-    timeout 20m "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" "${SANDBOX_OPTS[@]}" -p @UPDATE.md < /dev/null > "${LOG_FILE}" 2>&1 || RET=$?
+    timeout ${IMPL_TIME}m "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" "${SANDBOX_OPTS[@]}" -p @UPDATE.md < /dev/null > "${LOG_FILE}" 2>&1 || RET=$?
     if [ "${RET}" -ne 0 ]; then
       if [ "${RET}" -eq 124 ]; then
-        echo "Error: Gemini @UPDATE.md run for impl_${ID} timed out after 20 minutes." >&2
-        echo -e "PROCESSING ERROR: Gemini update run timed out after 20 minutes.\n" > "${IMPL_DIR}/spec_analysis.txt"
+        echo "Error: Gemini @UPDATE.md run for impl_${ID} timed out after ${IMPL_TIME} minutes." >&2
+        echo -e "PROCESSING ERROR: Gemini update run timed out after ${IMPL_TIME} minutes.\n" > "${IMPL_DIR}/spec_analysis.txt"
       else
         echo "Error: Gemini @UPDATE.md run for impl_${ID} failed with exit code ${RET}." >&2
         echo -e "PROCESSING ERROR: Gemini update run failed with exit code ${RET}.\n" > "${IMPL_DIR}/spec_analysis.txt"
@@ -400,13 +402,15 @@ echo "Executing gemini ${SANDBOX_OPTS[*]} -p @MERGER.md in merger..."
 LOG_FILE_MERGER="${BASE_DIR}/merger.log"
 echo "Logging output to ${LOG_FILE_MERGER}..."
 
-# Execute Gemini merger with a 30-minute timeout to prevent infinite hangs
-if timeout 30m "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" "${SANDBOX_OPTS[@]}" -p @MERGER.md < /dev/null > "${LOG_FILE_MERGER}" 2>&1; then
+MERGE_TIME=${IMPL_TIME}
+
+# Execute Gemini merger with a ${IMPL_TIME}-minute timeout to prevent infinite hangs
+if timeout ${IMPL_TIME}m "${GEMINI_BIN}" "${GEMINI_OPTS[@]}" "${SANDBOX_OPTS[@]}" -p @MERGER.md < /dev/null > "${LOG_FILE_MERGER}" 2>&1; then
   echo "SUCCESS: Gemini merger run completed successfully."
 else
   RET=$?
   if [ "${RET}" -eq 124 ]; then
-    echo "FAILURE: Gemini merger run timed out after 30 minutes. Check log: ${LOG_FILE_MERGER}"
+    echo "FAILURE: Gemini merger run timed out after ${IMPL_TIME} minutes. Check log: ${LOG_FILE_MERGER}"
   else
     echo "FAILURE: Gemini merger run failed with exit code ${RET}. Check log: ${LOG_FILE_MERGER}"
   fi
