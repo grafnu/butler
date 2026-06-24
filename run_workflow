@@ -46,7 +46,6 @@ GEMINI_BIN="gemini"
 
 GEMINI_OPTS=("--proxy=false" "--approval-mode" "yolo")
 
-# ASSUMPTION: By default, the workflow runs sub-implementations in serial.
 # The user can enable parallel execution using the optional '-p' or '--parallel' flag.
 # Sibling workspace tasks will still write their standard log files for isolation,
 # consistency, and error analysis.
@@ -105,8 +104,7 @@ setup_sibling() {
   current_branch=$(git rev-parse --abbrev-ref HEAD)
   if [ "${branch_name}" != "${current_branch}" ]; then
     if git show-ref --verify --quiet "refs/remotes/origin/${branch_name}"; then
-      echo "Updating/creating local branch ${branch_name} in MAIN_DIR to match origin/${branch_name}..."
-      git branch -f "${branch_name}" "origin/${branch_name}"
+      git branch -f "${branch_name}" "origin/${branch_name}" >/dev/null 2>&1
     fi
   fi
 
@@ -114,25 +112,21 @@ setup_sibling() {
     echo "Directory ${dir_name} not found. Cloning into ${target_dir}..."
     mkdir -p "$(dirname "${target_dir}")"
     cd "${BASE_DIR}"
-    git clone . "${dir_name}"
+    git clone -q . "${dir_name}" >/dev/null 2>&1
   fi
 
   cd "${target_dir}"
-  echo "Fetching all updates for ${dir_name}..."
-  git fetch --all --prune
+  git fetch -q --all --prune >/dev/null 2>&1
 
   # Switch to the correct branch
   if git show-ref --verify --quiet "refs/heads/${branch_name}"; then
-    echo "Switching ${dir_name} to existing local branch ${branch_name}..."
-    git checkout "${branch_name}"
+    git checkout -q "${branch_name}" >/dev/null 2>&1
   else
-    echo "Checking out new tracking branch ${branch_name} from origin/${branch_name} in ${dir_name}..."
-    git checkout -b "${branch_name}" "origin/${branch_name}"
+    git checkout -q -b "${branch_name}" "origin/${branch_name}" >/dev/null 2>&1
   fi
 
   # Ensure the working directory is updated to match origin
-  echo "Resetting ${dir_name} to origin/${branch_name} to ensure freshness..."
-  git reset --hard "origin/${branch_name}"
+  git reset -q --hard "origin/${branch_name}" >/dev/null 2>&1
 
   # Automatically setup and pin the UDMI repository under impl/udmi inside this sibling workspace
   local sibling_udmi_dir="${target_dir}/impl/udmi"
@@ -166,11 +160,6 @@ setup_sibling() {
     git -C "${sibling_udmi_dir}" checkout -q -f "${UDMI_TARGET}" >/dev/null 2>&1
     git -C "${sibling_udmi_dir}" reset -q --hard "${UDMI_TARGET}" >/dev/null 2>&1
   fi
-
-  # Output exactly one clean line of diagnostic information of the verified working version of UDMI
-  local working_commit
-  working_commit=$(git -C "${sibling_udmi_dir}" rev-parse --short HEAD 2>/dev/null || echo "unknown")
-  echo "UDMI clone for ${dir_name} aligned to commit: ${working_commit}"
 }
 
 # Setup implementations
@@ -181,13 +170,57 @@ done
 # Setup merger
 setup_sibling "merger" "merger"
 
+echo "=== Checking UDMI Synchronization ==="
+FIRST_UDMI_COMMIT=""
+FIRST_UDMI_TIMESTAMP=""
+SYNC_FAILED=0
+
+for ID in "${IMPLEMENTATIONS[@]}"; do
+  sibling_udmi_dir="${BASE_DIR}/impl/${ID}/impl/udmi"
+  if [ ! -d "${sibling_udmi_dir}/.git" ]; then
+    echo "Error: UDMI repository not found under ${sibling_udmi_dir}" >&2
+    SYNC_FAILED=1
+    continue
+  fi
+
+  commit=$(git -C "${sibling_udmi_dir}" rev-parse HEAD 2>/dev/null || echo "unknown")
+  timestamp=$(git -C "${sibling_udmi_dir}" log -1 --format="%ci" HEAD 2>/dev/null || echo "unknown")
+
+  if [ -z "${FIRST_UDMI_COMMIT}" ]; then
+    FIRST_UDMI_COMMIT="${commit}"
+    FIRST_UDMI_TIMESTAMP="${timestamp}"
+  elif [ "${commit}" != "${FIRST_UDMI_COMMIT}" ]; then
+    echo "Error: Mismatched UDMI version found for impl_${ID} (${commit}) vs expected (${FIRST_UDMI_COMMIT})" >&2
+    SYNC_FAILED=1
+  fi
+done
+
+merger_udmi_dir="${BASE_DIR}/merger/impl/udmi"
+if [ ! -d "${merger_udmi_dir}/.git" ]; then
+  echo "Error: UDMI repository not found under ${merger_udmi_dir}" >&2
+  SYNC_FAILED=1
+else
+  merger_commit=$(git -C "${merger_udmi_dir}" rev-parse HEAD 2>/dev/null || echo "unknown")
+  if [ "${merger_commit}" != "${FIRST_UDMI_COMMIT}" ]; then
+    echo "Error: Mismatched UDMI version found for merger (${merger_commit}) vs expected (${FIRST_UDMI_COMMIT})" >&2
+    SYNC_FAILED=1
+  fi
+fi
+
+if [ "${SYNC_FAILED}" -ne 0 ]; then
+  echo "Error: UDMI repositories are not synchronized to the identical version. Aborting workflow." >&2
+  exit 1
+fi
+
+echo "All repositories synchronized to UDMI version: ${FIRST_UDMI_TIMESTAMP} (${FIRST_UDMI_COMMIT})"
+
 echo "=== Base Directory Structure Verified/Constructed ==="
 
 # Calculate branch-specific port and clean up lingering processes on it
 cleanup_branch_ports() {
   local branch_name="$1"
 
-  # ASSUMPTION: Calculating the dynamic branch-mapped port via python3
+  # Calculating the dynamic branch-mapped port via python3
   # guarantees that the entire 256-bit SHA256 hex string can be parsed as
   # an arbitrary-precision integer, perfectly matching the specification
   # and implementation formulas while completely avoiding bash 64-bit overflow.
