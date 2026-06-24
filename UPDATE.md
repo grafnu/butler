@@ -47,7 +47,7 @@ Through this continuous loop of verification and feedback (Merger Agent) and ref
 
 3. **UDMI Dependency Verification:**
    - The Implementation Agent MUST programmatically verify on startup that the local cloned `impl/udmi/` workspace is fully synchronized, updated, and pinned to the exact remote repository URL and commit/branch/tag target specified in the authoritative `udmi_version.txt` file at the root of the workspace.
-   - If the local `impl/udmi` directory is out of sync or stale compared to this target, the agent MUST programmatically update it (via `git fetch --all` and `git reset --hard <target>`) to guarantee complete alignment with the authoritative UDMI version.
+   - If the local `impl/udmi` directory is out of sync or stale compared to this target, the agent MUST programmatically update it. To ensure correct alignment, first execute `git fetch --all --prune`. If the target corresponds to a remote tracking branch (e.g. `origin/<target>` exists), the agent MUST checkout the branch and run `git reset --hard origin/<target>` to pull the freshest remote state. Otherwise, the agent MUST run `git reset --hard <target>` to reset to the local tag, branch, or commit.
 
 4. **Automatic Port Status Check:**
    - Prior to launching any local brokers or executing tests, the update process MUST run a dynamic pre-check to detect if there are any active processes currently listening on the branch-mapped MQTT/testing port (such as `40000-49999`) or standard etcd/MQTT ports.

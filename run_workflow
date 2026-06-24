@@ -152,9 +152,17 @@ setup_sibling() {
   echo "Syncing and pinning ${sibling_udmi_dir} to target ${UDMI_TARGET}..."
   # Ensure the origin URL in the clone is always set back to the canonical URL
   git -C "${sibling_udmi_dir}" remote set-url origin "${UDMI_REPO_URL}"
-  git -C "${sibling_udmi_dir}" fetch --all
-  git -C "${sibling_udmi_dir}" checkout -f "${UDMI_TARGET}"
-  git -C "${sibling_udmi_dir}" reset --hard "${UDMI_TARGET}"
+  git -C "${sibling_udmi_dir}" fetch --all --prune
+
+  # If target is a branch, reset to the remote tracking branch.
+  # Otherwise, fall back to resetting to the local tag/commit reference.
+  if git -C "${sibling_udmi_dir}" show-ref --verify --quiet "refs/remotes/origin/${UDMI_TARGET}"; then
+    git -C "${sibling_udmi_dir}" checkout -f "${UDMI_TARGET}"
+    git -C "${sibling_udmi_dir}" reset --hard "origin/${UDMI_TARGET}"
+  else
+    git -C "${sibling_udmi_dir}" checkout -f "${UDMI_TARGET}"
+    git -C "${sibling_udmi_dir}" reset --hard "${UDMI_TARGET}"
+  fi
 }
 
 # Setup implementations
