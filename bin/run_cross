@@ -44,17 +44,15 @@ cleanup_ports() {
     for pid in ${pids}; do
       if [ "${pid}" -ne "$$" ] && [ "${pid}" -ne "$PPID" ]; then
         if kill -0 "${pid}" 2>/dev/null; then
-          # Terminate process group safely
-          local pgid
-          pgid=$(ps -o pgid= -p "${pid}" | tr -d ' ' || echo "")
-          if [ -n "${pgid}" ]; then
-            kill -15 -"${pgid}" 2>/dev/null || true
-            sleep 0.5
-            kill -9 -"${pgid}" 2>/dev/null || true
-          else
+          # Always target exact process ID and check for mosquitto and etcd specifically
+          local comm_name
+          comm_name=$(ps -p "${pid}" -o comm= | tr -d ' ' || echo "")
+          if [[ "${comm_name}" == *mosquitto* || "${comm_name}" == *etcd* ]]; then
             kill -15 "${pid}" 2>/dev/null || true
             sleep 0.5
-            kill -9 "${pid}" 2>/dev/null || true
+            if kill -0 "${pid}" 2>/dev/null; then
+              kill -9 "${pid}" 2>/dev/null || true
+            fi
           fi
         fi
       fi
@@ -227,6 +225,24 @@ print(45000 + (int(h, 16) % 3000))
     local status_str="FAIL"
     if [ "${success}" -eq 1 ]; then
       status_str="PASS"
+    fi
+
+    # Create and copy the validates log in both implementation directories
+    local validates_log="${v}_validates_${b}.log"
+    mkdir -p "impl/${v}/logs"
+    mkdir -p "impl/${b}/logs"
+    {
+      echo "=== UUFI MESSAGE OBSERVATION TRACE ==="
+      cat "${observe_log}" 2>/dev/null || true
+      echo ""
+      echo "=== ACTIVE VERIFIER COMPLIANCE LOG ==="
+      cat "${verifier_log}" 2>/dev/null || true
+      echo ""
+      echo "=== TARGET BUTLER LOG ==="
+      cat "${butler_log}" 2>/dev/null || true
+    } > "impl/${v}/logs/${validates_log}"
+    if [ "${v}" != "${b}" ]; then
+      cp "impl/${v}/logs/${validates_log}" "impl/${b}/logs/${validates_log}"
     fi
 
     local pair_dur=$(( SECONDS - pair_start ))
