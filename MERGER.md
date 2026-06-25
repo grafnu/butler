@@ -96,7 +96,7 @@ The actual implementation in `*/butler/` will be different and that's expected. 
 
 **Working Directory Integrity & Temporary File Guidelines:**
 - The working directory MUST remain completely clean (as verified by `git status`) of any temporary files, logs, diagnostics, or test artifacts generated during run-time execution.
-- All temporary work, logs, and testing outputs MUST be generated strictly inside a dedicated subdirectory that is properly ignored by the repository's `.gitignore` file (such as `tmp/` or `out/`).
+- All temporary work, logs, and testing outputs MUST be generated strictly inside a dedicated subdirectory that is properly ignored by the repository's `.gitignore` file (such as `tmp/`, `out/`, or `logs/`).
 - Do not clean up or delete the test runs after execution to allow for diagnostic inspection; however, they MUST be structured in such a way that there are absolutely no artifacts, stray files, or untracked modifications left that are visible by `git status` in the main workspace.
 
 **Evidence-Based Time Tracking & Performance Metrics Logging:**

@@ -70,3 +70,4 @@ All functional work and output MUST be contained within:
 * venv/: Python virtual environment.
 * out/: Output from runtime and integration tests.
 * udmi/: Working directory for udmi integration.
+* logs/: Runtime verification logs.
