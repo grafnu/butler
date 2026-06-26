@@ -40,8 +40,8 @@ IMPL_TIME="${IMPL_TIME:-20}" # Default robust timeout limit
 # Run the Gemini Merger Workflow (@MERGER.md)
 echo "=== Running Gemini Merger (@MERGER.md) ==="
 START_MERGER=$SECONDS
-cd "${BASE_DIR}/merger"
-echo "Executing gemini ${SANDBOX_OPTS[*]} -p @MERGER.md in merger..."
+cd "${BASE_DIR}"
+echo "Executing gemini ${SANDBOX_OPTS[*]} -p @MERGER.md..."
 LOG_FILE_MERGER="${BASE_DIR}/merger.log"
 echo "Logging output to ${LOG_FILE_MERGER}..."
 
@@ -60,17 +60,3 @@ fi
 
 ELAPSED_MERGER=$(( SECONDS - START_MERGER ))
 echo "=== Gemini Merger completed in ${ELAPSED_MERGER}s ==="
-
-# Check and push any merger changes
-UPSTREAM_MERGER=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo "origin/merger")
-UNPUSHED_MERGER=$(git log "${UPSTREAM_MERGER}..HEAD" --oneline 2>/dev/null || echo "")
-TOTAL_UNPUSHED_MERGER=$(git rev-list --count "${UPSTREAM_MERGER}..HEAD" 2>/dev/null || echo "0")
-
-if [ "${TOTAL_UNPUSHED_MERGER}" -gt 0 ]; then
-  echo "Found ${TOTAL_UNPUSHED_MERGER} unpushed commits in merger:"
-  echo "${UNPUSHED_MERGER}"
-  echo "Pushing merger updates to origin/merger..."
-  git push origin HEAD:merger
-else
-  echo "No unpushed commits for merger."
-fi

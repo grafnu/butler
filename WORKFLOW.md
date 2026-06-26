@@ -51,9 +51,9 @@ On the clean `main` branch or when bootstrapping a brand-new implementation, the
 
 ## 2. The Spec-Driven Agentic Development Workflow
 
-The Butler Managed Update System follows a **spec-driven agentic lifecycle** that maintains alignment across multiple disparate implementations (`impl_<id>`), reconciling spec updates back into the `main` branch.
+The Butler Managed Update System follows a **spec-driven agentic lifecycle** that maintains alignment across multiple disparate implementations (`impl_<id>`), reconciling spec updates directly within the `main` branch.
 
-Below is the workflow sequence detailing how to update specifications, update implementation code, run cross-implementation tests, and merge specification updates back to the `main` branch.
+Below is the workflow sequence detailing how to update specifications, update implementation code, run cross-implementation tests, and refine specification updates.
 
 ```
                   +-------------------------+
@@ -63,14 +63,8 @@ Below is the workflow sequence detailing how to update specifications, update im
                                |                                |
                                v                                |
                   +-------------------------+                   |
-                  |      merger Branch      |                   |
-                  |        @MERGER.md       |                   |
-                  +------------+------------+                   |
-                               |                                |
-                               v                                |
-                  +-------------------------+                   |
                   |       main Branch       | ------------------+
-                  |   manually update spec  |
+                  |  @MERGER.md Spec Merge  |
                   +-------------------------+
 ```
 
@@ -93,34 +87,21 @@ For each implementation branch `impl_<id>` (where `<id>` is the implementation i
    git log
    ```
 
-### Phase 2: Cross-Implementation Interoperability Testing (`merger` Branch)
+### Phase 2: Cross-Implementation Interoperability Testing & Spec Refinement (main Branch)
 
-Once all implementations have updated and verified themselves against the updated specification, reconcile them on the `merger` branch to ensure they are fully interoperable. This is automated via the Gemini developer agent using the `MERGER.md` instructions.
+Once all implementations have updated and verified themselves against the updated specification (via Phase 1), execute the cross-implementation test matrix and refine the core specifications directly on the `main` branch. This is automated using the `MERGER.md` instructions.
 
-Switch to the `merger` directory:
+Execute the following command in the parent workspace directory:
 ```bash
-cd merger/
 gemini -s -p @MERGER.md
 ```
 *Action:* Under the hood, Gemini runs a complete cross-implementation matrix:
-- Concurrently fetches and clones/syncs all remote `impl_*` branches into `merger/impl/`.
+- Reuses/references the clone/sync of all `impl_*` branches inside `impl/` from the update process.
 - Delegates the creation and management of isolated python virtual environments directly to each implementation's own setup skills.
 - Generates and executes the complete `N * (N - 1)` cross-implementation test runs (running each implementation as `butler` against every other implementation as `verifier`, and vice-versa) on dynamically allocated local TCP ports to avoid collisions.
 - Collects test logs into `impl/{ID}.log` and summarizes the results in `impl/test_summary.txt`.
-- If interoperability issues or ambiguities are uncovered, the specifications in `spec/` are dynamically adjusted and updated to achieve full spec compliance.
-- Finally, the updated specs are committed and pushed to `origin/merger`.
-
-### Phase 3: Merging Verified Specs Back to `main`
-
-Once the specifications have been refined and proven to be robust through interoperability cross-testing on `merger`, the verified changes are checked out back into the `main` branch's `spec/` folder.
-
-In the `main` branch terminal, run:
-```bash
-cd ..
-git fetch
-git checkout origin/merger -- spec/
-```
-*Action:* This command fetches the latest remote changes and checks out the validated `spec/` files from the `merger` branch directly into the local `main` branch workspace, completing the development loop. These changes should be reviewed to make sure they're sane.
+- If interoperability issues or ambiguities are uncovered, the specifications in `spec/` are dynamically adjusted and updated in-place to achieve full spec compliance.
+- The refined specifications and guidelines are left unstaged/staged on the active `main` branch, ready for human review, local validation, and direct commit/push.
 
 ---
 
@@ -129,8 +110,7 @@ git checkout origin/merger -- spec/
 | Phase / Command | Target Directory / Branch | Purpose / Description |
 | :--- | :--- | :--- |
 | `gemini -s -p @UPDATE.md` | `impl_<id>` | Merges main, audits specs, adjusts implementation logic, and runs local smoke tests (delegating python and local workspace environment setup to implementation-specific setup skills). |
-| `gemini -s -p @MERGER.md` | `merger` | Executes full concurrent cross-testing of all implementation pairs, refines core specs, and pushes verified specification changes. |
-| `git checkout origin/merger -- spec/` | `main` | Imports the verified and refined specifications from the integration branch into the main branch. |
+| `gemini -s -p @MERGER.md` | `main` | Executes full concurrent cross-testing of all implementation pairs and refines core specs directly in the main workspace. |
 | `gemini -s -p @REBUILD.md` | `impl_<id>` / New setup | Bootstraps a brand-new implementation from scratch or performs a clean spec-driven rebuild of `butler/` and `bin/` from files in `spec/`. |
 | `bin/setup mqtt://localhost:<port>/` | Local workspace | Boots up local broker infrastructure on the specified isolated port and configures the UUFI connection spec. |
 | `bin/smokeit mqtt://localhost:<port>/` | Local workspace | Runs the interactive integration smoke test (Orchestrator, Verifier, and simulated DUT) on the specified port. |
