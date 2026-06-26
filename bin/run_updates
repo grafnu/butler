@@ -280,10 +280,10 @@ for ID in "${IMPLEMENTATIONS[@]}"; do
       if [ "${RET}" -ne 0 ]; then
         if [ "${RET}" -eq 124 ]; then
           echo "Error: Gemini @UPDATE.md run for impl_${ID} timed out after ${IMPL_TIME} minutes." >&2
-          echo -e "PROCESSING ERROR: Gemini update run timed out after ${IMPL_TIME} minutes.\n" > "${IMPL_DIR}/spec_analysis.txt"
+          echo -e "PROCESSING ERROR: Gemini update run timed out after ${IMPL_TIME} minutes.\n" > "${IMPL_DIR}/spec_analysis.md"
         else
           echo "Error: Gemini @UPDATE.md run for impl_${ID} failed with exit code ${RET}." >&2
-          echo -e "PROCESSING ERROR: Gemini update run failed with exit code ${RET}.\n" > "${IMPL_DIR}/spec_analysis.txt"
+          echo -e "PROCESSING ERROR: Gemini update run failed with exit code ${RET}.\n" > "${IMPL_DIR}/spec_analysis.md"
         fi
       fi
 
@@ -303,10 +303,10 @@ for ID in "${IMPLEMENTATIONS[@]}"; do
     if [ "${RET}" -ne 0 ]; then
       if [ "${RET}" -eq 124 ]; then
         echo "Error: Gemini @UPDATE.md run for impl_${ID} timed out after ${IMPL_TIME} minutes." >&2
-        echo -e "PROCESSING ERROR: Gemini update run timed out after ${IMPL_TIME} minutes.\n" > "${IMPL_DIR}/spec_analysis.txt"
+        echo -e "PROCESSING ERROR: Gemini update run timed out after ${IMPL_TIME} minutes.\n" > "${IMPL_DIR}/spec_analysis.md"
       else
         echo "Error: Gemini @UPDATE.md run for impl_${ID} failed with exit code ${RET}." >&2
-        echo -e "PROCESSING ERROR: Gemini update run failed with exit code ${RET}.\n" > "${IMPL_DIR}/spec_analysis.txt"
+        echo -e "PROCESSING ERROR: Gemini update run failed with exit code ${RET}.\n" > "${IMPL_DIR}/spec_analysis.md"
       fi
     fi
 
