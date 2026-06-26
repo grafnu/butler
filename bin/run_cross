@@ -72,7 +72,7 @@ h = hashlib.sha256(b'impl_${v}').hexdigest()
 print(45000 + (int(h, 16) % 3000))
 ")
   local etcd_port=$((port + 1))
-  local conn_spec="mqtt://localhost:${port}"
+  local conn_spec="mqtts://rocket:monkey@localhost:${port}/"
 
   echo "[Track impl_${v}] Initializing environment on port {${port}}..." >&2
   cleanup_ports "${port}"
