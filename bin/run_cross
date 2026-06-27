@@ -129,7 +129,7 @@ print(45000 + (int(h, 16) % 3000))
     cd "impl/${v}"
     export MQTT_PORT="${port}"
     export ETCD_PORT="${etcd_port}"
-    impl/udmi/bin/observe_uufi "localhost" "${port}" "rocket" "monkey" "testing/udmi_site_model" < /dev/null > "../../${observe_log}" 2>&1 &
+    impl/udmi/bin/observe_uufi "localhost" "${port}" "rocket" "monkey" "$(pwd)/testing/udmi_site_model" < /dev/null > "../../${observe_log}" 2>&1 &
     echo $! > "../../out/${v}_observe.pid"
   )
 
@@ -153,6 +153,11 @@ print(45000 + (int(h, 16) % 3000))
 
     # Start target butler
     local butler_log="out/${v}_${b}_butler.log"
+    # Ensure target butler can dynamically load and trust the active track's broker certificates
+    local b_cert_dir="impl/${b}/impl/udmi/var/mosquitto"
+    mkdir -p "${b_cert_dir}"
+    rm -rf "${b_cert_dir}/certs"
+    ln -sf "$(pwd)/impl/${v}/impl/udmi/var/mosquitto/certs" "${b_cert_dir}/certs"
     (
       cd "impl/${b}"
       export MQTT_PORT="${port}"
