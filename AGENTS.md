@@ -71,3 +71,9 @@ All functional work and output MUST be contained within:
 * out/: Output from runtime and integration tests.
 * udmi/: Working directory for udmi integration.
 * logs/: Runtime verification logs.
+
+**Structural Relegation to UDMI/UUFI Standards:**
+To prevent specification leakage, brittle duplication, and integration-time confusion, all payload structures, JSON nesting, message schemas, and network transport pathways are strictly relegated to the authoritative UDMI/UUFI standards.
+1. Under no circumstances shall local Butler specifications (`spec/butler.md`) or implementation guidelines duplicate, redefine, or introduce custom layout definitions for UDMI-compliant components (such as `blobset`, `system`, or standard handshakes).
+2. All messages, states, events, and configuration commands exchanged over the transport MUST match character-for-character the official UDMI schemas (located in `impl/udmi/schema/`) and the communication bus standards defined in `impl/udmi/docs/specs/uufi.md`.
+3. Butler is strictly an application-layer consumer and reconciler concerned solely with identifying expected and actual values to execute state machine transitions. It must dynamically extract these values from the standard UDMI/UUFI schema-defined locations.
