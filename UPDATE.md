@@ -73,6 +73,13 @@ To ensure the codebase complies with any new or modified specifications, resolve
 
 3. **Update Implementation Logic:**
    - Symmetrically update implementation code in `butler/` and command wrappers in `bin/` to satisfy all newly introduced specification requirements and resolve the exact failures detailed in `merge_analysis.md`.
+   - **Critical Interoperability Guidelines:** All implementation builds MUST satisfy these core standards to ensure cross-interoperability:
+     - *Handshake Payload Formatting:* Implementations MUST use exactly ONE standard flattened format for Handshake Step 1 and Step 2 request/reply blocks, where the `"setup"` and `"reply"` payload blocks reside directly at the payload root (no nested `"udmi"` wrappers).
+     - *Model Updates Structure:* Sourcing or processing cloud model update payloads MUST expect exactly ONE standard format where the `"registries"` key resides directly at the payload root (no nested `"cloud"` wrappers).
+     - *Expected Version Configuration:* Sourcing of expected/desired versions MUST ONLY be done under the standard software dictionary structure within the device's system configuration (`system.software.<subsystem>`). Alternative configurations (such as `"target_version"`) are strictly prohibited and MUST NOT be accepted.
+     - *Topic Suffix Formatting:* All generated UUFI topic paths MUST include both a subtype and a subfolder segment (`/c/{subtype}/{subfolder}`), and topic generation utilities must not generate truncated or omitted suffixes.
+     - *Subsystem Reporting Structure:* Ensure actual state reporting wraps the subsystem ID (specifically `"system"`) within the `"blobs"` dictionary under `"blobset"` to match standard UDMI schemas.
+     - *Envelope and Configuration Attributes:* Sate, event, or model message envelopes SHOULD include a standard `"nonce"` field for deduplication and replay protection, and config commands MUST include the target `"version"` attribute inside the target blob's configuration.
    - Once all failures documented in `merge_analysis.md` have been resolved and verified to pass the smoke tests, remove the `merge_analysis.md` file from the repository to signal that the implementation is clean, fully compliant, and ready to be re-verified by the merger agent.
 
 ---

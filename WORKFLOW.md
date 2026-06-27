@@ -1,116 +1,116 @@
-# Developer Workflow and Environment Setup
+# Multi-Implementation Development and Verification Workflow
 
-This document provides a comprehensive guide for setting up the development environment and executing the spec-driven development, integration, and verification lifecycle for the **Butler Managed Update System**.
+This document provides a comprehensive guide to the multi-implementation workflow of the **Butler Managed Update System**. This process is designed to synchronize, test, and merge specifications and implementations across multiple sibling repositories and git branches.
 
 ---
 
-## 1. Environment Setup
+## 1. Multi-Implementation Architecture
 
-### Prerequisites
-To develop, build, and test the Butler system, you need the following pre-installed on your system:
-- **Python 3.8+** (Python 3.13 is recommended and utilized in current virtual environments)
-- **Java 11+**
-- **Mosquitto** broker and clients (`mosquitto-clients`)
-- **expect** and development packages (Linux packages)
+To ensure robustness and compliance with the core architectural specifications, the Butler project maintains multiple independent implementations of the system (typically designated as implementations `A`, `B`, `C`, and `D` located in `impl/A`, `impl/B`, `impl/C`, and `impl/D` respectively). These correspond to the git branches `impl_A`, `impl_B`, `impl_C`, and `impl_D`.
 
-### Step 1: Cloned UDMI Directory Setup
-The `udmi` directory MUST exist inside the `impl/` directory (at `impl/udmi/` relative to the workspace root).
+The integration pipeline maintains strict consistency using a three-phase sequence driven by automated helper scripts:
+```
+           [bin/run_updates]  ===>  [bin/run_cross]  ===>  [bin/run_merger]
+```
 
-- **How the `impl/` Directory and `impl/udmi` Clone are Created on a Clean Slate:**
-  Since a clean checkout of the repository starts with no `impl/` directory, you must initialize it manually by cloning the corresponding `udmi` remote repository:
-  1. **Determine the Remote URL:** Resolve the remote repository URL for the `udmi` clone by taking the current project's remote origin URL (e.g., query with `git config --get remote.origin.url`) and replacing the repository name (`butler` or `butler.git`) with `udmi` (or `udmi.git`). For example, if the origin is `git@github.com:XXXXX/butler.git`, the `udmi` remote repository is `git@github.com:XXXXX/udmi.git`.
-  2. **Create and Clone:** Create the `impl/` directory and clone the `udmi` remote repository into `impl/udmi/`:
-     ```bash
-     mkdir -p impl
-     git clone <udmi_remote_url> impl/udmi
-     ```
-  3. **Align Branches (Optional):** If working on a specific feature or development branch, checkout the corresponding branch in the `impl/udmi/` clone to maintain operational parity.
+> **ASSUMPTION:** The script `./bin/run_updates` (plural) maps to the user's reference to `run_update`, and `./bin/run_merger` maps to the user's reference to `run_merger`.
 
-- **Sandbox Isolation & Repository Constraints:** To enable running the system in sandbox mode (`gemini -s`) and in complete isolation from other code on the system, the `udmi` directory MUST be a local git clone of the remote repository inside the `impl/` workspace.
-- **Keep Up to Date:** The `impl/udmi/` clone must be kept up to date with the remote repository (e.g. by executing `git pull` in that directory). All references to other components or external libraries must go through a remote git repository cloned locally.
-- **Shared Resource & Immutability Constraint:** This is an immutable, read-only resource. Never modify files inside `impl/udmi` directly or clone site models there to ensure sandbox predictability and prevent race conditions.
-- Ensure it is up to date:
-  ```bash
-  cd impl/udmi
-  git pull
-  ```
+---
 
-### Step 2: Install System Dependencies
-Install necessary system packages (such as Mosquitto, mosquitto-clients, and expect) by delegating to the UDMI setup utility (Linux-only, macOS developers should use Homebrew):
+## 2. Phase 1: Implementation Synchronization and Updates (`bin/run_updates`)
+
+The first phase ensures that all implementation branches are fully updated, checked out, and synchronized with the core specification changes on the parent `main` branch.
+
+### Command and Usage:
 ```bash
-impl/udmi/bin/setup_base
+./bin/run_updates [options]
 ```
-*Note on Privileges:* Running `impl/udmi/bin/setup_base` is **optional** if you already have the required dependencies pre-installed on your system.
 
-### Spec-Driven Code Generation (REBUILD.md)
-On the clean `main` branch or when bootstrapping a brand-new implementation, the implementation directories `butler/` (core Python logic) and `bin/` (operational executables) may not be pre-populated or checked into the repository.
-- **When to use `REBUILD.md`:** If you are setting up a new implementation from scratch, or need to perform a completely clean, spec-driven rebuild of the codebase to align with changes in `spec/`, you must invoke the agentic build pipeline using `gemini -s -p @REBUILD.md`.
-- **Process Overview:** The agentic build pipeline completely deletes existing `butler/` and `bin/` directories, parses the formal architectural and protocol specifications in `spec/` (e.g., `butler.md`, `blobstore.md`, `update.md`), and automatically generates/bootstraps compliant source code and wrapper scripts.
+### Key Options:
+- `-p` or `--parallel`: Runs the update agent workflows for all implementations concurrently in the background rather than sequentially.
+- `-s` or `--sandbox`: Enables sandbox execution mode for the developer agent.
+
+### Operational Sequence:
+1. **Repository Synchronization**:
+   - Reads `udmi_version.txt` at the root of the workspace to determine the authoritative repository URL and commit/branch target for the UDMI standard dependencies.
+   - For each implementation (`A`, `B`, `C`, `D`), clones or checks out the respective implementation branch (`impl_A`, `impl_B`, etc.) into `impl/<ID>`.
+   - Clones and pins the exact UDMI version under `impl/<ID>/impl/udmi` in each sub-workspace.
+   - Verifies that all cloned sub-workspaces are perfectly synchronized to the same UDMI reference to prevent version divergence.
+2. **Lingering Port Teardown**:
+   - Computes a unique, branch-mapped TCP port for each implementation based on the SHA256 of its branch name.
+   - Terminates any lingering processes (like local MQTT brokers or database servers) active on those ports to avoid execution collisions.
+3. **Automated Agent Update (`@UPDATE.md`)**:
+   - Invokes the Gemini developer agent inside each implementation workspace using the `@UPDATE.md` play script.
+   - The agent automatically merges `main` into the active branch, audits the code against specifications under `spec/`, applies necessary code refactoring, and executes local smoke tests to verify correctness.
+   - Detailed logs are outputted to `impl/<ID>.log`.
+4. **Git Verification & Push**:
+   - Performs a git status check on each sibling directory.
+   - If there are unpushed commits on the sibling branch, automatically pushes them to the remote tracking branch (e.g. `origin/impl_<ID>`), keeping the active branches fully aligned.
 
 ---
 
-## 2. The Spec-Driven Agentic Development Workflow
+## 3. Phase 2: Live Cross-Implementation Interoperability Testing (`bin/run_cross`)
 
-The Butler Managed Update System follows a **spec-driven agentic lifecycle** that maintains alignment across multiple disparate implementations (`impl_<id>`), reconciling spec updates directly within the `main` branch.
+The second phase executes the live cross-implementation test matrix to verify that the different implementations can seamlessly interoperate.
 
-Below is the workflow sequence detailing how to update specifications, update implementation code, run cross-implementation tests, and refine specification updates.
-
-```
-                  +-------------------------+
-                  |    impl_<id> Branches   | <-----------------+
-                  |       @UPDATE.md        |                   |
-                  +------------+------------+                   |
-                               |                                |
-                               v                                |
-                  +-------------------------+                   |
-                  |       main Branch       | ------------------+
-                  |  @MERGER.md Spec Merge  |
-                  +-------------------------+
-```
-
-### Phase 1: Implementation Update and Spec Auditing (`impl_<id>` Branches)
-
-When core specifications under `spec/` in `main` are updated, those changes must be pulled into each implementation branch (`impl_<id>`) and the implementation code updated to comply. This step is automated via the Gemini developer agent using the `UPDATE.md` instructions.
-
-For each implementation branch `impl_<id>` (where `<id>` is the implementation identifier, e.g., `A`, `B`, `C`, or `D`), execute the following in separate terminal windows:
-
-1. **Update and Audit the Implementation:**
-   ```bash
-   cd impl/<id>
-   gemini -s -p @UPDATE.md
-   ```
-   *Action:* Gemini merges `origin/main` into the current branch, parses specifications, and delegates environment preparation, dependency management, port validation, and local smoke testing (`bin/smokeit`) on isolated, branch-mapped MQTT/testing ports directly to the implementation-specific automated scripts and setup skills.
-
-2. **Verify Commit Histories:**
-   After the automated agent processes complete, verify the generated commit messages and ensure the repository remains in a clean, compliant state:
-   ```bash
-   git log
-   ```
-
-### Phase 2: Cross-Implementation Interoperability Testing & Spec Refinement (main Branch)
-
-Once all implementations have updated and verified themselves against the updated specification (via Phase 1), execute the cross-implementation test matrix and refine the core specifications directly on the `main` branch. This is automated using the `MERGER.md` instructions.
-
-Execute the following command in the parent workspace directory:
+### Command and Usage:
 ```bash
-gemini -s -p @MERGER.md
+./bin/run_cross [options]
 ```
-*Action:* Under the hood, Gemini runs a complete cross-implementation matrix:
-- Reuses/references the clone/sync of all `impl_*` branches inside `impl/` from the update process.
-- Delegates the creation and management of isolated python virtual environments directly to each implementation's own setup skills.
-- Generates and executes the complete `N * (N - 1)` cross-implementation test runs (running each implementation as `butler` against every other implementation as `verifier`, and vice-versa) on dynamically allocated local TCP ports to avoid collisions.
-- Collects test logs into `impl/{ID}.log` and summarizes the results in `impl/test_summary.txt`.
-- If interoperability issues or ambiguities are uncovered, the specifications in `spec/` are dynamically adjusted and updated in-place to achieve full spec compliance.
-- The refined specifications and guidelines are left unstaged/staged on the active `main` branch, ready for human review, local validation, and direct commit/push.
+
+### Key Options:
+- `-p` or `--parallel`: Runs integration tracks in parallel across implementations.
+- `-s` or `--sandbox`: Runs under sandbox-isolated conditions.
+
+### Operational Sequence:
+1. **Clean Workspace**:
+   - Prepares output directories (`out/` and `impl/`) and purges stale logs or metrics.
+2. **Matrix Generation ($N \times (N - 1)$)**:
+   - For each integration track (e.g., track `A`), allocates isolated ports using SHA256 mapping.
+   - Automatically bootstraps the local environment by calling the implementation's setup utility.
+   - Launches a background message observer to capture network traces.
+   - Runs a background validator/verifier utilizing the implementation's own `verifier` executable.
+   - Sequentially runs every *other* implementation as the active orchestrator (`butler`) and starts the simulated Pubber device under test (DUT).
+   - Simulates a managed firmware update via `site_trigger` and waits for state transitions to complete.
+3. **Evidence Collection**:
+   - Captures and saves full execution traces to `impl/<verifier_id>/logs/<verifier_id>_validates_<butler_id>.log` and copies the trace to the respective butler directory.
+   - Analyzes logs to determine if state transitions (`pending -> success`) completed successfully.
+   - Generates the authoritative integration test report in `impl/test_summary.txt` listing the exact outcomes (`PASS` or `FAIL`) for every pairing.
+   - Records detailed timing and execution metrics in `out/performance_analysis.txt`.
 
 ---
 
-## 3. Developer Commands Reference Sheet
+## 4. Phase 3: Specification Merge and Refinement (`bin/run_merger`)
 
-| Phase / Command | Target Directory / Branch | Purpose / Description |
-| :--- | :--- | :--- |
-| `gemini -s -p @UPDATE.md` | `impl_<id>` | Merges main, audits specs, adjusts implementation logic, and runs local smoke tests (delegating python and local workspace environment setup to implementation-specific setup skills). |
-| `gemini -s -p @MERGER.md` | `main` | Executes full concurrent cross-testing of all implementation pairs and refines core specs directly in the main workspace. |
-| `gemini -s -p @REBUILD.md` | `impl_<id>` / New setup | Bootstraps a brand-new implementation from scratch or performs a clean spec-driven rebuild of `butler/` and `bin/` from files in `spec/`. |
-| `bin/setup mqtt://localhost:<port>/` | Local workspace | Boots up local broker infrastructure on the specified isolated port and configures the UUFI connection spec. |
-| `bin/smokeit mqtt://localhost:<port>/` | Local workspace | Runs the interactive integration smoke test (Orchestrator, Verifier, and simulated DUT) on the specified port. |
+The final phase performs a purely static, offline analysis of the logs and test reports generated during the cross run to reconcile spec-compliance issues and evolve the specifications.
+
+### Command and Usage:
+```bash
+./bin/run_merger [options]
+```
+
+### Key Options:
+- `-s` or `--sandbox`: Runs the merge agent workflow under sandbox-isolated conditions.
+
+### Operational Sequence:
+1. **Execute Merger Workflow (`@MERGER.md`)**:
+   - Invokes the Gemini merger agent on the parent workspace using the instructions in `MERGER.md`.
+2. **Static Analysis of Artifacts**:
+   - The agent reads `impl/test_summary.txt` to identify failing pairs and inspects the compiled logs in `out/` and `impl/logs/` to understand why they failed.
+   - Analyzes recent git changes/diffs across implementation folders and any `spec_analysis.md` feedback files written by implementation agents.
+3. **Spec and Instruction Refinement**:
+   - **Upstream Fixes**: If failures were due to defects in the immutable third-party `impl/udmi` tools, the agent documents them clearly in a `uufi_analysis.md` file at the workspace root, as dictated by the "Empirical Defect and Impossible Constraint Policy".
+   - **Local Spec Refinement**: Resolves local Butler spec ambiguities or contradictions by editing specifications in the `spec/` directory directly (e.g., `spec/butler.md`).
+   - **Instruction updates**: Refines the rules inside `UPDATE.md` to prevent future implementation divergence.
+4. **Clean Checkout**:
+   - All proposed specification and guideline updates are left staged or unstaged in the active `main` branch, keeping the repository clean and ready for human inspection.
+
+---
+
+## 5. Developer Commands Reference Sheet
+
+| Execution Command | Scope | Purpose & Actions | Primary Outputs & Side Effects |
+| :--- | :--- | :--- | :--- |
+| **`./bin/run_updates`** | Sibling directories (`impl/*`) | Clones/checks out sibling branches, pins UDMI targets, and runs `@UPDATE.md` agent refactoring and smoke tests. | Pushes updated, verified code to sibling branches (`origin/impl_<ID>`). Logs saved to `impl/<ID>.log`. |
+| **`./bin/run_cross`** | Cross-testing matrix | Executes live $N \times (N - 1)$ testing, running each implementation as a verifier against every other implementation as a butler. | Generates `impl/test_summary.txt`, trace files in `impl/<ID>/logs/`, and `out/performance_analysis.txt`. |
+| **`./bin/run_merger`** | Parent workspace (`main`) | Executes the `@MERGER.md` static analysis agent to parse test results, refine specs, and generate upstream analysis. | Updates files under `spec/`, `UPDATE.md`, and creates/updates `uufi_analysis.md` on `main`. |
