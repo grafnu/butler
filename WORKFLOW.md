@@ -2,6 +2,8 @@
 
 This document provides a comprehensive guide to the multi-implementation workflow of the **Butler Managed Update System**. This process is designed to synchronize, test, and merge specifications and implementations across multiple sibling repositories and git branches.
 
+AGENTS: When executing this workflow in a non-interactive capacity, capture observations to a file `workflow_analysis.md` for future processing.
+
 ---
 
 ## 1. Multi-Implementation Architecture
