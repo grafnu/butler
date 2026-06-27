@@ -322,6 +322,8 @@ Handshake protocol requests (Step 1) and replies (Step 2) published over the UUF
 
 ### 12.2. Subsystem State and Catalog Model Alignment
 Simulated devices and DUTs MUST report their actual software and firmware states under the `"system"` subsystem ID (rather than `"main"` or other custom names) to ensure alignment with cloud model catalog updates, which configure desired software versions under the standard `"system"` schema. Furthermore, sourcing of actual software versions MUST be done exclusively under the standard `system.software.<blob_id>` state payload path (e.g., `system.software.system = "{version}"`). Sourcing or parsing from `blobset` is strictly prohibited.
+All messages, payloads, and states exchanged over the transport MUST conform strictly to the formal UDMI schemas (as defined in the `schema/` directory of the UDMI repository, e.g., `impl/udmi/schema/`) and the authoritative UUFI bus transport specification (`impl/udmi/docs/specs/uufi.md`). Specifically, any subsystem software and firmware updates (including those under `blobset`) MUST utilize the standard compliant nested dictionary structures defined by those standard schemas.
+<!-- ASSUMPTION: Pointing to the standard UDMI repository schemas provides the authoritative definitions for all message formats and payload constraints. -->
 
 ### 12.3. Config Command Target Version Attribute
 Any `"blobset"` update config command published by the orchestrator MUST include the target `"version"` string attribute inside the specific blob's dictionary (e.g. `blobset.blobs.<subsystem>.version = "{version}"`). This indicates the target version of the update package, enabling the client or DUT to parse it and successfully complete the update sequence.

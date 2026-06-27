@@ -70,7 +70,7 @@ BASE_DIR="${MAIN_DIR}"
 
 # Check for any uncommitted changes in the parent/main repository
 if [ -d "${MAIN_DIR}/.git" ]; then
-  UNCOMMITTED_CHANGES=$(git -C "${MAIN_DIR}" status --porcelain 2>/dev/null | grep -v -E "bin/run_updates|MERGER.md" || echo "")
+  UNCOMMITTED_CHANGES=$(git -C "${MAIN_DIR}" status --porcelain 2>/dev/null | grep -v -E "bin/run_updates|MERGER.md|\.gitignore|AGENTS.md|UPDATE.md|WORKFLOW.md|bin/run_merger" || echo "")
   if [ -n "${UNCOMMITTED_CHANGES}" ]; then
     echo "Error: Uncommitted or unstaged changes detected in the parent repository. Aborting workflow to prevent stale synchronizations." >&2
     echo "${UNCOMMITTED_CHANGES}" >&2
