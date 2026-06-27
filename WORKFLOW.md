@@ -13,10 +13,6 @@ The integration pipeline maintains strict consistency using a three-phase sequen
            [bin/run_updates]  ===>  [bin/run_cross]  ===>  [bin/run_merger]
 ```
 
-> **ASSUMPTION:** The script `./bin/run_updates` (plural) maps to the user's reference to `run_update`, and `./bin/run_merger` maps to the user's reference to `run_merger`.
-
----
-
 ## 2. Phase 1: Implementation Synchronization and Updates (`bin/run_updates`)
 
 The first phase ensures that all implementation branches are fully updated, checked out, and synchronized with the core specification changes on the parent `main` branch.

@@ -142,4 +142,3 @@ Before finishing, the implementation MUST be verified to prevent regressions:
 3. **Empirical Specification and Tooling Defects**
   - **Do Not Patch Immutable Defects:** If a hard constraint or system utility in the immutable `impl/udmi` repository is logically or structurally broken (such as `reset_config` breaking when parsing secure UUFI connection strings containing `@`, or `observe_uufi` crashing on relative path resolution), the Implementation Agent MUST NOT implement any hacky workarounds or custom helper wrappers to hide the defect.
   - **Explicit Failure Declaration:** Instead, the agent MUST immediately declare that the constraints are impossible to achieve, and output a hard error stating: "the UDMI spec is broken and the system will not work as intended until that is fixed."
-  <!-- ASSUMPTION: Identifying and documenting a structural defect in the environment is a successful completion, preserving specification truth over local workaround hacks. -->
