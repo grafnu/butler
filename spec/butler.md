@@ -1,8 +1,6 @@
 # Butler System Orchestrator
 
-ASSUMPTION: Modifying spec/butler.md to update paths from bin/ to tools/ is explicitly requested by the user, taking precedence over general file modification constraints in AGENTS.md.
-
-The **Butler** is a declarative, state-based fleet management engine for managed software updates. It coordinates updates across a
+**Butler** is a declarative, state-based fleet management engine for managed software updates. It coordinates updates across a
 fleet of devices by managing a state machine for individual device blob updates using the UUFI interface. UUFI is a message
 based interface as part of the UDMI system defined by the path `docs/specs/uufi.md` within the cloned `impl/udmi/` directory (at `impl/udmi/docs/specs/uufi.md` relative to the workspace root).
 
