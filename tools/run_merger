@@ -32,6 +32,24 @@ if ! command -v gemini >/dev/null 2>&1; then
   echo "Error: gemini executable not found in PATH." >&2
   exit 1
 fi
+
+# Phase 2 → Phase 3 Gate: Refuse to run if cross-test evidence is missing or
+# indicates pure infrastructure failure (all FAIL, no PASS).
+SUMMARY_FILE="${BASE_DIR}/impl/test_summary.txt"
+if [ ! -f "${SUMMARY_FILE}" ] || [ ! -s "${SUMMARY_FILE}" ]; then
+  echo "Error: Phase 2→3 gate failed: impl/test_summary.txt is missing or empty." >&2
+  echo "       Run ./tools/run_cross first to generate cross-implementation test evidence." >&2
+  exit 1
+fi
+
+PASS_COUNT=$(grep -c ': PASS' "${SUMMARY_FILE}" 2>/dev/null || echo "0")
+if [ "${PASS_COUNT}" -eq 0 ]; then
+  echo "Error: Phase 2→3 gate failed: impl/test_summary.txt contains no PASS entries." >&2
+  echo "       All pairings failed, indicating infrastructure failure rather than spec issues." >&2
+  echo "       The merger agent cannot distinguish genuine interop defects from environmental failures." >&2
+  exit 1
+fi
+
 GEMINI_BIN="gemini"
 GEMINI_OPTS=("--proxy=false" "--approval-mode" "yolo")
 

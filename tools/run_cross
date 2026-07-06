@@ -35,7 +35,7 @@ done
 
 # Configurable timeouts for event-driven polling (seconds)
 CROSS_HANDSHAKE_TIMEOUT="${CROSS_HANDSHAKE_TIMEOUT:-30}"
-CROSS_TRANSITION_TIMEOUT="${CROSS_TRANSITION_TIMEOUT:-90}"
+CROSS_TRANSITION_TIMEOUT="${CROSS_TRANSITION_TIMEOUT:-240}"
 
 # Clean existing tmp / output logs
 mkdir -p out

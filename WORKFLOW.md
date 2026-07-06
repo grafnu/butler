@@ -24,8 +24,9 @@ Each phase MUST NOT execute unless the preceding phase completed successfully:
 
 The cross-implementation test harness uses event-driven polling instead of fixed sleeps:
 - **Handshake Wait:** Polls for `Handshake completed` in the verifier log up to `CROSS_HANDSHAKE_TIMEOUT` seconds (default: 30s).
-- **Transition Wait:** Polls for `terminal state` in the butler log up to `CROSS_TRANSITION_TIMEOUT` seconds (default: 90s). This accommodates the `BUTLER_TIMEOUT` default of 60s with up to 3 retry attempts as specified in `spec/butler.md` Section 2.1.
+- **Transition Wait:** Polls for `terminal state` in the butler log up to `CROSS_TRANSITION_TIMEOUT` seconds (default: 240s). This accommodates the full `BUTLER_TIMEOUT` retry sequence specified in `spec/butler.md` Section 2.1: an initial 60s timeout plus up to 3 retry attempts spaced 60s apart (worst case: 60 + 3×60 = 240s).
 - Both timeouts are configurable via environment variables.
+- **Per-Implementation Agent Timeout:** Each implementation's `@UPDATE.md` agent run is bounded by `IMPL_TIME` (default: 20 minutes). If an agent times out or crashes, the harness writes a `spec_analysis.md` containing `"PROCESSING ERROR"` (not a genuine spec analysis) to signal the failure. The Merger Agent MUST distinguish these processing errors from real spec-level feedback and not act on them as spec issues.
 
 ## 2. Phase 1: Implementation Synchronization and Updates (`tools/run_updates`)
 
@@ -77,13 +78,17 @@ The second phase executes the live cross-implementation test matrix to verify th
    - Prepares output directories (`out/` and `impl/`) and purges stale logs or metrics.
 2. **Matrix Generation ($N \times N$)**:
    - For each integration track (e.g., track `A`), allocates isolated ports using SHA256 mapping via the shared `tools/port_utils` utility.
-   - Automatically bootstraps the local environment by calling the implementation's setup utility.
+   - Automatically bootstraps the local environment by calling the implementation's setup utility with the `--offline` flag to ensure safe, hermetic execution inside test sandboxes without network-related pip latency.
    - Launches a background message observer to capture network traces.
    - Runs a per-pairing verifier (validator) with an isolated log file (`out/${v}_${b}_verifier.log`) to prevent log accumulation across pairings.
    - Sequentially runs every *other* implementation as the active orchestrator (`butler`) and starts the simulated Pubber device under test (DUT).
    - Simulates a managed firmware update via `site_trigger` and polls for terminal state transitions.
    - The matrix includes self-validation pairs (e.g., `impl_A verifies impl_A`) where the verifier and butler are the same implementation.
-3. **Evidence Collection**:
+   - **Secure Connection Specification:** The cross-test harness uses `mqtts://rocket:monkey@localhost:${port}/` as the connection specification for all track components, providing a fixed principal for certificate-based TLS authentication across all implementations.
+   - **Certificate Sharing:** The harness dynamically symlinks the target butler's certificate directory (`impl/{b}/impl/udmi/var/mosquitto/certs`) to the active verifier's broker certificate folder to ensure cross-implementation certificate trust.
+3. **Teardown**:
+   - After each track completes, the harness calls `bin/setup --stop` to perform hermetic PID-based teardown of local background services (etcd, mosquitto) and then cleans all three branch-mapped ports (MQTT, etcd, etcd peer) using the shared `cleanup_port()` function from `tools/port_utils`.
+4. **Evidence Collection**:
    - Captures and saves full execution traces to `impl/<verifier_id>/logs/<verifier_id>_validates_<butler_id>.log` and copies the trace to the respective butler directory.
    - Analyzes logs to determine if state transitions (`pending -> success`) completed successfully, using exact spec-compliant log patterns from `spec/butler.md` Section 9.2.
    - Generates the authoritative integration test report in `impl/test_summary.txt` listing the exact outcomes (`PASS` or `FAIL`) for every pairing.
@@ -150,4 +155,4 @@ All workflow scripts use the shared `tools/port_utils` utility for consistent br
 | etcd port | MQTT port + 1 | etcd client |
 | etcd peer port | MQTT port + 1001 | etcd peer communication |
 
-Both `run_updates` and `run_cross` clean up all three ports using the shared `cleanup_branch_ports()` function to prevent lingering processes between runs.
+Both `run_updates` and `run_cross` clean up all three ports to prevent lingering processes between runs. `run_updates` uses the shared `cleanup_branch_ports()` function, while `run_cross` calls `cleanup_port()` for each of the three ports individually (as part of its per-track teardown sequence).

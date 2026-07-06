@@ -56,6 +56,12 @@ Translate the analytical findings directly into explicit, rigorous, and authorit
 - **Local Spec Updates:** Update the local `.md` files under `spec/` (e.g., `spec/butler.md`) ONLY to clarify rules that are strictly specific to the Butler application logic and do not overlap with the broader UUFI transport specification. Do not soften requirements or create redundant rules.
 - **Skill Updates:** Update `UPDATE.md` to guide the Implementation Agents on how to handle the clarified rules and avoid repeating the same non-compliance patterns.
 
+### Step 4: Write Implementation Feedback (`merge_analysis.md`)
+For each implementation directory `impl/{ID}/`, the Merger Agent MUST:
+1. **For failing implementations:** Create or update a `merge_analysis.md` file at the root of that implementation's repository (`impl/{ID}/merge_analysis.md`). This file MUST contain a precise, actionable diagnostic report describing the exact cross-implementation failures and non-compliance uncovered during testing, referencing specific log evidence and spec sections. This file is the primary feedback signal consumed by the Implementation Agent during the next `@UPDATE.md` run.
+2. **For passing implementations:** If an implementation had no failures but a `merge_analysis.md` file exists from a previous run, the Merger Agent MUST remove it to signal that the implementation is clean and fully compliant.
+3. **Processing error handling:** If a `spec_analysis.md` file contains `\"PROCESSING ERROR\"` (indicating the agent timed out or crashed during `@UPDATE.md` rather than completing its analysis), the Merger Agent MUST NOT interpret it as a spec-level issue. Instead, it should note the implementation as having a processing failure and skip spec analysis for that implementation.
+
 ---
 
 ## 4. Core Specification Integrity Guidelines
