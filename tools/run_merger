@@ -2,7 +2,7 @@
 #
 # This script runs the Gemini merger integration tests.
 #
-# Usage: ./bin/run_merger
+# Usage: ./tools/run_merger
 
 set -euo pipefail
 

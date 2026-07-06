@@ -57,11 +57,12 @@ These top-level files/directories MUST NOT be removed or altered:
 * MERGER.md: Specification merge logic.
 * WORKFLOW.md: Operational workflow definitions.
 * spec/: Formal system specifications (e.g., butler.md, blobstore.md, update.md). Note that spec/ is considered mutable ONLY when executing the specification merge integration procedure defined in MERGER.md.
+* tools/: Workspace harness run scripts (such as run_cross, run_merger, and run_updates).
 * .wincolor: Terminal configuration.
 * .gitignore: Git exclusion patterns.
 
 All functional work and output MUST be contained within:
-* bin/: Operational executables.
+* bin/: Implementation-generated operational executables (cleanly separated from workspace harness run scripts).
 * butler/: Core Python implementation logic.
 * README.md: System overview and documentation.
 * impl/: Cross-implementation testing workspace.

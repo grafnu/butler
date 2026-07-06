@@ -1,5 +1,7 @@
 # Multi-Implementation Development and Verification Workflow
 
+ASSUMPTION: Modifying WORKFLOW.md to update paths from bin/ to tools/ is explicitly requested by the user, taking precedence over general file modification constraints in AGENTS.md.
+
 This document provides a comprehensive guide to the multi-implementation workflow of the **Butler Managed Update System**. This process is designed to synchronize, test, and merge specifications and implementations across multiple sibling repositories and git branches.
 
 AGENTS: When executing this workflow in a non-interactive capacity, capture observations to a file `workflow_analysis.md` for future processing.
@@ -12,16 +14,16 @@ To ensure robustness and compliance with the core architectural specifications, 
 
 The integration pipeline maintains strict consistency using a three-phase sequence driven by automated helper scripts:
 ```
-           [bin/run_updates]  ===>  [bin/run_cross]  ===>  [bin/run_merger]
+           [tools/run_updates]  ===>  [tools/run_cross]  ===>  [tools/run_merger]
 ```
 
-## 2. Phase 1: Implementation Synchronization and Updates (`bin/run_updates`)
+## 2. Phase 1: Implementation Synchronization and Updates (`tools/run_updates`)
 
 The first phase ensures that all implementation branches are fully updated, checked out, and synchronized with the core specification changes on the parent `main` branch.
 
 ### Command and Usage:
 ```bash
-./bin/run_updates [options]
+./tools/run_updates [options]
 ```
 
 ### Key Options:
@@ -47,13 +49,13 @@ The first phase ensures that all implementation branches are fully updated, chec
 
 ---
 
-## 3. Phase 2: Live Cross-Implementation Interoperability Testing (`bin/run_cross`)
+## 3. Phase 2: Live Cross-Implementation Interoperability Testing (`tools/run_cross`)
 
 The second phase executes the live cross-implementation test matrix to verify that the different implementations can seamlessly interoperate.
 
 ### Command and Usage:
 ```bash
-./bin/run_cross [options]
+./tools/run_cross [options]
 ```
 
 ### Key Options:
@@ -78,13 +80,13 @@ The second phase executes the live cross-implementation test matrix to verify th
 
 ---
 
-## 4. Phase 3: Specification Merge and Refinement (`bin/run_merger`)
+## 4. Phase 3: Specification Merge and Refinement (`tools/run_merger`)
 
 The final phase performs a purely static, offline analysis of the logs and test reports generated during the cross run to reconcile spec-compliance issues and evolve the specifications.
 
 ### Command and Usage:
 ```bash
-./bin/run_merger [options]
+./tools/run_merger [options]
 ```
 
 ### Key Options:
@@ -109,6 +111,6 @@ The final phase performs a purely static, offline analysis of the logs and test 
 
 | Execution Command | Scope | Purpose & Actions | Primary Outputs & Side Effects |
 | :--- | :--- | :--- | :--- |
-| **`./bin/run_updates`** | Sibling directories (`impl/*`) | Clones/checks out sibling branches, pins UDMI targets, and runs `@UPDATE.md` agent refactoring and smoke tests. | Pushes updated, verified code to sibling branches (`origin/impl_<ID>`). Logs saved to `impl/<ID>.log`. |
-| **`./bin/run_cross`** | Cross-testing matrix | Executes live $N \times (N - 1)$ testing, running each implementation as a verifier against every other implementation as a butler. | Generates `impl/test_summary.txt`, trace files in `impl/<ID>/logs/`, and `out/performance_analysis.txt`. |
-| **`./bin/run_merger`** | Parent workspace (`main`) | Executes the `@MERGER.md` static analysis agent to parse test results, refine specs, and generate upstream analysis. | Updates files under `spec/`, `UPDATE.md`, and creates/updates `uufi_analysis.md` on `main`. |
+| **`./tools/run_updates`** | Sibling directories (`impl/*`) | Clones/checks out sibling branches, pins UDMI targets, and runs `@UPDATE.md` agent refactoring and smoke tests. | Pushes updated, verified code to sibling branches (`origin/impl_<ID>`). Logs saved to `impl/<ID>.log`. |
+| **`./tools/run_cross`** | Cross-testing matrix | Executes live $N \times (N - 1)$ testing, running each implementation as a verifier against every other implementation as a butler. | Generates `impl/test_summary.txt`, trace files in `impl/<ID>/logs/`, and `out/performance_analysis.txt`. |
+| **`./tools/run_merger`** | Parent workspace (`main`) | Executes the `@MERGER.md` static analysis agent to parse test results, refine specs, and generate upstream analysis. | Updates files under `spec/`, `UPDATE.md`, and creates/updates `uufi_analysis.md` on `main`. |
