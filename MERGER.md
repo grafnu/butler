@@ -1,8 +1,3 @@
-DO NOT ASK FOR CLARIFICATION OR DIRECTION. YOU ARE AN AUTONONOMOUS
-AGENT WITHOUT THE ABILITY TO ASK QUESTIONS OR SEEK ADVICE.
-
-ASSUMPTION: Modifying MERGER.md to update paths from bin/ to tools/ is explicitly requested by the user, taking precedence over general file modification constraints in AGENTS.md.
-
 # Instructions for Static Merge Analysis & Specification Refinement (MERGER.md)
 
 This file governs the **Specification Merge** phase of the development lifecycle. This phase is executed strictly *after* a cross-implementation verification run (via `tools/run_cross`) has been completed. 

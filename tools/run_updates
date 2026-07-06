@@ -68,6 +68,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAIN_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BASE_DIR="${MAIN_DIR}"
 
+# Source shared port allocation and cleanup utility
+source "${SCRIPT_DIR}/port_utils"
+
 # Check for any uncommitted changes in the parent/main repository
 if [ -d "${MAIN_DIR}/.git" ]; then
   UNCOMMITTED_CHANGES=$(git -C "${MAIN_DIR}" status --porcelain 2>/dev/null | grep -v -E "tools/run_updates|MERGER.md|\.gitignore|AGENTS.md|UPDATE.md|WORKFLOW.md|tools/run_merger" || echo "")
@@ -201,48 +204,8 @@ echo "All repositories synchronized to UDMI version: ${FIRST_UDMI_TIMESTAMP} (${
 echo "=== Base Directory Structure Verified/Constructed ==="
 
 # Calculate branch-specific port and clean up lingering processes on it
-cleanup_branch_ports() {
-  local branch_name="$1"
-
-  # Calculating the dynamic branch-mapped port via python3
-  # guarantees that the entire 256-bit SHA256 hex string can be parsed as
-  # an arbitrary-precision integer, perfectly matching the specification
-  # and implementation formulas while completely avoiding bash 64-bit overflow.
-  local port
-  port=$(python3 -c "
-import hashlib
-h = hashlib.sha256(b'${branch_name}').hexdigest()
-print(45000 + (int(h, 16) % 3000))
-")
-
-  local etcd_port=$((port + 1))
-  local etcd_peer_port=$((port + 1001))
-
-  for p in "${port}" "${etcd_port}" "${etcd_peer_port}"; do
-    if lsof -i :"${p}" -t >/dev/null 2>&1; then
-      local pids
-      pids=$(lsof -i :"${p}" -t)
-      echo "Port ${p} is occupied by lingering processes (PIDs: ${pids}) for ${branch_name}. Terminating..."
-      for pid in ${pids}; do
-        if kill -0 "${pid}" 2>/dev/null; then
-          kill -15 "${pid}" 2>/dev/null # SIGTERM
-          # Wait up to 3 seconds for graceful exit
-          for _ in {1..30}; do
-            sleep 0.1
-            if ! kill -0 "${pid}" 2>/dev/null; then
-              break
-            fi
-          done
-          # Force kill if still running
-          if kill -0 "${pid}" 2>/dev/null; then
-            echo "Process ${pid} did not terminate gracefully. Force killing..."
-            kill -9 "${pid}" 2>/dev/null # SIGKILL
-          fi
-        fi
-      done
-    fi
-  done
-}
+# Uses the shared cleanup_branch_ports function from tools/port_utils
+# which cleans all 3 ports: MQTT (port), etcd (port+1), etcd_peer (port+1001)
 
 echo "=== Cleaning Up Lingering Port Processes on Startup ==="
 for ID in "${IMPLEMENTATIONS[@]}"; do
@@ -384,3 +347,13 @@ for ID in "${IMPLEMENTATIONS[@]}"; do
   echo "Update impl_${ID}:  ${INDIVIDUAL_TIMES["$ID"]}s"
 done
 echo "============================="
+
+# Issue #2 fix: Exit non-zero if any implementation failed to update,
+# so that phase gating via `run_updates && run_cross` is enforced.
+if [ ${#FAILED_IMPLS[@]} -gt 0 ]; then
+  echo "FAILURE: ${#FAILED_IMPLS[@]} implementation(s) failed: ${FAILED_IMPLS[*]}" >&2
+  echo "Phase 2 (run_cross) should not be executed until these failures are resolved." >&2
+  exit 1
+fi
+
+exit 0

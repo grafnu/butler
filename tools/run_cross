@@ -16,6 +16,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAIN_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${MAIN_DIR}"
 
+# Source shared port allocation and cleanup utility
+source "${SCRIPT_DIR}/port_utils"
+
 # List of implementations
 IMPLEMENTATIONS=("A" "B" "C" "D")
 
@@ -30,59 +33,53 @@ for arg in "$@"; do
   fi
 done
 
+# Configurable timeouts for event-driven polling (seconds)
+CROSS_HANDSHAKE_TIMEOUT="${CROSS_HANDSHAKE_TIMEOUT:-30}"
+CROSS_TRANSITION_TIMEOUT="${CROSS_TRANSITION_TIMEOUT:-90}"
+
 # Clean existing tmp / output logs
 mkdir -p out
 mkdir -p impl
 rm -f impl/test_summary.txt.tmp out/metrics.tmp
 
-# Setup cleanup function for port-based targeting
-cleanup_ports() {
-  local p="$1"
-  if lsof -i :"${p}" -t >/dev/null 2>&1; then
-    local pids
-    pids=$(lsof -i :"${p}" -t)
-    for pid in ${pids}; do
-      if [ "${pid}" -ne "$$" ] && [ "${pid}" -ne "$PPID" ]; then
-        if kill -0 "${pid}" 2>/dev/null; then
-          # Always target exact process ID and check for mosquitto and etcd specifically
-          local comm_name
-          comm_name=$(ps -p "${pid}" -o comm= | tr -d ' ' || echo "")
-          if [[ "${comm_name}" == *mosquitto* || "${comm_name}" == *etcd* ]]; then
-            kill -15 "${pid}" 2>/dev/null || true
-            sleep 0.5
-            if kill -0 "${pid}" 2>/dev/null; then
-              kill -9 "${pid}" 2>/dev/null || true
-            fi
-          fi
-        fi
-      fi
-    done
-  fi
+# Poll for a log pattern in a file up to a configurable timeout.
+# Returns 0 if pattern found, 1 if timeout reached.
+poll_for_pattern() {
+  local file="$1"
+  local pattern="$2"
+  local timeout="${3:-60}"
+  local elapsed=0
+  while [ "${elapsed}" -lt "${timeout}" ]; do
+    if [ -f "${file}" ] && grep -q "${pattern}" "${file}" 2>/dev/null; then
+      return 0
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+  return 1
 }
 
 run_track() {
   local v="$1"
   local track_start=$SECONDS
 
-  # Calculate branch/variant specific ports
+  # Calculate branch/variant specific ports using shared utility
   local port
-  port=$(python3 -c "
-import hashlib
-h = hashlib.sha256(b'impl_${v}').hexdigest()
-print(45000 + (int(h, 16) % 3000))
-")
+  port=$(calculate_branch_port "impl_${v}")
   local etcd_port=$((port + 1))
+  local etcd_peer_port=$((port + 1001))
   local conn_spec="mqtts://rocket:monkey@localhost:${port}/"
 
   echo "[Track impl_${v}] Initializing environment on port {${port}}..." >&2
-  cleanup_ports "${port}"
-  cleanup_ports "${etcd_port}"
+  cleanup_port "${port}"
+  cleanup_port "${etcd_port}"
+  cleanup_port "${etcd_peer_port}"
 
   # 1. Run Setup
   local setup_start=$SECONDS
   local setup_log="out/${v}_setup.log"
   local ret=0
-  
+
   # Execute setup cleanly in sibling directory
   (
     cd "impl/${v}"
@@ -123,7 +120,7 @@ print(45000 + (int(h, 16) % 3000))
 
   local broker_startup_dur=$(( SECONDS - broker_startup_start ))
 
-  # 3. Start Background Message Observer
+  # 3. Start Background Message Observer (once per track, for evidence collection)
   local observe_log="out/${v}_observe.log"
   (
     cd "impl/${v}"
@@ -133,23 +130,25 @@ print(45000 + (int(h, 16) % 3000))
     echo $! > "../../out/${v}_observe.pid"
   )
 
-  # 4. Start Background Verifier (Validator)
-  local verifier_log="out/${v}_verifier.log"
-  (
-    cd "impl/${v}"
-    export MQTT_PORT="${port}"
-    export ETCD_PORT="${etcd_port}"
-    bin/verifier "${conn_spec}" < /dev/null > "../../${verifier_log}" 2>&1 &
-    echo $! > "../../out/${v}_verifier.pid"
-  )
-
-  # Give baseline processes a boot moment
-  sleep 5
-
-  # 5. Sequentially run target butler implementations
+  # 4. Sequentially run target butler implementations
   for b in "${IMPLEMENTATIONS[@]}"; do
     local pair_start=$SECONDS
     echo "[Track impl_${v}] Launching target butler impl_${b}..." >&2
+
+    # Start per-pairing verifier with isolated log file
+    # (Issue #1 fix: per-pairing verifier restart prevents log accumulation
+    #  and false-positive success detection across pairings)
+    local verifier_log="out/${v}_${b}_verifier.log"
+    (
+      cd "impl/${v}"
+      export MQTT_PORT="${port}"
+      export ETCD_PORT="${etcd_port}"
+      bin/verifier "${conn_spec}" < /dev/null > "../../${verifier_log}" 2>&1 &
+      echo $! > "../../out/${v}_${b}_verifier.pid"
+    )
+
+    # Brief boot moment for verifier to initialize
+    sleep 2
 
     # Start target butler
     local butler_log="out/${v}_${b}_butler.log"
@@ -176,8 +175,9 @@ print(45000 + (int(h, 16) % 3000))
       echo $! > "../../out/${v}_${b}_pubber.pid"
     )
 
-    # Handshake wait
-    sleep 10
+    # Poll for handshake completion
+    # (Issue #3 fix: event-driven polling replaces blind sleep 10)
+    poll_for_pattern "${verifier_log}" "Handshake completed" "${CROSS_HANDSHAKE_TIMEOUT}" || true
 
     # Trigger software update
     local trigger_log="out/${v}_${b}_trigger.log"
@@ -188,10 +188,12 @@ print(45000 + (int(h, 16) % 3000))
       impl/udmi/bin/site_trigger "update" "testing/udmi_site_model" "AHU-1" "system" "1.1.0" "${conn_spec}" < /dev/null > "../../${trigger_log}" 2>&1 || true
     )
 
-    # Transition wait
-    sleep 15
+    # Poll for terminal state in butler log
+    # (Issue #3 fix: event-driven polling replaces blind sleep 15;
+    #  timeout accommodates BUTLER_TIMEOUT=60s with retries)
+    poll_for_pattern "${butler_log}" "terminal state" "${CROSS_TRANSITION_TIMEOUT}" || true
 
-    # Safe Port/PID-Based Targeting teardown
+    # Safe PID-Based teardown for butler
     if [ -f "out/${v}_${b}_butler.pid" ]; then
       local b_pid
       b_pid=$(cat "out/${v}_${b}_butler.pid")
@@ -203,6 +205,7 @@ print(45000 + (int(h, 16) % 3000))
       rm -f "out/${v}_${b}_butler.pid"
     fi
 
+    # Safe PID-Based teardown for DUT
     if [ -f "out/${v}_${b}_pubber.pid" ]; then
       local p_pid
       p_pid=$(cat "out/${v}_${b}_pubber.pid")
@@ -214,15 +217,29 @@ print(45000 + (int(h, 16) % 3000))
       rm -f "out/${v}_${b}_pubber.pid"
     fi
 
-    # Verify compliance and update success
+    # Teardown per-pairing verifier
+    if [ -f "out/${v}_${b}_verifier.pid" ]; then
+      local ver_pid
+      ver_pid=$(cat "out/${v}_${b}_verifier.pid")
+      if kill -0 "${ver_pid}" 2>/dev/null; then
+        kill -15 "${ver_pid}" 2>/dev/null || true
+        sleep 0.5
+        kill -9 "${ver_pid}" 2>/dev/null || true
+      fi
+      rm -f "out/${v}_${b}_verifier.pid"
+    fi
+
+    # Verify compliance using exact spec-compliant log patterns
+    # (Issue #4 fix: strict pattern matching from spec/butler.md Section 9.2,
+    #  no loose grep -qi "success" fallback)
     local success=0
     if [ -f "${verifier_log}" ]; then
-      if grep -q "pending -> success" "${verifier_log}" 2>/dev/null || grep -qi "success" "${verifier_log}" 2>/dev/null; then
+      if grep -q "VERIFIER \[INFO\]: State transition for.*pending -> success" "${verifier_log}" 2>/dev/null; then
         success=1
       fi
     fi
     if [ "${success}" -eq 0 ] && [ -f "${butler_log}" ]; then
-      if grep -q "terminal state success" "${butler_log}" 2>/dev/null || grep -qi "success" "${butler_log}" 2>/dev/null; then
+      if grep -q "\[butler\] Device.*terminal state success with version" "${butler_log}" 2>/dev/null; then
         success=1
       fi
     fi
@@ -264,18 +281,7 @@ print(45000 + (int(h, 16) % 3000))
     } >> out/metrics.tmp
   done
 
-  # Teardown verifier & observer
-  if [ -f "out/${v}_verifier.pid" ]; then
-    local v_pid
-    v_pid=$(cat "out/${v}_verifier.pid")
-    if kill -0 "${v_pid}" 2>/dev/null; then
-      kill -15 "${v_pid}" 2>/dev/null || true
-      sleep 0.5
-      kill -9 "${v_pid}" 2>/dev/null || true
-    fi
-    rm -f "out/${v}_verifier.pid"
-  fi
-
+  # Teardown observer
   if [ -f "out/${v}_observe.pid" ]; then
     local o_pid
     o_pid=$(cat "out/${v}_observe.pid")
@@ -292,10 +298,11 @@ print(45000 + (int(h, 16) % 3000))
     cd "impl/${v}"
     export MQTT_PORT="${port}"
     export ETCD_PORT="${etcd_port}"
-    bin/setup "${conn_spec}" --stop < /dev/null >/dev/null 2>&1 || true
+    bin/setup "${conn_spec}" --stop < /dev/null > /dev/null 2>&1 || true
   )
-  cleanup_ports "${port}"
-  cleanup_ports "${etcd_port}"
+  cleanup_port "${port}"
+  cleanup_port "${etcd_port}"
+  cleanup_port "${etcd_peer_port}"
 
   local track_dur=$(( SECONDS - track_start ))
   echo "Track impl_${v} Duration: ${track_dur}s" >> out/metrics.tmp

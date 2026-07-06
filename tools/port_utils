@@ -1,0 +1,59 @@
+#!/bin/bash
+#
+# Shared port allocation and cleanup utility for run_updates and run_cross.
+# Provides consistent branch-mapped port calculation and process teardown
+# across all workflow phases.
+#
+# This file is sourced (not executed directly) by the workflow scripts.
+
+# Calculate the branch-mapped MQTT port for a given branch name.
+# Uses SHA256 hash modulo 3000, offset by 45000 (range: 45000-47999)
+# as specified in spec/butler.md Section 10.
+calculate_branch_port() {
+  local branch_name="$1"
+  python3 -c "
+import hashlib
+h = hashlib.sha256(b'${branch_name}').hexdigest()
+print(45000 + (int(h, 16) % 3000))
+"
+}
+
+# Kill a process on a specific port if it is mosquitto or etcd.
+# Sends SIGTERM first, then SIGKILL after a 0.5s grace period.
+# Only targets mosquitto and etcd processes to avoid killing unrelated services.
+cleanup_port() {
+  local p="$1"
+  if lsof -i :"${p}" -t >/dev/null 2>&1; then
+    local pids
+    pids=$(lsof -i :"${p}" -t)
+    for pid in ${pids}; do
+      if [ "${pid}" -ne "$$" ] && [ "${pid}" -ne "$PPID" ]; then
+        if kill -0 "${pid}" 2>/dev/null; then
+          local comm_name
+          comm_name=$(ps -p "${pid}" -o comm= | tr -d ' ' || echo "")
+          if [[ "${comm_name}" == *mosquitto* || "${comm_name}" == *etcd* ]]; then
+            kill -15 "${pid}" 2>/dev/null || true
+            sleep 0.5
+            if kill -0 "${pid}" 2>/dev/null; then
+              kill -9 "${pid}" 2>/dev/null || true
+            fi
+          fi
+        fi
+      fi
+    done
+  fi
+}
+
+# Calculate all ports for a branch and clean up lingering processes on all of them.
+# Cleans: MQTT port, etcd port (port+1), etcd peer port (port+1001).
+cleanup_branch_ports() {
+  local branch_name="$1"
+  local port
+  port=$(calculate_branch_port "${branch_name}")
+  local etcd_port=$((port + 1))
+  local etcd_peer_port=$((port + 1001))
+
+  for p in "${port}" "${etcd_port}" "${etcd_peer_port}"; do
+    cleanup_port "${p}"
+  done
+}

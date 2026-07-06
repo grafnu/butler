@@ -1,10 +1,6 @@
 # Multi-Implementation Development and Verification Workflow
 
-ASSUMPTION: Modifying WORKFLOW.md to update paths from bin/ to tools/ is explicitly requested by the user, taking precedence over general file modification constraints in AGENTS.md.
 
-This document provides a comprehensive guide to the multi-implementation workflow of the **Butler Managed Update System**. This process is designed to synchronize, test, and merge specifications and implementations across multiple sibling repositories and git branches.
-
-AGENTS: When executing this workflow in a non-interactive capacity, capture observations to a file `workflow_analysis.md` for future processing.
 
 ---
 
@@ -14,8 +10,22 @@ To ensure robustness and compliance with the core architectural specifications, 
 
 The integration pipeline maintains strict consistency using a three-phase sequence driven by automated helper scripts:
 ```
-           [tools/run_updates]  ===>  [tools/run_cross]  ===>  [tools/run_merger]
+           [tools/run_updates]  ====>  [tools/run_cross]  ====>  [tools/run_merger]
 ```
+
+### Phase Gating
+
+Each phase MUST NOT execute unless the preceding phase completed successfully:
+
+1. **Phase 1 → Phase 2 Gate:** `tools/run_cross` MUST NOT execute if any implementation in Phase 1 (`tools/run_updates`) failed or timed out. `run_updates` exits non-zero if any implementation failed, so chained execution (`run_updates && run_cross`) enforces this gate automatically.
+2. **Phase 2 → Phase 3 Gate:** `tools/run_merger` MUST NOT execute if `impl/test_summary.txt` is missing, empty, or contains only `FAIL` entries (indicating infrastructure failure rather than spec issues). If all pairings failed, the merger agent cannot distinguish genuine interop defects from environmental failures.
+
+### Timing Model
+
+The cross-implementation test harness uses event-driven polling instead of fixed sleeps:
+- **Handshake Wait:** Polls for `Handshake completed` in the verifier log up to `CROSS_HANDSHAKE_TIMEOUT` seconds (default: 30s).
+- **Transition Wait:** Polls for `terminal state` in the butler log up to `CROSS_TRANSITION_TIMEOUT` seconds (default: 90s). This accommodates the `BUTLER_TIMEOUT` default of 60s with up to 3 retry attempts as specified in `spec/butler.md` Section 2.1.
+- Both timeouts are configurable via environment variables.
 
 ## 2. Phase 1: Implementation Synchronization and Updates (`tools/run_updates`)
 
@@ -65,16 +75,17 @@ The second phase executes the live cross-implementation test matrix to verify th
 ### Operational Sequence:
 1. **Clean Workspace**:
    - Prepares output directories (`out/` and `impl/`) and purges stale logs or metrics.
-2. **Matrix Generation ($N \times (N - 1)$)**:
-   - For each integration track (e.g., track `A`), allocates isolated ports using SHA256 mapping.
+2. **Matrix Generation ($N \times N$)**:
+   - For each integration track (e.g., track `A`), allocates isolated ports using SHA256 mapping via the shared `tools/port_utils` utility.
    - Automatically bootstraps the local environment by calling the implementation's setup utility.
    - Launches a background message observer to capture network traces.
-   - Runs a background validator/verifier utilizing the implementation's own `verifier` executable.
+   - Runs a per-pairing verifier (validator) with an isolated log file (`out/${v}_${b}_verifier.log`) to prevent log accumulation across pairings.
    - Sequentially runs every *other* implementation as the active orchestrator (`butler`) and starts the simulated Pubber device under test (DUT).
-   - Simulates a managed firmware update via `site_trigger` and waits for state transitions to complete.
+   - Simulates a managed firmware update via `site_trigger` and polls for terminal state transitions.
+   - The matrix includes self-validation pairs (e.g., `impl_A verifies impl_A`) where the verifier and butler are the same implementation.
 3. **Evidence Collection**:
    - Captures and saves full execution traces to `impl/<verifier_id>/logs/<verifier_id>_validates_<butler_id>.log` and copies the trace to the respective butler directory.
-   - Analyzes logs to determine if state transitions (`pending -> success`) completed successfully.
+   - Analyzes logs to determine if state transitions (`pending -> success`) completed successfully, using exact spec-compliant log patterns from `spec/butler.md` Section 9.2.
    - Generates the authoritative integration test report in `impl/test_summary.txt` listing the exact outcomes (`PASS` or `FAIL`) for every pairing.
    - Records detailed timing and execution metrics in `out/performance_analysis.txt`.
 
@@ -111,6 +122,32 @@ The final phase performs a purely static, offline analysis of the logs and test 
 
 | Execution Command | Scope | Purpose & Actions | Primary Outputs & Side Effects |
 | :--- | :--- | :--- | :--- |
-| **`./tools/run_updates`** | Sibling directories (`impl/*`) | Clones/checks out sibling branches, pins UDMI targets, and runs `@UPDATE.md` agent refactoring and smoke tests. | Pushes updated, verified code to sibling branches (`origin/impl_<ID>`). Logs saved to `impl/<ID>.log`. |
-| **`./tools/run_cross`** | Cross-testing matrix | Executes live $N \times (N - 1)$ testing, running each implementation as a verifier against every other implementation as a butler. | Generates `impl/test_summary.txt`, trace files in `impl/<ID>/logs/`, and `out/performance_analysis.txt`. |
+| **`./tools/run_updates`** | Sibling directories (`impl/*`) | Clones/checks out sibling branches, pins UDMI targets, and runs `@UPDATE.md` agent refactoring and smoke tests. Exits non-zero if any implementation fails. | Pushes updated, verified code to sibling branches (`origin/impl_<ID>`). Logs saved to `impl/<ID>.log`. |
+| **`./tools/run_cross`** | Cross-testing matrix | Executes live $N \times N$ testing, running each implementation as a verifier against every implementation as a butler. Uses per-pairing verifier logs and event-driven polling. | Generates `impl/test_summary.txt`, trace files in `impl/<ID>/logs/`, and `out/performance_analysis.txt`. |
 | **`./tools/run_merger`** | Parent workspace (`main`) | Executes the `@MERGER.md` static analysis agent to parse test results, refine specs, and generate upstream analysis. | Updates files under `spec/`, `UPDATE.md`, and creates/updates `uufi_analysis.md` on `main`. |
+
+---
+
+## 6. Feedback File Reference
+
+The workflow uses three feedback files for inter-agent communication. Each has a specific writer, reader, and lifecycle:
+
+| File | Location | Writer | Reader | Purpose | Lifecycle |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`spec_analysis.md`** | Implementation root (`impl/<ID>/spec_analysis.md`) | Implementation Agent (`UPDATE.md`) | Merger Agent (`MERGER.md`) | Documents spec ambiguities, contradictions, or external incompatibilities found during implementation. | Created/updated when issues found; **removed** when spec is clear and correct. |
+| **`merge_analysis.md`** | Implementation root (`impl/<ID>/merge_analysis.md`) | Merger Agent (`MERGER.md`) | Implementation Agent (`UPDATE.md`) | Documents implementation-specific failures and non-compliance found during cross-testing. | Created when failures found; **removed** by Implementation Agent once resolved. |
+| **`uufi_analysis.md`** | Parent workspace root (`uufi_analysis.md`) | Merger Agent (`MERGER.md`) | Human / Upstream | Documents upstream UUFI spec defects in the immutable `impl/udmi` that cannot be fixed locally. | Created/updated when upstream defects found; persists for human review. |
+
+---
+
+## 7. Port Allocation Scheme
+
+All workflow scripts use the shared `tools/port_utils` utility for consistent branch-mapped port allocation and cleanup. Each implementation gets three ports:
+
+| Port | Formula | Purpose |
+| :--- | :--- | :--- |
+| MQTT port | `45000 + (SHA256(branch_name) % 3000)` | MQTT broker |
+| etcd port | MQTT port + 1 | etcd client |
+| etcd peer port | MQTT port + 1001 | etcd peer communication |
+
+Both `run_updates` and `run_cross` clean up all three ports using the shared `cleanup_branch_ports()` function to prevent lingering processes between runs.
