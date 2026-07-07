@@ -54,6 +54,14 @@ Through this continuous loop of verification and feedback (Merger Agent) and ref
    - This check can be performed using standard utilities (such as `ss -lntp`, `netstat`, or `lsof`) or programmatic socket connection attempts.
    - If an active broker or process is detected on the target port outside of the test runner's orchestration, the runner MUST list the active process info and PID (if accessible) to standard error to assist in diagnosing and debugging rogue or manually started brokers before proceeding.
 
+5. **API Rate-Limiting, Turn Pacing, and Token Context Efficiency:**
+   - To prevent Gemini/Vertex AI API rate-limiting errors (such as HTTP 429 / RESOURCE_EXHAUSTED) and ensure high stability across implementation updates, the agent MUST strictly adhere to these pacing and token compression policies:
+     * **Intra-Agent Turn Pacing:** When executing shell commands via `run_shell_command` or doing sequential operations, the agent MUST explicitly pace itself by prepending or appending a sleep command (e.g., `sleep 3`) to allow sliding-window API quotas to breathe.
+     * **Context and Token Compression:**
+       - NEVER read entire large files if only a specific section is needed. Always use targeted, surgical range-based reads (`start_line` and `end_line` parameters) when using `read_file`.
+       - Prefer searching with `grep_search` and `glob` with a narrow scope (such as `include_pattern` or `exclude_pattern`) and conservative `total_max_matches` limits rather than scanning directories or reading multiple files individually.
+       - Combine multiple steps (such as staging, checking git status, and committing) into a single turn to minimize total turn counts. Fewer conversational turns directly translates to exponentially fewer input tokens.
+
 ---
 
 ## Code Compliance, Spec Auditing & Bidirectional Feedback

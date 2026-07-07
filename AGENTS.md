@@ -78,3 +78,11 @@ To prevent specification leakage, brittle duplication, and integration-time conf
 1. Under no circumstances shall local Butler specifications (`spec/butler.md`) or implementation guidelines duplicate, redefine, or introduce custom layout definitions for UDMI-compliant components (such as `blobset`, `system`, or standard handshakes).
 2. All messages, states, events, and configuration commands exchanged over the transport MUST match character-for-character the official UDMI schemas (located in `impl/udmi/schema/`) and the communication bus standards defined in `impl/udmi/docs/specs/uufi.md`.
 3. Butler is strictly an application-layer consumer and reconciler concerned solely with identifying expected and actual values to execute state machine transitions. It must dynamically extract these values from the standard UDMI/UUFI schema-defined locations.
+
+**API Rate-Limiting, Turn Pacing, and Token Context Efficiency Mandates:**
+To prevent Gemini/Vertex AI API rate-limiting errors (such as HTTP 429 / RESOURCE_EXHAUSTED) and ensure high stability across implementation updates, the agent MUST strictly adhere to these pacing and token compression policies:
+1. **Intra-Agent Turn Pacing:** When executing shell commands via `run_shell_command` or doing sequential operations, the agent MUST explicitly pace itself by prepending or appending a sleep command (e.g., `sleep 3`) to allow sliding-window API quotas to breathe.
+2. **Context and Token Compression:**
+   - NEVER read entire large files if only a specific section is needed. Always use targeted, surgical range-based reads (`start_line` and `end_line` parameters) when using `read_file`.
+   - Prefer searching with `grep_search` and `glob` with a narrow scope (such as `include_pattern` or `exclude_pattern`) and conservative `total_max_matches` limits rather than scanning directories or reading multiple files individually.
+   - Combine multiple steps (such as staging, checking git status, and committing) into a single turn to minimize total turn counts. Fewer conversational turns directly translates to exponentially fewer input tokens.

@@ -63,6 +63,9 @@ if [ "${USE_SANDBOX}" = "true" ]; then
   SANDBOX_OPTS=("-s")
 fi
 
+# Inter-implementation sequential cooldown delay to clear sliding-window API quotas (TPM/RPM)
+SEQUENTIAL_COOLDOWN_SECS="${SEQUENTIAL_COOLDOWN_SECS:-75}"
+
 # Determine directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAIN_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -281,6 +284,12 @@ for ID in "${IMPLEMENTATIONS[@]}"; do
     else
       echo "FAILURE: impl_${ID} update failed in ${ELAPSED_INDIVIDUAL}s. Check log: ${LOG_FILE}"
       FAILED_IMPLS+=("${ID}")
+    fi
+
+    # Sequential cooldown to let sliding rate limit window clear
+    if [ "${ID}" != "${IMPLEMENTATIONS[-1]}" ]; then
+      echo "Cooldown: Sleeping ${SEQUENTIAL_COOLDOWN_SECS}s before starting next implementation run to clear API quota..."
+      sleep "${SEQUENTIAL_COOLDOWN_SECS}"
     fi
   fi
 done
