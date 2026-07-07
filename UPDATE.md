@@ -108,8 +108,12 @@ Before finishing, the implementation MUST be verified to prevent regressions:
    - **Shared Port Prohibition:** To allow simultaneous test runs on the same machine, sharing default MQTT ports (e.g., `1883`, `8883`) or etcd ports is strictly prohibited. The system MUST dynamically allocate or negotiate isolated, non-default ports for the local MQTT broker and etcd instances as specified by the SHA256 branch hashing port mapping formula in `spec/butler.md` Section 10.
    - *No Diagnosis of UDMIS Errors:* The system MUST NOT attempt to diagnose or fix any potential errors with UDMIS. Specifically, when starting the broker or DUT, it should either work as specified or report an error. The system should either start up and work as intended, or fail with a clear error indicating that the UDMIS specification or system is broken.
    - *Blobstore Provider Configuration:* During this automated update flow, the system must default to a local provider. It is acceptable to specify a non-local `BUTLER_BLOBSTORE_PROVIDER` (such as `gcs`) ONLY if it is explicitly configured via environment variables and all necessary authentication and cloud resources are already set up.
+   - **Idempotency and Message-Based Protocols:** All orchestrator, verifier, and simulated device (Pubber) components MUST support running in isolated network environments without access to a shared filesystem or process tracking. Handshakes and success/error reporting MUST be managed strictly over the message bus (MQTT/UUFI):
+     * *Handshake Gating:* The handshake outcome must be explicitly published on the message bus. If a handshake fails or times out, the orchestration sequence MUST immediately terminate, completely preventing any transition or trigger phase.
+     * *Error Signaling:* Any fatal runtime, connection, or protocol violation errors MUST be published as standard UDMI validation events with `"level": "ERROR"`. 
+     * *Idempotent Pubber:* The Pubber client must be treated as a long-running, idempotent simulation client. It must be launched once at the start of a sequence and persist through subsequent butler launches without being restarted, processing configurations natively as they arrive over the bus.
 
-2. **Execute Code Quality & Unit Tests:**
+   2. **Execute Code Quality & Unit Tests:**
    - Prior to running integration smoke tests, the update flow MUST execute any configured static code analysis tools, linters, or standard unit tests if they are configured in the repository to verify code health.
 
 3. **Execute Smoke Tests:**

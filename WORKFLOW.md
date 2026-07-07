@@ -18,7 +18,7 @@ The integration pipeline maintains strict consistency using a three-phase sequen
 Each phase MUST NOT execute unless the preceding phase completed successfully:
 
 1. **Phase 1 → Phase 2 Gate:** `tools/run_cross` MUST NOT execute if any implementation in Phase 1 (`tools/run_updates`) failed or timed out. `run_updates` exits non-zero if any implementation failed, so chained execution (`run_updates && run_cross`) enforces this gate automatically.
-2. **Phase 2 → Phase 3 Gate:** `tools/run_merger` MUST NOT execute if `impl/test_summary.txt` is missing, empty, or contains only `FAIL` entries (indicating infrastructure failure rather than spec issues). If all pairings failed, the merger agent cannot distinguish genuine interop defects from environmental failures.
+2. **Phase 2 → Phase 3 Gate:** `tools/run_merger` MUST NOT execute if `impl/test_summary.txt` is missing, empty, or contains only `FAIL` entries (indicating infrastructure failure rather than spec issues). *Exception:* If the test failures are caused by a system-wide upstream specification or tooling defect detected in the test logs (e.g., `Unknown iotProvider jwt`), the gate is bypassed so that the Merger Agent can execute, statically analyze the logs, and automatically generate the required `uufi_analysis.md` file on the `main` branch.
 
 ### Timing Model
 

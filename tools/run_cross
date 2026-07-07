@@ -70,6 +70,13 @@ run_track() {
   local etcd_peer_port=$((port + 1001))
   local conn_spec="mqtts://rocket:monkey@localhost:${port}/"
 
+  # Clean up any existing cross-track symlinks to avoid self-referential cycles
+  for b in "${IMPLEMENTATIONS[@]}"; do
+    if [ -L "impl/${b}/impl/udmi/var/mosquitto/certs" ]; then
+      rm -f "impl/${b}/impl/udmi/var/mosquitto/certs"
+    fi
+  done
+
   echo "[Track impl_${v}] Initializing environment on port {${port}}..." >&2
   cleanup_port "${port}"
   cleanup_port "${etcd_port}"
@@ -130,6 +137,16 @@ run_track() {
     echo $! > "../../out/${v}_observe.pid"
   )
 
+  # 3.5 Start Long-Running Idempotent DUT (Pubber) once per track
+  local pubber_log="out/${v}_pubber.log"
+  (
+    cd "impl/${v}"
+    export MQTT_PORT="${port}"
+    export ETCD_PORT="${etcd_port}"
+    impl/udmi/bin/start_dut "testing/udmi_site_model" "${conn_spec}" "AHU-1" < /dev/null > "../../${pubber_log}" 2>&1 &
+    echo $! > "../../out/${v}_pubber.pid"
+  )
+
   # 4. Sequentially run target butler implementations
   for b in "${IMPLEMENTATIONS[@]}"; do
     local pair_start=$SECONDS
@@ -153,26 +170,18 @@ run_track() {
     # Start target butler
     local butler_log="out/${v}_${b}_butler.log"
     # Ensure target butler can dynamically load and trust the active track's broker certificates
-    local b_cert_dir="impl/${b}/impl/udmi/var/mosquitto"
-    mkdir -p "${b_cert_dir}"
-    rm -rf "${b_cert_dir}/certs"
-    ln -sf "$(pwd)/impl/${v}/impl/udmi/var/mosquitto/certs" "${b_cert_dir}/certs"
+    if [ "${v}" != "${b}" ]; then
+      local b_cert_dir="impl/${b}/impl/udmi/var/mosquitto"
+      mkdir -p "${b_cert_dir}"
+      rm -rf "${b_cert_dir}/certs"
+      ln -sf "$(pwd)/impl/${v}/impl/udmi/var/mosquitto/certs" "${b_cert_dir}/certs"
+    fi
     (
       cd "impl/${b}"
       export MQTT_PORT="${port}"
       export ETCD_PORT="${etcd_port}"
       bin/butler "${conn_spec}" < /dev/null > "../../${butler_log}" 2>&1 &
       echo $! > "../../out/${v}_${b}_butler.pid"
-    )
-
-    # Start DUT (Pubber)
-    local pubber_log="out/${v}_${b}_pubber.log"
-    (
-      cd "impl/${v}"
-      export MQTT_PORT="${port}"
-      export ETCD_PORT="${etcd_port}"
-      impl/udmi/bin/start_dut "testing/udmi_site_model" "${conn_spec}" "AHU-1" < /dev/null > "../../${pubber_log}" 2>&1 &
-      echo $! > "../../out/${v}_${b}_pubber.pid"
     )
 
     # Poll for handshake completion
@@ -203,18 +212,6 @@ run_track() {
         kill -9 "${b_pid}" 2>/dev/null || true
       fi
       rm -f "out/${v}_${b}_butler.pid"
-    fi
-
-    # Safe PID-Based teardown for DUT
-    if [ -f "out/${v}_${b}_pubber.pid" ]; then
-      local p_pid
-      p_pid=$(cat "out/${v}_${b}_pubber.pid")
-      if kill -0 "${p_pid}" 2>/dev/null; then
-        kill -15 "${p_pid}" 2>/dev/null || true
-        sleep 0.5
-        kill -9 "${p_pid}" 2>/dev/null || true
-      fi
-      rm -f "out/${v}_${b}_pubber.pid"
     fi
 
     # Teardown per-pairing verifier
@@ -293,6 +290,18 @@ run_track() {
     rm -f "out/${v}_observe.pid"
   fi
 
+  # Teardown the track-level DUT (Pubber)
+  if [ -f "out/${v}_pubber.pid" ]; then
+    local p_pid
+    p_pid=$(cat "out/${v}_pubber.pid")
+    if kill -0 "${p_pid}" 2>/dev/null; then
+      kill -15 "${p_pid}" 2>/dev/null || true
+      sleep 0.5
+      kill -9 "${p_pid}" 2>/dev/null || true
+    fi
+    rm -f "out/${v}_pubber.pid"
+  fi
+
   # Stop broker and services
   (
     cd "impl/${v}"
@@ -303,6 +312,13 @@ run_track() {
   cleanup_port "${port}"
   cleanup_port "${etcd_port}"
   cleanup_port "${etcd_peer_port}"
+
+  # Clean up symlinks at the end of the track to leave a clean state
+  for b in "${IMPLEMENTATIONS[@]}"; do
+    if [ -L "impl/${b}/impl/udmi/var/mosquitto/certs" ]; then
+      rm -f "impl/${b}/impl/udmi/var/mosquitto/certs"
+    fi
+  done
 
   local track_dur=$(( SECONDS - track_start ))
   echo "Track impl_${v} Duration: ${track_dur}s" >> out/metrics.tmp
