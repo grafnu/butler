@@ -190,7 +190,7 @@ To ensure that multiple disparate implementations can be run side-by-side using 
        - SHA256 hex digest: `b23a6a8439c0dde5515893e7c90c1e3233b8616e634470f20dc4928bcf3609bc`
        - Base-16 Integer value modulo 3000: `988`
        - Resolved numeric port: `45988` (i.e., `45000 + 988`)
-   - **Dynamic Port Handshake Verification:** During broker startup, the setup script or test runner MUST perform a socket-scanning check to ensure the calculated port is unoccupied by another daemon process on the host. If a port collision is detected, the utility MUST dynamically negotiate an alternative free port (e.g., by scanning sequentially upward from the initial port or utilizing OS port allocation) to guarantee a clean connection handshake.
+   - **Static Port Handshake and Fail-Fast Verification:** During broker startup, the setup script or test runner MUST perform a socket-scanning check to ensure the calculated port is unoccupied by another daemon process on the host. Because the systematically calculated branch-hash port is the absolute single source of truth for all test orchestrators and verifiers, dynamic port shifting, negotiation, or upward scanning on collision is strictly prohibited. If a port collision is detected, the setup utility MUST immediately abort and fail-fast with a clear error, allowing the environment or stale processes to be resolved properly.
 3. **Working Directory Execution:** Execute all UDMI commands using the executables in the cloned `impl/udmi` folder.
 
 ### 10.1. Local Environment Preparation
