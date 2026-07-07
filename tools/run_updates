@@ -35,7 +35,7 @@ if [ -z "${UDMI_REPO_URL:-}" ] || [ -z "${UDMI_TARGET:-}" ]; then
 fi
 
 # 1. Internal Configuration
-IMPLEMENTATIONS=("A" "B" "C" "D")
+IMPLEMENTATIONS=(${IMPLEMENTATIONS_OVERRIDE:-"A" "B" "C" "D"})
 
 if ! command -v gemini >/dev/null 2>&1; then
   echo "Error: gemini executable not found in PATH." >&2
