@@ -228,6 +228,14 @@ When establishing any secure client connection (such as over `mqtts://` or `ssl:
     This specific formatting is non-negotiable to accommodate the custom bash parameter expansions (`${project_spec%/*}` and `${project_spec#//}`) implemented inside the cloned UDMI utility `start_local`, preventing a parsing failure (which exits with a "doing nothing" message) while completely avoiding the need for dynamic file patching, overrides, or hacks to the UDMI source repository.
     Under no circumstances should any tool or runtime script attempt to read, parse, or analyze the internal contents of `start_local` or other local setup utilities to determine port configurations; tools must rely strictly and exclusively on passing the site model and connection specification arguments directly on the command line.
 
+*   **Registrar Invocation for Database and Active Registry Synchronization:**
+    ASSUMPTION: "tagabases" refers to the active running databases or local/cloud device registries that store device metadata and registration credentials, which are populated/synchronized when `registrar` executes in full online mode with the target broker.
+    After starting the local broker and verifying that it is successfully accepting connections, the setup utility MUST execute the standard UDMI `registrar` utility on the target site model. To ensure that the local system configuration files, as well as the active running registration databases and registries (the "tagabases"), are fully updated and synchronized, the `registrar` utility MUST be run in **full online mode** with the intended connection/broker target:
+    ```bash
+    impl/udmi/bin/registrar testing/udmi_site_model <project_spec>
+    ```
+    Where `<project_spec>` represents the target connection or project/registry specification parsed or derived from the active `<conn_spec>`. Running `registrar` in full online mode guarantees that all device metadata validation, generated configuration payloads (`generated_config.json`), normalized schema files (`metadata_norm.json`), and target registry databases are correctly established, fully synchronized, and configured before starting any device simulation or orchestration sequences.
+
 *   **Graceful Reflector Cleanup/Shutdown (`--stop` flag):**
     If the `--stop` flag is passed (e.g., `bin/setup --stop` or `setup [conn_spec] --stop`), the setup utility MUST NOT perform any environment initialization, python environment validation, or broker startup. Instead, it MUST execute a clean, hermetic teardown of the locally running background services (`etcd`, `mosquitto`/broker, etc.) utilizing stored PID files (`out/etcd.pid`, `out/mosquitto.pid`, or similar).
     Specifically, the `--stop` execution sequence MUST:
