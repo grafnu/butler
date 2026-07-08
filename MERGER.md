@@ -66,3 +66,10 @@ For each implementation directory `impl/{ID}/`, the Merger Agent MUST:
 - Ensure that any updated `.md` files (specifications under `spec/` and skills like `UPDATE.md`) are formatted perfectly, idiomatic, and highly readable.
 - Do not generate any stray files or temporary diagnostics outside of ignored paths (such as `tmp/`, `out/`, or `logs/`).
 - Leave all modified files staged or unstaged in the active working branch without creating commits or pushing to remote origin, keeping the branch ready for human inspection.
+
+---
+
+## 5. Tool Integrity & Prohibition of Harness Modifications
+
+- Under no circumstances shall the Merger Agent attempt to modify, patch, or alter command options, flags, or parameters within the parent workspace harness scripts (such as `tools/run_updates`, `tools/run_cross`, or `tools/run_merger`), or modify core `gemini` command options (such as the `--proxy` or `--approval-mode` flags).
+- If any basic platform tools, system utilities, or test runners fail to execute or connect due to environmental or network constraints, the agent MUST NOT attempt to patch or fix the runners. Instead, the agent MUST immediately raise a hard, fatal failure and exit.

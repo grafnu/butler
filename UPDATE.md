@@ -103,3 +103,7 @@ Before finishing, the implementation MUST be verified to prevent regressions:
    - If a hard constraint or system utility in the immutable `impl/udmi` repository is logically or structurally broken (such as `reset_config` parsing errors or path resolution bugs), the Implementation Agent MUST NOT implement hacky workarounds or custom helper wrappers to hide the defect.
    - Instead, the agent MUST immediately declare that the constraints are impossible to achieve and output a hard error: "the UDMI spec is broken and the system will not work as intended until that is fixed."
    - State strictly empirical runtime findings resulting from bad specifications, rather than implementation bugs.
+
+2. **Prohibition of Tool and Harness Modifications:**
+   - Under no circumstances shall any agent attempt to modify, patch, or alter command options, flags, or parameters within the parent workspace harness scripts (such as `tools/run_updates`, `tools/run_cross`, or `tools/run_merger`), or tamper with core `gemini` command options (such as the `--proxy` or `--approval-mode` flags).
+   - If the basic platform tools, system utilities, network options, or test runners fail to execute or connect due to environmental constraints, the agent MUST NOT attempt to patch or fix the runners. Instead, the agent MUST immediately raise a hard, fatal failure and exit.
