@@ -52,8 +52,7 @@ All components MUST resolve relative `file://` paths defined in the Software Cat
 These top-level files/directories MUST NOT be removed or altered:
 * AGENTS.md: Agent-specific instructions and mandates.
 * REBUILD.md: System rebuild procedures.
-* UPDATE.md: Maintenance and update procedures.
-* AUDIT.md: Audit an implementation for spec compliance.
+* UPDATE.md: Ensure individual implementations are spec compliant.
 * MERGER.md: Specification merge logic.
 * WORKFLOW.md: Operational workflow definitions.
 * spec/: Formal system specifications (e.g., butler.md, blobstore.md, update.md). Note that spec/ is considered mutable ONLY when executing the specification merge integration procedure defined in MERGER.md.

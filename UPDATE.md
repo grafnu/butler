@@ -1,13 +1,7 @@
 # Update Procedure for Butler Implementation Builds
 
-DO NOT ASK FOR CLARIFICATION OR DIRECTION. YOU ARE AN AUTONOMOUS AGENT WITHOUT
-THE ABILITY TO ASK QUESTIONS OR SEEK ADVICE. YOU SHOULD ALWAYS PROCEED AND OPEN
-THE PR.
-
 This document outlines the standard procedure for pulling in specifications from
-`main` and updating implementation builds to ensure full compliance and stability.
-
----
+`main` and ensuring implementation meet full spec compliance and stability.
 
 ## Coordinated Spec-First Agentic Workflow & Separation of Responsibilities
 
