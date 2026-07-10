@@ -147,8 +147,33 @@ run_track() {
     echo $! > "../../out/${v}_pubber.pid"
   )
 
-  # 4. Sequentially run target butler implementations
+  # Reorder implementations to run the self-validation pairing (v == b) first
+  local run_order=("${v}")
   for b in "${IMPLEMENTATIONS[@]}"; do
+    if [ "${b}" != "${v}" ]; then
+      run_order+=("${b}")
+    fi
+  done
+
+  # 4. Sequentially run target butler implementations
+  local self_failed=0
+  for b in "${run_order[@]}"; do
+    if [ "${self_failed}" -eq 1 ]; then
+      # If the self-validation pairing failed, do not run other pairings.
+      # Record FAIL in the summary and metrics immediately.
+      echo "impl_${v} verifies impl_${b}: FAIL" >> impl/test_summary.txt.tmp
+      {
+        echo "Pair: impl_${v} verifies impl_${b} (FAIL)"
+        echo "  - Broker Startup: 0s"
+        echo "  - Setup Utility Execution: 0s"
+        echo "  - Active Verification Loop: 0s"
+        echo "  - Cleanup & Teardown: 0s"
+        echo "  - Skipped: Self-validation failure"
+        echo ""
+      } >> out/metrics.tmp
+      continue
+    fi
+
     local pair_start=$SECONDS
     echo "[Track impl_${v}] Launching target butler impl_${b}..." >&2
 
@@ -276,6 +301,12 @@ run_track() {
       echo "  - Cleanup & Teardown: 1s"
       echo ""
     } >> out/metrics.tmp
+
+    # If this was self-validation and it failed, stop future pairings in this track
+    if [ "${v}" = "${b}" ] && [ "${status_str}" = "FAIL" ]; then
+      echo "[Track impl_${v}] Self-validation pairing failed! Skipping remaining pairings." >&2
+      self_failed=1
+    fi
   done
 
   # Teardown observer
