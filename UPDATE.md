@@ -109,3 +109,8 @@ Before finishing, the implementation MUST be verified to prevent regressions:
 2. **Prohibition of Tool and Harness Modifications:**
    - Under no circumstances shall any agent attempt to modify, patch, or alter command options, flags, or parameters within the parent workspace harness scripts (such as `tools/run_updates`, `tools/run_cross`, or `tools/run_merger`), or tamper with core `gemini` command options (such as the `--proxy` or `--approval-mode` flags).
    - If the basic platform tools, system utilities, network options, or test runners fail to execute or connect due to environmental constraints, the agent MUST NOT attempt to patch or fix the runners. Instead, the agent MUST immediately raise a hard, fatal failure and exit.
+
+3. **Immediate Hard Fail on Environment, Shared Library, and Binary Wrapper Errors:**
+   - Under no circumstances shall an agent attempt to diagnose, debug, or work around low-level system or environment failures—such as missing shared libraries (`LD_LIBRARY_PATH`, `libdlt.so.2`), binary linkage errors, corrupted line endings in platform utilities, or kernel execution failures.
+   - Creating, patching, or modifying binary wrappers, executable shell mocks (such as replacing platform binaries like `bin/mosquitto` with shell scripts), or manipulating `LD_LIBRARY_PATH` environment variables is strictly prohibited.
+   - If any system utility or background daemon fails to launch due to low-level system or environment errors, the agent MUST NOT spend turns attempting to diagnose or patch the environment. The agent MUST immediately abort execution and exit with a hard failure: `"System/Environment Failure: Environment dependency error encountered: <error>"`.
