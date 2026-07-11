@@ -247,7 +247,6 @@ When establishing any secure client connection (such as over `mqtts://` or `ssl:
     Under no circumstances should any tool or runtime script attempt to read, parse, or analyze the internal contents of `start_local` or other local setup utilities to determine port configurations; tools must rely strictly and exclusively on passing the site model and connection specification arguments directly on the command line.
 
 *   **Registrar Invocation for Database and Active Registry Synchronization:**
-    ASSUMPTION: "tagabases" refers to the active running databases or local/cloud device registries that store device metadata and registration credentials, which are populated/synchronized when `registrar` executes in full online mode with the target broker.
     After starting the local broker and verifying that it is successfully accepting connections, the setup utility MUST execute the standard UDMI `registrar` utility on the target site model. To ensure that the local system configuration files, as well as the active running registration databases and registries (the "tagabases"), are fully updated and synchronized, the `registrar` utility MUST be run in **full online mode** with the intended connection/broker target:
     ```bash
     impl/udmi/bin/registrar testing/udmi_site_model <project_spec>
@@ -318,6 +317,11 @@ Any automated integration test harness (such as `bin/smokeit`) MUST adhere to th
        5. If the process is still running after the grace period, send `SIGKILL` (signal 9) to force termination.
        6. Delete the associated `.pid` file from disk upon successful termination.
 5. **Dynamic Reflector Mapping:** The UDMIS reflector component MUST utilize dynamic configurations based on local environment variables to bypass hardcoded cloud model dependencies, enhancing portability across different testing environments.
+6. **Programmatic Verification and Failure Assertions:** The automated test harness (specifically `bin/smokeit`) MUST NOT act as a blind process scheduler that unconditionally exits with success. It MUST actively verify that the system successfully completed the handshake, transitioned from a pending state to a success state, and reached its terminal stable state. It MUST NOT exit with a successful status if any sub-process crashed, failed to authorize, or if the verifier and butler failed to complete the update lifecycle within a designated timeout. Specifically:
+   - **Active Log Auditing:** The test harness MUST actively inspect the active verifier compliance log, the butler log, or the active UUFI message stream during execution.
+   - **String-Pattern Assertions:** The test harness MUST assert that the logs contain the exact spec-compliant pattern matching `VERIFIER [INFO]: State transition for.*pending -> success` or `[butler] Device.*terminal state success with version`.
+   - **Timeout Enforcement:** The test harness MUST enforce a timeout (minimum 60 seconds) for the update cycle to complete. If the update does not progress to success within this period, it MUST be treated as a functional test failure.
+   - **Fail-Fast Exit Status:** On any assertion failure, timeout, or background service early termination, the test harness MUST write a diagnostic error to standard error and exit with a non-zero status code (specifically `exit 1`), ensuring that any integration failures are reliably detected before running external cross-testing or build staging commands.
 
 ## 11. Principal Suffix Standardization
 To ensure consistency across multiple implementations and avoid custom differentiator mismatches during handshake verification and log analysis, all system entities MUST adhere to a standardized principal naming schema.
