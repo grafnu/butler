@@ -139,11 +139,12 @@ run_track() {
 
   # 3.5 Start Long-Running Idempotent DUT (Pubber) once per track
   local pubber_log="out/${v}_pubber.log"
+  local dut_conn_spec="//mqtt/localhost:${port}"
   (
     cd "impl/${v}"
     export MQTT_PORT="${port}"
     export ETCD_PORT="${etcd_port}"
-    impl/udmi/bin/start_dut "testing/udmi_site_model" "${conn_spec}" "AHU-1" < /dev/null > "../../${pubber_log}" 2>&1 &
+    impl/udmi/bin/start_dut "testing/udmi_site_model" "${dut_conn_spec}" "AHU-1" < /dev/null > "../../${pubber_log}" 2>&1 &
     echo $! > "../../out/${v}_pubber.pid"
   )
 
