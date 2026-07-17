@@ -1,8 +1,7 @@
 # Butler System Orchestrator
 
 **Butler** is a declarative, state-based fleet management engine for managed software updates. It coordinates updates across a
-fleet of devices by managing a state machine for individual device blob updates using the UUFI interface. UUFI is a message
-based interface as part of the UDMI system defined by the path `docs/specs/uufi.md` within the cloned `impl/udmi/` directory (at `impl/udmi/docs/specs/uufi.md` relative to the workspace root).
+fleet of devices by managing a state machine for individual device blob updates using the UUFI interface. UUFI is a message-based interface as part of the UDMI system defined by the authoritative communication bus specification.
 
 ## 1. Project Structure
 
@@ -42,9 +41,9 @@ The root directory MUST ONLY contain the following files and directories:
 The **Butler** is a stateless, reactive fleet reconciliation engine whose sole scope is to transition devices from their dynamically reported actual version to the expected/desired version specified in the immutable `site_model` (`system.software.<blob_id>`).
 - **Device Authority:** The device itself is the sole authoritative source of its current/actual software version and its `lkg_version`. The Butler MUST trust the device's reported state and MUST NOT attempt to track, persistent-store, or validate `lkg_version` history.
 - **Stateless Restarts & Network Discovery:** If the Butler process restarts, all in-memory tracking is reset. Sourcing of both expected and actual states occurs exclusively over the UUFI network interface (the Butler has no direct file-level access to the `site_model` on disk):
-  1. **Expected Version Discovery:** On startup, the Butler discovers expected/desired versions by publishing a UUFI Model Query (`query/cloud` as defined in `uufi.md`) to `/uufi/c/query/cloud`, where the UUFI gateway (which *does* have site-model access) replies with the expected version configurations.
+  1. **Expected Version Discovery:** On startup, the Butler discovers expected/desired versions by publishing a UUFI Model Query (`query/cloud` as defined in the authoritative communication bus specification) to `/uufi/c/query/cloud`, where the UUFI gateway (which *does* have site-model access) replies with the expected version configurations.
   2. **Actual Version Discovery:** The Butler simply waits until it receives a dynamic State update from a device to determine its actual version. In local test environments, this actual state report is typically initiated manually or triggered on-demand using standard testing utilities.
-- **Handshake Compliance:** Butler MUST NOT initiate its own handshake; it MUST instead respond to handshake state messages from Devices and Verifiers with the appropriate config reply as defined in UUFI. Handshake message structures and sequence steps are governed exclusively by the cloned `impl/udmi/docs/specs/uufi.md` specification; local implementations MUST NOT introduce custom local handshake parameters.
+- **Handshake Compliance:** Butler MUST NOT initiate its own handshake; it MUST instead respond to handshake state messages from Devices and Verifiers with the appropriate config reply as defined in UUFI. Handshake message structures and sequence steps are governed exclusively by the authoritative communication bus specification; local implementations MUST NOT introduce custom local handshake parameters.
 - **State Machine:**
   - `unknown`: Initial tracking state before any device report is received.
   - `quiescent`: Expected/Desired Version == Actual/Current Version.
@@ -111,9 +110,9 @@ Implementations MUST NOT create, bundle, or include custom executable tooling, d
 * **Prohibition of Language Runtime Mocks and Temporary Executables:** Under no circumstances should an implementation use custom language runtime mock wrappers, binary simulation wrappers, or temporary/mock executables (such as mock `java`, `python`, `node`, `ps`, or other executable mocks) to simulate execution, bypass system checks, or spoof service-readiness signals (e.g., touching `pod_ready.txt` without actually booting the runtime daemon). Every workspace environment must run a real, complete, and un-mocked installation of the required language runtimes and compilers (e.g., real Java, real Python, real Node.js).
 * **Real Implementations Only:** The testing and execution environments must not be simulated or designated as "mock sandboxes" or "Python-only testing sandboxes" to bypass real runtime requirements; all system components, dependencies, and environments MUST be real, fully-featured, and completely compliant with the specification (no mocks).
 * **Hard Dependency on UDMI:** UDMI is considered a hard dependency of the Butler orchestrator.
-* **No Custom Device Simulation (DUT):** Under no circumstances shall an implementation attempt to create, bundle, or execute its own custom simulated device client (DUT) for any purpose (including local development, debugging, and automated integration/smoke testing). All device simulation must be performed strictly using the standard Java-based UDMI DUT client (`impl/udmi/bin/start_dut` / `pubber`).
-* **Standard Simulators & Observers:** For device simulation and traffic observation, implementations MUST use standard UDMI/UUFI tools exclusively (specifically `impl/udmi/bin/start_dut` for starting simulated devices/Pubber, and `impl/udmi/bin/observe_uufi` for passive topic tree traffic monitoring).
-* **Automated Smoke Testing (`smokeit`):** The automated integration test runner (`smokeit`) MUST NOT embed, spawn, or execute any custom device simulation logic or programmatic inline mock devices. It MUST use the standard UDMI DUT client for verifying device connectivity, handshakes, and baseline integration.
+* **No Custom Device Simulation (DUT):** Under no circumstances shall an implementation attempt to create, bundle, or execute its own custom simulated device client (DUT) for any purpose (including local development, debugging, and automated integration/smoke testing). All device simulation must be performed strictly using the standard, compliant simulated DUT client.
+* **Standard Simulators & Observers:** For device simulation and traffic observation, implementations MUST use standard, compliant simulated DUT and observer utilities exclusively.
+* **Automated Smoke Testing (`smokeit`):** The automated integration test runner (`smokeit`) MUST NOT embed, spawn, or execute any custom device simulation logic or programmatic inline mock devices. It MUST use the standard, compliant simulated DUT client for verifying device connectivity, handshakes, and baseline integration.
 * **Automatic Audit Verification:** Automated compliance verifiers and audits (e.g., `AUDIT.md`) MUST verify the strict cleanliness of the `bin/` directory and codebase. The presence of any custom simulated device clients or additional executable files beyond the four core tools (`butler`, `setup`, `verifier`, `smokeit`) constitutes an immediate and fatal protocol compliance violation.
 
 ### 6.2 CLI Compatibility Note
@@ -169,10 +168,10 @@ Consistent log prefixes and formats are essential for multi-implementation integ
 
 ## 10. Development and Testing Workflow (Scope 4)
 
-The fourth tier of the system verification pipeline builds directly on top of the generic UUFI development environment (reusing Scope 1: Infrastructure and Scope 2: Pubber DUT from `uufi.md` Section 9). It replaces the low-level UUFI test client (Scope 3) with the **Butler Orchestrator**, executing a complete state-based firmware update and rollback orchestration cycle over the active broker.
+The fourth tier of the system verification pipeline builds directly on top of the generic UUFI development environment (reusing Scope 1: Infrastructure and Scope 2: Simulated DUT from the authoritative communication bus specification). It replaces the low-level UUFI test client with the **Butler Orchestrator**, executing a complete state-based firmware update and rollback orchestration cycle over the active broker.
 
-To ensure that multiple disparate implementations can be run side-by-side using the same shared UDMI installation without conflicts, created systems MUST be run independently in their respective local directories. This requires:
-1. **Model Cloning:** Copy the pre-existing test site model from the cloned `impl/udmi` sites directory into your local workspace testing directory.
+To ensure that multiple disparate implementations can be run side-by-side using the same shared installation without conflicts, created systems MUST be run independently in their respective local directories. This requires:
+1. **Model Cloning:** Copy the pre-existing test site model from the standard source site model directory into your local workspace testing directory.
 2. **Port Selection & Handshake Verification:** Choose and use a unique, branch-specific port in the range `45000-48000` (inclusive of `45000`, exclusive of `48000`, i.e., `45000-47999`) for running the local MQTT broker to prevent port conflicts with other side-by-side runs and avoid potential overlaps with standard system daemons. Implementations MUST calculate this port systematically using the SHA256 cryptographic hash of the active git branch name to align port-selection behavior across all implementation branches:
    - **Branch Name Extraction:** Determine the active git branch name. If the environment is not a git repository or the branch name cannot be resolved, default to the string `"unknown"`.
    - **Hash Computation:** Compute the 32-byte (256-bit) SHA256 hash of the resolved branch name string (encoded in UTF-8).
@@ -191,7 +190,7 @@ To ensure that multiple disparate implementations can be run side-by-side using 
        - Base-16 Integer value modulo 3000: `988`
        - Resolved numeric port: `45988` (i.e., `45000 + 988`)
    - **Static Port Handshake and Fail-Fast Verification:** During broker startup, the setup script or test runner MUST perform a socket-scanning check to ensure the calculated port is unoccupied by another daemon process on the host. Because the systematically calculated branch-hash port is the absolute single source of truth for all test orchestrators and verifiers, dynamic port shifting, negotiation, or upward scanning on collision is strictly prohibited. If a port collision is detected, the setup utility MUST immediately abort and fail-fast with a clear error, allowing the environment or stale processes to be resolved properly.
-3. **Working Directory Execution:** Execute all UDMI commands using the executables in the cloned `impl/udmi` folder.
+3. **Working Directory Execution:** Execute all base setup and communication bus commands using the standard utilities provided by the communication bus repository.
 
 ### 10.1. Local Environment Preparation
 
@@ -206,16 +205,19 @@ No implementation is permitted to use newer major versions of these libraries (s
 If the `--offline` flag is provided to the setup utility, it MUST NOT attempt to make remote network calls for package verification or installation. Instead, it must either perform package verification using local caches or ignore missing dependencies to guarantee safe, warning-free offline execution inside hermetic test sandboxes without experiencing download retry latencies.
 
 #### 10.1.2. Isolated Site Model Setup
-Establish an isolated copy of the pre-existing test site model by copying the model from the cloned UDMI sites directory (`impl/udmi/sites/udmi_site_model`) into the local workspace testing directory (`testing/udmi_site_model`).
+Establish an isolated copy of the pre-existing test site model by copying the model from the standard source site model directory into the local workspace testing directory.
 
 #### 10.1.3. Base Infrastructure Setup (Delegated to UUFI Section 9)
-All base infrastructure lifecycle management—including initializing local MQTT brokers, executing UDMIS gateway processors, starting simulated devices (Pubber DUT), populating tagabases (`registrar`), and triggering site model updates (`site_trigger`)—MUST follow the standard CLI parameter formatting and dynamic port rules codified in the authoritative UDMI specification [impl/udmi/docs/specs/uufi.md Section 9](file:///home/peringknife/vibrant/main/impl/udmi/docs/specs/uufi.md#L215).
+All base infrastructure lifecycle management—including initializing local MQTT brokers, executing gateway processors, starting simulated devices (DUT), populating tagabases, and triggering site model updates—MUST follow the standard CLI parameter formatting and dynamic port rules codified in the authoritative communication bus specification.
 
-Butler's local setup utility (`bin/setup`) acts purely as a wrapper to delegate these base setup commands to `impl/udmi/bin/`:
-1. **Directory Layout Verification:** Confirm that `impl/udmi` exists directly, raising an immediate hard failure if missing.
-2. **Infrastructure Initialization:** Invoke `impl/udmi/bin/start_local` and `impl/udmi/bin/registrar` using standard connection specifications (e.g. `//mqtt/localhost:$port`) as specified in [uufi.md Section 9](file:///home/peringknife/vibrant/main/impl/udmi/docs/specs/uufi.md#L215).
-3. **Hermetic Teardown (`--stop` flag):** Teardown background processes by delegating stop commands directly to the official UDMI setup utilities.
-4. **Prohibition of Embedded/Bundled Third-Party Daemons:** Implementation repositories MUST NOT package, ship, or distribute pre-compiled third-party daemons (such as `mosquitto`, `etcd`, or `influxd`) in their source trees. All required infrastructure services must only be managed, started, and stopped using the official black-box UDMI/UUFI utilities (such as `impl/udmi/bin/start_local`), avoiding direct path-resolution or system-wide shared library configurations in local test runners.
+<!-- ASSUMPTION: Local, non-privileged (no-sudo) execution mode is automatically triggered and configured based on the presence of an explicit, custom MQTT port specification in the connection specification (e.g., //mqtt/localhost:$port). All scripts and utilities MUST dynamically derive this non-privileged execution state from the port specification itself and automatically redirect all generated configurations, log outputs, and PID tracking to relative, git-ignored user-space locations (such as var/mosquitto). -->
+Local, non-privileged (no-sudo) execution mode MUST be automatically triggered and configured based on the presence of an explicit, custom MQTT port specification in the connection specification (such as `//mqtt/localhost:$port`). All scripts and utilities MUST dynamically derive this non-privileged execution state from the port specification itself and automatically redirect all generated configurations, log outputs, and PID tracking to relative, git-ignored user-space locations (e.g., `var/mosquitto` and `out/`).
+
+Butler's local setup utility (`bin/setup`) acts purely as a wrapper to delegate these base setup commands to the standard communication bus utilities:
+1. **Directory Layout Verification:** Confirm that the standard communication bus folder exists directly, raising an immediate hard failure if missing.
+2. **Infrastructure Initialization:** Invoke the standard local infrastructure start utility and registration utility using standard connection specifications (e.g. `//mqtt/localhost:$port`) as specified in the authoritative communication bus specification.
+3. **Hermetic Teardown (`--stop` flag):** Teardown background processes by delegating stop commands directly to the official communication bus setup utilities.
+4. **Prohibition of Embedded/Bundled Third-Party Daemons:** Implementation repositories MUST NOT package, ship, or distribute pre-compiled third-party daemons (such as `mosquitto`, `etcd`, or `influxd`) in their source trees. All required infrastructure services must only be managed, started, and stopped using the official black-box communication bus utilities, avoiding direct path-resolution or system-wide shared library configurations in local test runners.
 
 ### 10.2. Starting the Butler Orchestrator
 Launch the core Butler orchestrator executable (`bin/butler <conn_spec>`). It MUST connect to the running MQTT broker on the specified connection path and act as the authoritative Cloud Model Server on the UUFI bus.
@@ -225,8 +227,8 @@ Run the verifier executable (`bin/verifier <conn_spec>`) to observe topic traffi
 
 ### 10.4. Executing Device Simulation and Triggers (Delegated to UUFI Section 9)
 For device simulation and traffic generation:
-- Launch Pubber DUT using `impl/udmi/bin/start_dut` formatted strictly per [uufi.md Section 9.2](file:///home/peringknife/vibrant/main/impl/udmi/docs/specs/uufi.md#L243): `impl/udmi/bin/start_dut testing/udmi_site_model //mqtt/localhost:$mqtt_port [device_id]`.
-- Trigger managed model updates using `impl/udmi/bin/site_trigger` formatted strictly per [uufi.md Section 9.5](file:///home/peringknife/vibrant/main/impl/udmi/docs/specs/uufi.md#L297): `impl/udmi/bin/site_trigger update <site_path> <device_id> <blob_id> <version> //mqtt/localhost:$mqtt_port`.
+- Launch the simulated Device Under Test (DUT) using the standard simulated DUT utility with the standard CLI parameters.
+- Trigger managed model updates using the standard site model trigger utility with the standard CLI parameters.
 
 ### 10.6. Running Automated Smoke Tests
 To execute a fully automated, non-interactive integration run of Scope 4 (verifying the entire setup, registration, update, rollback, and verification lifecycle), execute the `smokeit` test utility pointing to the dynamically resolved branch-specific port.
@@ -286,7 +288,7 @@ To ensure strict compliance with the authoritative UDMI schemas (such as `config
 To support robust message deduplication and replay protection, clients and devices publishing state, event, or model messages over the UUFI bus SHOULD include a `"nonce"` field in the root of the message's envelope containing a secure, pseudorandomly generated hexadecimal string (at least 32 characters, e.g. 16 bytes). Compliant orchestrators and verifiers MUST gracefully accept, parse, and process envelopes containing the `"nonce"` attribute.
 
 ### 12.5. Cloud Model Update Payload Structure
-Cloud model updates published over the UUFI bus (specifically on `/uufi/c/model/cloud` or model update channels) MUST utilize the standard flattened format where the `"registries"` key resides directly at the payload root (following the schema defined in `uufi.md` Section 5.1). Sourcing updates from `/uufi/c/config/cloud` is prohibited. Wrapping or nesting the update payload inside a `"cloud"` root sub-object is strictly prohibited and MUST be rejected as non-compliant.
+Cloud model updates published over the UUFI bus (specifically on `/uufi/c/model/cloud` or model update channels) MUST utilize the standard flattened format where the `"registries"` key resides directly at the payload root (following the schema defined in the authoritative communication bus specification). Sourcing updates from `/uufi/c/config/cloud` is prohibited. Wrapping or nesting the update payload inside a `"cloud"` root sub-object is strictly prohibited and MUST be rejected as non-compliant.
 
 ### 12.6. Single Method for Expected Version Configuration
 The expected/desired version of a device's software subsystem MUST be configured in exactly one way: under the standard software dictionary structure within the device's system configuration (e.g., `system.software.<subsystem> = "{version}"`, where `<subsystem>` defaults to `"system"` but can also be `"pubber_module"`). Any alternative or custom configuration properties, such as `"target_version"` (e.g., `system.target_version = "{version}"`), are strictly prohibited and MUST NOT be accepted by the orchestrator or processed as valid expected versions.

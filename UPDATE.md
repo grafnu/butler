@@ -76,7 +76,7 @@ Before finishing, the implementation MUST be verified to prevent regressions:
 1. **Environment Setup & Verification:**
    - **Automatic Validation:** Symmetrically validate and prepare the environment (virtualenv activation, dependency installation from `butler/requirements.txt`) before execution.
    - **Compliance with Testing Specs:** All local workspace environment initialization, isolated site model cloning, local service execution, and broker starting/stopping MUST natively comply with the requirements defined in `spec/butler.md` Section 10.
-   - **No Sudo/No Privilege Elevation:** All tools and background processes MUST run entirely in non-privileged (no-sudo) user-space. Any requirement for `sudo` or administrative privilege elevation is a fundamental compatibility error.
+   - **No Sudo/No Privilege Elevation:** All tools and background processes MUST run entirely in non-privileged (no-sudo) user-space. Any requirement for `sudo` or administrative privilege elevation is a fundamental compatibility error. <!-- ASSUMPTION: The non-privileged pathway is automatically triggered purely by the presence of an explicit, custom MQTT port specification in the connection specification. --> The non-privileged pathway MUST be automatically triggered purely by the presence of an explicit, custom MQTT port specification in the connection specification.
    - **Opaque "Black-Box" Tooling:** All dependencies and scripts inside `impl/udmi` MUST be treated as black boxes. Do not attempt to analyze, patch, or work around their internal logic.
    - **Hermetic Isolation:** Ensure that there is no sharing of default ports, and that all runtime-created folders and logs are nested exclusively inside git-ignored locations (`tmp/`, `testing/`, or `logs/`).
 
