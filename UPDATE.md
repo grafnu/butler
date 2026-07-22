@@ -48,50 +48,28 @@ Through this continuous feedback loop, the Butler specification is iteratively a
 
 ---
 
-## Code Compliance, Spec Auditing & Bidirectional Feedback
+## Code Compliance, Spec Auditing & Bidirectional Feedback (Meta-Auditor Loop)
 
-1. **Audit Spec Changes and Merger Feedback:**
-   - Consider any change in **either the formal specifications (in `spec/`) OR the core workspace skill/configuration files (`AGENTS.md` or `UPDATE.md`)** as a direct trigger for full code auditing, re-evaluation, and test execution.
-   - Review changes in `spec/butler.md`, `spec/blobstore.md`, `spec/update.md`, `AGENTS.md`, and `UPDATE.md`. Any change to these files nullifies any previous "No changes required" status.
-   - Check if `merge_analysis.md` exists at the root of the repository, as provided by the Merger Agent, to identify implementation-specific failures.
+This project utilizes a structured **Spec-Compliance Audit Loop** to guarantee full compliance with the authoritative specifications without maintaining brittle, duplicate parallel checklists.
 
-2. **Audit the Specification and Generate Spec Analysis:**
-   - If there are specific ambiguities, contradictions, omissions, or external spec incompatibilities preventing a clear and correct implementation, create or update a `spec_analysis.md` file at the root of the repository.
-   - The file must contain only clear, non-speculative, and actionable problems and recommendations to streamline the spec. Do not include performance improvements, security enhancements, speculative thoughts, or exploratory ideas.
-   - If no clear problems exist and the spec is clear and correct, any existing `spec_analysis.md` file MUST be removed.
+### 1. Load and Parse the Compliance Matrix
+The primary source of truth for all technical requirements is the **Compliance Matrix** natively defined in `spec/butler.md` (Section 13). 
+- The agent must read and parse the entire compliance matrix from `spec/butler.md` on startup.
+- If `merge_analysis.md` is present at the root, the agent must extract any requirement failures mentioned by the Merger Agent (referencing specific Requirement IDs like `REQ-CONN-001`, `REQ-HSK-002`, etc.).
 
-3. **Update Implementation Logic:**
-   - Symmetrically update implementation code in `butler/` and command wrappers in `bin/` to satisfy all specification requirements and resolve the failures detailed in `merge_analysis.md`.
-   - **Proper Principal Isolation & Suffixes (Section 11):** Implementations MUST statically or locally define their own `{implementation_id}` (e.g. hardcoded to `"impl_A"`, `"impl_B"`, `"impl_C"`, or `"impl_D"`) in their principals (e.g., `{implementation_id}.butler`, `{implementation_id}.verifier`). Implementations MUST NOT extract their `{implementation_id}` from the connection specification's userinfo.
-   - **Robust Connection Spec Parsing (Section 10.1.3):** Implementations MUST correctly split and separate the username and password from the connection specification URL (e.g., `mqtts://username:password@host:port/`). They MUST NOT include the password or password delimiter (`:`) in any client IDs, reported principals, or derived project spec strings. If credentials are empty or match the branch name/implementation ID, they MUST default to `rocket` and `monkey` as the credentials.
-   - **Comprehensive Protocol Compliance Checklist (Section 12):**
-     - **12.1 Handshake Request and Reply Payload Formatting:** Verify that handshake requests (Step 1) and replies (Step 2) published over the UUFI bus utilize the standard flattened format where the `"setup"` and `"reply"` payload blocks reside directly at the payload root. Symmetrically reject any payloads wrapping or nesting these blocks inside a `"udmi"` root sub-object. Ensure the handshake configuration reply message's envelope includes a `"transactionId"` (or `"transaction_id"`) matching the transaction ID value from the client's handshake request envelope. Clients MUST verify this transaction ID and reject any replies that do not match.
-     - **12.2 Subsystem State and Catalog Model Alignment:** Verify that devices report actual version states under the `"system.software.<subsystem>"` path supporting both `"system"` and `"pubber_module"` subsystem IDs for simulated builds. Auditing components and verifiers MUST NOT parse or extract actual versions from any other path (such as `"blobset.blobs.<subsystem>.version"`). All Butler and Verifier implementations MUST enforce strict compliance with the authoritative UDMI JSON schemas (specifically `state_system_software.json`). Software subsystem states MUST be parsed exclusively as valid JSON objects containing `"version"` and `"status"` attributes. Any raw string representations (e.g., `'system': 'v1'`) MUST be rejected as non-schema-compliant protocol violations.
-     - **12.3 No Custom Version Field in Blobset Payloads:** Verify that all configuration and state messages do NOT include any custom `"version"` attribute inside `"blobset"` blocks (such as `blobset.blobs.<subsystem>.version`). The orchestrator must publish the target/expected version exclusively under the standard `"system.software.<subsystem>"` path of the configuration message. Any `"blobset"` update config command published by the orchestrator must strictly contain only `"url"`, `"sha256"`, `"phase"`, and `"generation"`.
-     - **12.4 Envelope Nonce Attribute:** Outgoing state, event, or model messages published over the UUFI bus SHOULD include a `"nonce"` field in the envelope root containing a secure, pseudorandomly generated hexadecimal string of at least 32 characters. Receivers (orchestrators and verifiers) MUST gracefully accept and process envelopes with `"nonce"` present.
-     - **12.5 Cloud Model Update Payload Structure:** Verify that cloud model updates published over the UUFI bus utilize the standard flattened format where the `"registries"` key resides directly at the payload root. Wrapping or nesting the update payload inside a `"cloud"` root sub-object is strictly prohibited. Sourcing updates from `/uufi/c/config/cloud` is prohibited.
-     - **12.6 Single Method for Expected Version Configuration:** Ensure the expected version is configured ONLY under the standard software dictionary structure (`system.software.<subsystem> = "{version}"`). Custom configuration properties like `system.target_version` are strictly prohibited and MUST NOT be processed as valid expected versions.
-     - **12.7 Topic Suffix Standard Formatting:** All UUFI topic paths MUST include both a subtype and a subfolder segment, formatted strictly as `/c/{subtype}/{subfolder}` (e.g., `/uufi/c/state/udmi` and `/uufi/c/config/udmi` for standard registry-less handshakes). Generating topic paths lacking either segment is non-compliant.
-     - **12.8 Isolated Message-Based Handshake Gating:** Orchestrator, verifier, and simulated device components MUST communicate exclusively over the network message bus (MQTT/UUFI). Verifiers MUST publish handshake outcomes on `/uufi/c/state/udmi`, and any fatal connection or protocol violation must be reported as a validation event with `"level": "ERROR"` on `{prefix}/uufi/r/{site_id}/d/{device_id}/c/events/validation` to support immediate, fast failure.
-     - **12.9 Robust Incoming Envelope Parsing and Defect Tolerance:** Receivers MUST NOT reject incoming MQTT envelopes solely because they are missing the `"projectId"` or `"principal"` attribute. If missing, `"projectId"` MUST default to `"vibrant"` (or the configured project), and `"principal"` MUST fall back to utilizing `"source"` or be treated as absent.
-     - **12.10 Static Metadata Sourcing (Make & Model):** Sourcing `make` and `model` dynamically from device state reports is unreliable, as these are static metadata/catalog attributes and are not present inside standard subsystem software state reports. Butler implementations MUST resolve device `make` and `model` statically by looking up the device ID within the Software Catalog (`model.json` or local device metadata files) rather than parsing them from the device state payload. This ensures correct package resolution during update triggers.
-     - **12.11 Trace-Level Transaction ID Tracking:** Limiting transaction ID verification strictly to the handshake phase prevents end-to-end trace correlation of subsequent configuration, state, and telemetry messages. Symmetrically track and propagate the `transactionId` attribute in message envelopes across **all** exchanges (handshakes, model updates, state reports, and configurations) to support trace-level correlation and message deduplication throughout the entire operational sequence.
-   - **Envelope Key Standardization Checklist (Section 8):**
-     - **`subType` Elimination:** Do not include the `subType` attribute in the envelope of device state (`state`) or command/config (`config`) messages where the topic structure itself or the context already determines the subtype.
-     - **`deviceRegistryId` Minimization:** Do not populate `deviceRegistryId` in local device-scoped message envelopes where registry identity is already fully implied by the topic path.
-   - **Robust Message Deduplication Checklist (Section 8):**
-     - Verify that the message deduplication cache tracks message `transaction_id` (or `transactionId` in envelope) for at least 5 minutes.
-     - Ensure that transaction IDs are processed as arbitrary string values (supporting 8-digit hex strings, UUIDs, or structured session strings).
-     - Apply this deduplication filter only to incoming Model Update and Command/Config messages; under no circumstances should the filter discard or skip incoming Device State reports.
-   - **Standardized Compliance Logging Checklist (Section 9.2):**
-     - **Verifier State Transitions:** Must output exactly `VERIFIER [INFO]: State transition for {site_id}/{device_id}/{blob_id}: {old_state} -> {new_state}` containing the full `{site_id}/{device_id}/` segment. The initial state must be `unknown`. Transition logs MUST NOT be output if `{new_state}` is identical to `{old_state}` (applying to both stdout logs and validation events).
-     - **Handshake Events:** Must output exactly `VERIFIER [INFO]: Handshake {started|completed} for {principal}`.
-     - **Validation Errors:** Must output exactly `VERIFIER [ERROR]: VALIDATION ERROR: {message}`.
-     - **Terminal States:** Must output exactly `[butler] Device {site_id}/{device_id}/{blob_id} terminal state {status} with version {version}`. This log MUST be generated whenever a device enters or reports `success`, `failure`, or `quiescent` states.
-     - **Clean Prefix Logging:** Ensure all compliance logs are printed exactly as specified, without any additional prefixes (like timestamps or thread IDs) that interfere with automated parser tools. Log parsers expect exact stdout strings to assert compliance, and any additional runtime prefixes cause false-positive failures. To avoid these failures, all standard compliance logs MUST be printed to stdout completely unprefixed, exactly matching the target formats.
-   - **Verifier Sequential Processing Checklist (Section 9.1):**
-     - Verify that the verifier processes messages from the same device/blob_id sequentially (e.g., utilizing a thread-safe message queue) to maintain strict state accuracy and avoid false-positive transition violations.
-   - Once all failures documented in `merge_analysis.md` have been resolved and verified to pass local tests, remove the `merge_analysis.md` file to signal readiness for re-verification.
+### 2. Codebase Mapping
+The agent must systematically scan the local codebase (specifically `butler/` and `bin/`) and map each Requirement ID from the Compliance Matrix to the specific files, classes, or functions implementing that behavior.
+
+### 3. Verification Audit
+For each Requirement ID, the agent must perform a rigorous code and behavioral audit:
+- Verify that the local implementation fully satisfies the description and verifiable assertion stated in the Compliance Matrix.
+- If any requirement is violated or partially implemented, update the code in `butler/` or `bin/` to ensure absolute alignment.
+- Verify that unit and integration tests output compliance assertions and error messages directly referencing the failing Requirement ID (e.g. `[REQ-HSK-002]` or `[REQ-LOG-001]`) to maintain complete traceability.
+
+### 4. Bidirectional Feedback & Fast-Failure
+- **Specification Feedback:** If any requirement in the matrix is identified as ambiguous, contradictory, or impossible to implement due to external defects or immutable repository constraints, document the exact finding in `spec_analysis.md` and halt.
+- **Clean Compliance State:** If all requirements are verified to be fully and cleanly satisfied, delete any existing `spec_analysis.md` file.
+- **Merger Sign-off:** Once all failures documented in `merge_analysis.md` are resolved and verified to pass local tests, delete `merge_analysis.md` to signal readiness for re-verification.
 
 ---
 
