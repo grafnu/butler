@@ -87,7 +87,9 @@ Before finishing, the implementation MUST be verified to prevent regressions:
 2. **Execute Tests:**
    - Run any configured static analysis, linters, or standard unit tests to verify code health.
    - Run the automated, non-interactive integration smoke tests (`bin/smokeit`) to verify the complete registration, update, and failure rollback logic.
-   - Diagnose failures using log outputs, apply necessary bug fixes strictly within `butler/` and `bin/`, and re-run until all tests pass.
+   - **Iterative and Fail-Fast Troubleshooting Policy:**
+     - **Functional Issues:** If a failure is related to functional correctness or compliance with the application logic (e.g., implementing/refining the Butler state machine under `butler/` or `bin/`, resolving specification requirement discrepancies, or fixing test assertion bugs), the agent may continue to iteratively diagnose, apply bug fixes, and re-run local tests until they pass.
+     - **Core System and Infrastructure Issues:** If a failure is a core system or environment issue (e.g., failing to connect to or start the base infrastructure, socket/port binding conflicts, failure to launch required system-wide background daemons like MQTT brokers, influx, or etcd, or executing standard platform utilities), the agent MUST NOT attempt to repair or retry the setup cycle more than 3 times. If these core system/infrastructure errors are not successfully resolved after at most 3 attempts, the agent MUST immediately cease execution, report a fatal system error, and hard-fail.
 
 ---
 
