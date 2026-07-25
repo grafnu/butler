@@ -226,9 +226,10 @@ run_track() {
       echo $! > "../../out/${v}_${b}_butler.pid"
     )
 
-    # Poll for handshake completion
-    # (Issue #3 fix: event-driven polling replaces blind sleep 10)
-    poll_for_pattern "${verifier_log}" "Handshake completed" "${CROSS_HANDSHAKE_TIMEOUT}" || true
+    # Poll for handshake completion of BOTH verifier and butler
+    # (REQ-GAT-001: test harness MUST poll for and confirm the successful handshake completion of BOTH components)
+    poll_for_pattern "${verifier_log}" "Handshake completed for impl_${v}.verifier" "${CROSS_HANDSHAKE_TIMEOUT}" || true
+    poll_for_pattern "${verifier_log}" "Handshake completed for impl_${b}.butler" "${CROSS_HANDSHAKE_TIMEOUT}" || true
 
     # Trigger software update
     local trigger_log="out/${v}_${b}_trigger.log"
