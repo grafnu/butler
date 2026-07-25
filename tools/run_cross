@@ -6,6 +6,8 @@
 
 set -euo pipefail
 
+export PYTHONUNBUFFERED=1
+
 # Force non-interactive fail-fast execution across all sub-shells/tools
 export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 export DEBIAN_FRONTEND=noninteractive
@@ -20,7 +22,9 @@ cd "${MAIN_DIR}"
 source "${SCRIPT_DIR}/port_utils"
 
 # List of implementations
-IMPLEMENTATIONS=("A" "B" "C" "D")
+# ASSUMPTION: If arguments are provided but some are flags (like -p or -s), the remaining non-flag arguments are treated as the list of implementations.
+DEFAULT_IMPLEMENTATIONS=("A" "B" "C" "D")
+IMPLEMENTATIONS=()
 
 # Parse command line flags
 USE_SANDBOX="false"
@@ -30,8 +34,14 @@ for arg in "$@"; do
     USE_SANDBOX="true"
   elif [ "$arg" = "-p" ] || [ "$arg" = "--parallel" ]; then
     USE_PARALLEL="true"
+  else
+    IMPLEMENTATIONS+=("$arg")
   fi
 done
+
+if [ ${#IMPLEMENTATIONS[@]} -eq 0 ]; then
+  IMPLEMENTATIONS=("${DEFAULT_IMPLEMENTATIONS[@]}")
+fi
 
 # Configurable timeouts for event-driven polling (seconds)
 CROSS_HANDSHAKE_TIMEOUT="${CROSS_HANDSHAKE_TIMEOUT:-30}"
@@ -136,6 +146,12 @@ run_track() {
     impl/udmi/bin/observe_uufi "localhost" "${port}" "rocket" "monkey" "$(pwd)/testing/udmi_site_model" < /dev/null > "../../${observe_log}" 2>&1 &
     echo $! > "../../out/${v}_observe.pid"
   )
+
+  # 3.2 UDMIS Startup Synchronization Delay
+  # (Section 10.7.3 requirement: test harness MUST implement a startup synchronization delay of at least 15 seconds
+  # after starting the local UDMIS service pod and BEFORE launching the simulated device (DUT))
+  echo "[Track impl_${v}] Waiting 15s for UDMIS startup synchronization..." >&2
+  sleep 15
 
   # 3.5 Start Long-Running Idempotent DUT (Pubber) once per track
   local pubber_log="out/${v}_pubber.log"
