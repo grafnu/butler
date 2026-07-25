@@ -6,4 +6,5 @@ blobs/
 impl/
 udmi/
 out/
+logs/
 merger.log
