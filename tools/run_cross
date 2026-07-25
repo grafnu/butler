@@ -237,7 +237,7 @@ run_track() {
       cd "impl/${v}"
       export MQTT_PORT="${port}"
       export ETCD_PORT="${etcd_port}"
-      impl/udmi/bin/site_trigger "update" "testing/udmi_site_model" "AHU-1" "system" "1.1.0" "${conn_spec}" < /dev/null > "../../${trigger_log}" 2>&1 || true
+      impl/udmi/bin/site_trigger "update" "testing/udmi_site_model" "AHU-1" "system" "1.2.0" "${conn_spec}" < /dev/null > "../../${trigger_log}" 2>&1 || true
     )
 
     # Poll for terminal state in butler log
